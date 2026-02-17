@@ -1,0 +1,152 @@
+:root{
+  --primary:#1e3a8a;
+  --bg:#ffffff;
+  --panel:#f8fafc;
+  --line:#e2e8f0;
+  --text:#1e293b;
+  --muted:#64748b;
+}
+
+body{
+  margin:0;
+  font-family:Arial, Helvetica, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.container{
+  max-width:1100px;
+  margin:auto;
+  padding:30px 20px;
+}
+
+h1, h2{ color:var(--primary); }
+
+.panel{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:18px;
+}
+
+input{
+  padding:6px;
+  border-radius:6px;
+  border:1px solid var(--line);
+}
+
+.btn, button{
+  padding:8px 14px;
+  border:none;
+  border-radius:8px;
+  background:var(--primary);
+  color:white;
+  cursor:pointer;
+}
+
+.btn:hover, button:hover{ opacity:0.9; }
+
+.chartBox{
+  background:white;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:15px;
+  height: 420px;              /* ✅ evita grafico schiacciato */
+}
+
+.chartBox canvas{
+  width:100% !important;
+  height:100% !important;     /* ✅ Chart.js riempie il box */
+}
+
+.disclaimer{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.miniBtn{
+  display:inline-block;
+  margin-left:10px;
+  padding:6px 10px;
+  border-radius:10px;
+  border:1px solid var(--line);
+  background:#ffffff;
+  color:var(--primary);
+  text-decoration:none;
+  font-weight:700;
+  font-size:12px;
+  line-height:1;
+}
+.miniBtn:hover{ opacity:0.9; }
+
+.btnLink{
+  display:inline-block;
+  padding:8px 14px;
+  border-radius:8px;
+  background:var(--primary);
+  color:#fff;
+  text-decoration:none;
+  font-weight:700;
+}
+.btnLink:hover{ opacity:0.9; }
+
+.grid2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:14px;
+}
+
+@media (max-width: 900px){
+  .grid2{ grid-template-columns:1fr; }
+}
+
+.qbox{
+  width:100%;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid var(--line);
+  resize:vertical;
+  min-height:110px;
+  background:#fff;
+}
+
+.faqList{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.faqItem{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:10px;
+  padding:10px 12px;
+  cursor:pointer;
+}
+
+.faqQ{
+  font-weight:700;
+  color:var(--text);
+}
+
+.faqA{
+  display:none;
+  margin-top:8px;
+  color:var(--muted);
+  line-height:1.5;
+}
+
+@media (hover:hover){
+  .faqItem:hover .faqA{ display:block; }
+}
+.faqItem.open .faqA{ display:block; }
+
+.blueBold{
+  font-weight:700;
+  color:#1e4fbf;
+}
+
+@media print{
+  .btn, button, .miniBtn, .btnLink { display:none !important; }
+  .panel, .chartBox { box-shadow:none; }
+}

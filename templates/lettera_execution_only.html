@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lettera — ordine execution only</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='style_4.css') }}">
+
+  <style>
+    .box{
+      background:white;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:18px;
+    }
+    .small{ color:var(--muted); font-size:12px; }
+    @media print{
+      button { display:none !important; }
+      .panel{ background:white; border:0; padding:0; }
+      .box{ border:0; padding:0; }
+      .container{ padding:0; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container" style="max-width:900px;">
+    <div class="panel">
+      <h2 style="margin:0;">Lettera / Testo per ordine “execution only”</h2>
+      <p class="small" style="margin:8px 0 0 0;">Personalizza i campi tra [parentesi quadre] prima di inviare.</p>
+    </div>
+
+    <div class="panel" style="margin-top:14px;">
+      <div class="box">
+        <p><b>Oggetto:</b> Ordine di acquisto titoli – modalità <b>execution only</b></p>
+
+        <p>Spett.le <b>[NOME BANCA / FILIALE]</b>,</p>
+
+        <p>
+          con la presente dispongo l’esecuzione dei seguenti ordini di acquisto in modalità <b>“execution only”</b>,
+          senza richiesta di consulenza, raccomandazioni o valutazioni di adeguatezza/appropriatezza,
+          assumendomi la piena responsabilità della scelta.
+        </p>
+
+        <p><b>Ordini:</b></p>
+        <ul>
+          <li><b>Vanguard LifeStrategy 80% Equity UCITS ETF</b> (indicare ISIN/mercato/classe corretta) – importo: <b>[€ …]</b></li>
+          <li><b>ETC Oro fisico</b> (indicare ISIN/mercato) – importo: <b>[€ …]</b></li>
+        </ul>
+
+        <p>
+          Si richiede l’esecuzione al <b>miglior prezzo disponibile</b> (oppure: <b>ordine limite</b> <b>[€ …]</b>),
+          con regolamento secondo le condizioni del mio conto titoli.
+        </p>
+
+        <p style="margin-top:18px;">
+          Cordiali saluti,<br>
+          <b>[NOME E COGNOME]</b><br>
+          <b>[CODICE CLIENTE / IBAN / RECAPITO]</b><br>
+          <b>[DATA]</b>
+        </p>
+      </div>
+
+      <p style="margin-top:12px;">
+        <button onclick="window.print()">📄 Stampa / Salva in PDF</button>
+      </p>
+    </div>
+  </div>
+</body>
+</html>
