@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import csv
+import math
+from datetime import date, datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Tuple, Optional
 
-import pandas as pd
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
@@ -16,175 +18,216 @@ ASSET_FILES: Dict[str, str] = {
     "gold": "gold.csv",
 }
 
-DEFAULT_W_LS80 = 0.80
-DEFAULT_W_GOLD = 0.20
-
-
-def _smart_read_csv(fp: Path) -> pd.DataFrame:
-    try:
-        df = pd.read_csv(fp, sep=";")
-    except Exception:
-        df = pd.read_csv(fp)
-
-    if len(df.columns) == 1 and (";" in str(df.columns[0])):
-        df = pd.read_csv(fp, sep=";", header=0)
-
-    df.columns = [str(c).strip() for c in df.columns]
-
-    if "Date" in df.columns and "Close" in df.columns:
-        df = df.rename(columns={"Date": "date", "Close": "price"})
-    elif "date" in df.columns and "price" in df.columns:
-        pass
-    else:
-        candidates_date = [c for c in df.columns if c.lower() in ("date", "data")]
-        candidates_price = [c for c in df.columns if c.lower() in ("close", "price", "prezzo")]
-        if candidates_date and candidates_price:
-            df = df.rename(columns={candidates_date[0]: "date", candidates_price[0]: "price"})
+def _parse_float(s: str) -> float:
+    s = (s or "").strip()
+    if s == "":
+        return float("nan")
+    # EU/US: "1.234,56" -> "1234.56", "1,234.56" -> "1234.56"
+    if s.count(",") and s.count("."):
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
         else:
-            raise ValueError(
-                f"{fp.name}: formato colonne non riconosciuto. "
-                "Attesi: Date/Close (sep ';') oppure date/price."
-            )
+            s = s.replace(",", "")
+    else:
+        if s.count(",") and not s.count("."):
+            s = s.replace(",", ".")
+    return float(s)
 
-    df["date"] = pd.to_datetime(df["date"], errors="coerce", dayfirst=True)
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+def _parse_date(s: str) -> date:
+    s = (s or "").strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    raise ValueError(f"Data non riconosciuta: {s!r}")
 
-    df = df.dropna(subset=["date", "price"]).sort_values("date")
-    df = df[~df["date"].duplicated(keep="last")]
-    return df[["date", "price"]]
+def _detect_delimiter(sample: str) -> str:
+    return ";" if sample.count(";") > sample.count(",") else ","
 
+def _read_price_series(path: Path) -> Tuple[List[date], List[float]]:
+    if not path.exists():
+        raise FileNotFoundError(f"File non trovato: {path}")
 
-def _read_asset_series(asset_key: str) -> pd.Series:
-    fp = DATA_DIR / ASSET_FILES[asset_key]
-    if not fp.exists():
-        raise FileNotFoundError(f"File mancante: {fp}")
-    df = _smart_read_csv(fp)
-    return pd.Series(df["price"].values, index=df["date"], name=asset_key).astype(float)
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        head = f.read(4096)
+    delim = _detect_delimiter(head)
 
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.reader(f, delimiter=delim)
+        rows = list(reader)
 
-def _align_prices() -> pd.DataFrame:
-    ls80 = _read_asset_series("ls80")
-    gold = _read_asset_series("gold")
-    df = pd.concat([ls80, gold], axis=1).dropna()
-    if len(df) < 50:
-        raise ValueError("Dati insufficienti dopo allineamento (troppe date mancanti).")
-    return df
+    if not rows or len(rows) < 2:
+        raise ValueError(f"CSV vuoto o troppo corto: {path.name}")
 
+    header = [c.strip() for c in rows[0]]
+    data_rows = rows[1:]
 
-def _calc_drawdown(nav: pd.Series) -> float:
-    peak = nav.cummax()
-    dd = nav / peak - 1.0
-    return float(dd.min())
+    date_idx = 0
+    price_idx = 1 if len(header) > 1 else 0
 
+    for i, c in enumerate(header):
+        cl = c.lower()
+        if "date" in cl or "data" in cl:
+            date_idx = i
+            break
 
-def _calc_cagr(nav: pd.Series) -> float:
-    nav = nav.dropna()
-    if len(nav) < 2:
+    for i, c in enumerate(header):
+        cl = c.lower()
+        if any(k in cl for k in ("close", "prezzo", "price", "nav")):
+            price_idx = i
+            break
+
+    tmp: List[Tuple[date, float]] = []
+    for r in data_rows:
+        if not r or len(r) <= max(date_idx, price_idx):
+            continue
+        ds = r[date_idx].strip()
+        ps = r[price_idx].strip()
+        if not ds or not ps:
+            continue
+        try:
+            d = _parse_date(ds)
+            p = _parse_float(ps)
+        except Exception:
+            continue
+        if math.isnan(p):
+            continue
+        tmp.append((d, p))
+
+    if not tmp:
+        raise ValueError(
+            f"Nel CSV {path.name} non trovo righe valide (serve colonna data + prezzo)."
+        )
+
+    tmp.sort(key=lambda x: x[0])
+    return [d for d, _ in tmp], [p for _, p in tmp]
+
+def _align_by_date(
+    a_dates: List[date], a_vals: List[float],
+    b_dates: List[date], b_vals: List[float],
+) -> Tuple[List[date], List[float], List[float]]:
+    ad = {d: v for d, v in zip(a_dates, a_vals)}
+    bd = {d: v for d, v in zip(b_dates, b_vals)}
+    common = sorted(set(ad.keys()) & set(bd.keys()))
+    if len(common) < 2:
+        raise ValueError("Serie con poche date comuni tra LS80 e Oro.")
+    return common, [ad[d] for d in common], [bd[d] for d in common]
+
+def _max_drawdown(values: List[float]) -> float:
+    peak = -float("inf")
+    mdd = 0.0
+    for v in values:
+        if v > peak:
+            peak = v
+        if peak > 0:
+            dd = (v / peak) - 1.0
+            if dd < mdd:
+                mdd = dd
+    return mdd
+
+def _cagr(values: List[float], dates: List[date]) -> float:
+    if len(values) < 2:
         return 0.0
-    days = (nav.index[-1] - nav.index[0]).days
+    start = values[0]
+    end = values[-1]
+    days = (dates[-1] - dates[0]).days
     years = days / 365.25 if days > 0 else 0.0
-    if years <= 0:
+    if years <= 0 or start <= 0:
         return 0.0
-    return float((nav.iloc[-1] / nav.iloc[0]) ** (1 / years) - 1)
+    return (end / start) ** (1 / years) - 1
 
+def _years_to_double(cagr: float) -> Optional[float]:
+    if cagr <= 0:
+        return None
+    return math.log(2) / math.log(1 + cagr)
 
-def _portfolio_nav(prices: pd.DataFrame, w_ls80: float, w_gold: float) -> pd.Series:
-    norm = prices / prices.iloc[0] * 100.0
-    rets = norm.pct_change().fillna(0.0)
+def _backtest_two_assets(
+    dates: List[date],
+    p_ls: List[float],
+    p_gold: List[float],
+    w_ls: float,
+    w_gold: float,
+    capital: float,
+) -> Tuple[List[float], List[float]]:
+    ls_shares = (capital * w_ls) / p_ls[0]
+    gold_shares = (capital * w_gold) / p_gold[0]
+    solo_shares = capital / p_ls[0]
 
-    nav = pd.Series(index=rets.index, dtype=float)
-    nav.iloc[0] = 100.0
+    port_vals: List[float] = []
+    solo_vals: List[float] = []
 
-    v_ls80 = nav.iloc[0] * w_ls80
-    v_gold = nav.iloc[0] * w_gold
+    last_year = dates[0].year
 
-    for i in range(1, len(rets)):
-        v_ls80 *= (1.0 + rets["ls80"].iloc[i])
-        v_gold *= (1.0 + rets["gold"].iloc[i])
-        nav.iloc[i] = v_ls80 + v_gold
+    for d, ls_price, g_price in zip(dates, p_ls, p_gold):
+        total = ls_shares * ls_price + gold_shares * g_price
+        solo_total = solo_shares * ls_price
 
-        # rebalance a fine anno (ultimo giorno disponibile dell'anno)
-        if i < len(rets) - 1 and rets.index[i + 1].year != rets.index[i].year:
-            total = nav.iloc[i]
-            v_ls80 = total * w_ls80
-            v_gold = total * w_gold
+        # rebalance al primo giorno disponibile del nuovo anno
+        if d.year != last_year:
+            ls_shares = (total * w_ls) / ls_price
+            gold_shares = (total * w_gold) / g_price
+            last_year = d.year
+            total = ls_shares * ls_price + gold_shares * g_price
 
-    nav.name = "portfolio"
-    return nav
+        port_vals.append(total)
+        solo_vals.append(solo_total)
 
+    return port_vals, solo_vals
 
 @app.route("/")
-def home():
+def index():
     return render_template("index.html")
 
-
-@app.route("/lettera-execution-only")
-def lettera_execution_only():
-    return render_template("lettera_execution_only.html")
-
-
-@app.route("/api/compute")
+@app.route("/api/compute", methods=["GET"])
 def api_compute():
-    w_ls80 = float(request.args.get("w_ls80", DEFAULT_W_LS80))
-    w_gold = float(request.args.get("w_gold", DEFAULT_W_GOLD))
-    initial = float(request.args.get("initial", 10000))
-
-    if w_ls80 < 0 or w_gold < 0:
-        return jsonify({"error": "I pesi non possono essere negativi."}), 400
-
-    s = w_ls80 + w_gold
-    if s <= 0:
-        return jsonify({"error": "Somma pesi deve essere > 0."}), 400
-
-    w_ls80 /= s
-    w_gold /= s
-
     try:
-        prices = _align_prices()
+        w_ls80 = float(request.args.get("w_ls80", "80"))
+        w_gold = float(request.args.get("w_gold", "20"))
+        capital = float(request.args.get("capital", "10000"))
+
+        if capital <= 0:
+            return jsonify({"error": "Capitale deve essere > 0"}), 400
+        if w_ls80 < 0 or w_gold < 0:
+            return jsonify({"error": "I pesi devono essere >= 0"}), 400
+
+        s = w_ls80 + w_gold
+        if s <= 0:
+            return jsonify({"error": "Somma pesi deve essere > 0"}), 400
+
+        w_ls = w_ls80 / s
+        w_g = w_gold / s
+
+        d_ls, p_ls = _read_price_series(DATA_DIR / ASSET_FILES["ls80"])
+        d_g, p_g = _read_price_series(DATA_DIR / ASSET_FILES["gold"])
+
+        dates, p_ls_al, p_g_al = _align_by_date(d_ls, p_ls, d_g, p_g)
+        port_vals, solo_vals = _backtest_two_assets(dates, p_ls_al, p_g_al, w_ls, w_g, capital)
+
+        cagr_port = _cagr(port_vals, dates)
+        cagr_solo = _cagr(solo_vals, dates)
+        mdd_port = _max_drawdown(port_vals)
+        mdd_solo = _max_drawdown(solo_vals)
+        yd = _years_to_double(cagr_port)
+
+        return jsonify({
+            "dates": [d.isoformat() for d in dates],
+            "portfolio": port_vals,
+            "solo_ls80": solo_vals,
+            "metrics": {
+                "cagr_portfolio": cagr_port,
+                "cagr_solo": cagr_solo,
+                "max_dd_portfolio": mdd_port,
+                "max_dd_solo": mdd_solo,
+                "years_to_double": yd,
+                "start": dates[0].isoformat(),
+                "end": dates[-1].isoformat(),
+                "final_portfolio": port_vals[-1],
+                "final_solo": solo_vals[-1],
+            },
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-    nav_port = _portfolio_nav(prices, w_ls80, w_gold)
-    nav_ls80 = (prices["ls80"] / prices["ls80"].iloc[0] * 100.0).copy()
-    nav_ls80.name = "ls80_only"
-
-    cagr_port = _calc_cagr(nav_port)
-    mdd_port = _calc_drawdown(nav_port)
-    cagr_ls80 = _calc_cagr(nav_ls80)
-    mdd_ls80 = _calc_drawdown(nav_ls80)
-
-    implied_equity = 0.80 * w_ls80
-    implied_bonds = 0.20 * w_ls80
-    implied_gold = w_gold
-
-    eur_port = nav_port / 100.0 * initial
-    eur_ls80 = nav_ls80 / 100.0 * initial
-
-    out = pd.DataFrame(
-        {
-            "date": nav_port.index.strftime("%Y-%m-%d"),
-            "eur_port": eur_port.values.round(2),
-            "eur_ls80": eur_ls80.values.round(2),
-        }
-    )
-
-    return jsonify(
-        {
-            "weights": {"ls80": w_ls80, "gold": w_gold},
-            "initial": initial,
-            "implied": {"equity": implied_equity, "bonds": implied_bonds, "gold": implied_gold},
-            "stats": {
-                "start": str(nav_port.index[0].date()),
-                "end": str(nav_port.index[-1].date()),
-                "cagr": cagr_port,
-                "max_drawdown": mdd_port,
-                "cagr_ls80": cagr_ls80,
-                "max_drawdown_ls80": mdd_ls80,
-            },
-            "series": out.to_dict(orient="records"),
-        }
-    )
-
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=True)
