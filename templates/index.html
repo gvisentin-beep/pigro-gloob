@@ -1,235 +1,92 @@
-<!DOCTYPE html>
-<html lang="it">
+<!doctype html>
+<html lang="it-IT">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Gloob — Metodo Pigro</title>
-
-  <link rel="stylesheet" href="{{ url_for('static', filename='style_4.css') }}">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --b:#d9e1ef; --bg:#f6f9ff; --card:#fff; --txt:#0f172a; --mut:#475569; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--txt); }
+    .container { max-width: 980px; margin: 22px auto; padding: 0 16px; }
+    .card { background:var(--card); border:1px solid var(--b); border-radius:14px; padding:18px; margin-bottom:14px; }
+    .title { display:flex; align-items:center; gap:10px; font-size:34px; font-weight:800; }
+    .subtitle { color:var(--mut); margin-top:6px; }
+    .row { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    label { display:block; font-size:13px; color:var(--mut); margin-bottom:6px; }
+    input { width:110px; padding:8px 10px; border:1px solid var(--b); border-radius:10px; font-size:14px; }
+    input#capital { width:160px; }
+    button { padding:9px 14px; border:0; border-radius:10px; font-weight:700; cursor:pointer; }
+    .btn { background:#1e3a8a; color:#fff; }
+    .btn2 { background:#0f766e; color:#fff; }
+    .small { font-size:12px; color:var(--mut); }
+    .stats b { font-weight:800; }
+    #chart { height: 420px; }
+    canvas { width:100% !important; height:100% !important; }
+    .right { margin-left:auto; }
+  </style>
 </head>
 
 <body>
   <div class="container">
 
-    <!-- TESTATA -->
-    <div class="panel">
-      <div style="display:flex; align-items:center; gap:12px;">
-        <img src="{{ url_for('static', filename='logo.png') }}" alt="Gloob"
-             style="height:34px; width:auto;">
-        <h1 style="margin:0;">Gloob</h1>
+    <div class="card">
+      <div class="title">
+        <span style="display:inline-block;width:34px;height:34px;border-radius:8px;border:1px solid var(--b);background:#eef2ff"></span>
+        Gloob
       </div>
-
-      <p style="margin:10px 0 0 0; color:var(--muted);">
-        Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.
-      </p>
-
-      <ul style="margin:10px 0 0 18px; line-height:1.6; color:var(--muted);">
+      <div class="subtitle">Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.</div>
+      <ul class="subtitle" style="margin:10px 0 0 18px;">
         <li><b>Pochi strumenti:</b> due mattoni globali, niente complicazioni.</li>
         <li><b>Costi bassi:</b> il costo è un rendimento certo… ma al contrario.</li>
         <li><b>Regole chiare:</b> ribilanciamento <b>una volta l’anno</b>.</li>
         <li><b>Struttura &gt; Previsioni.</b></li>
       </ul>
-
-      <p class="disclaimer" style="margin:10px 0 0 0;">
-        Contenuto informativo, non consulenza. Rendimenti passati ≠ garanzia per il futuro.
-      </p>
+      <div class="small" style="margin-top:10px;">Contenuto informativo, non consulenza. Rendimenti passati ≠ garanzia per il futuro.</div>
     </div>
 
-    <!-- CONTROLLI -->
-    <div class="panel" style="margin-top:15px;">
-      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+    <div class="card">
+      <div class="row">
         <div>
-          <label>Peso LS80 (%)</label><br>
-          <input id="w_ls80" type="number" min="0" max="100" step="1" value="80">
+          <label for="w_ls80">Peso LS80 (%)</label>
+          <input id="w_ls80" type="number" min="0" max="100" step="1" value="80" />
         </div>
-
         <div>
-          <label>Peso Oro (%)</label><br>
-          <input id="w_gold" type="number" min="0" max="100" step="1" value="20">
+          <label for="w_gold">Peso Oro (%)</label>
+          <input id="w_gold" type="number" min="0" max="100" step="1" value="20" />
         </div>
-
         <div>
-          <label>Capitale (€)</label><br>
-          <input id="initial" type="number" min="1000" step="500" value="10000">
+          <label for="capital">Capitale (€)</label>
+          <input id="capital" type="number" min="0" step="100" value="10000" />
         </div>
 
-        <button id="btn_update" class="btn">Aggiorna</button>
-        <button id="btn_pdf" class="btn">Crea PDF</button>
+        <button class="btn" id="btn_update">Aggiorna</button>
+        <button class="btn" id="btn_pdf">Crea PDF</button>
       </div>
     </div>
 
-    <!-- STATS -->
-    <div class="panel" style="margin-top:15px;">
-      <b>Portafoglio (LS80+Oro):</b> CAGR <span id="cagr">—</span> · Max DD <span id="mdd">—</span><br>
-      <b>Solo LS80:</b> CAGR <span id="cagr_ls80">—</span> · Max DD <span id="mdd_ls80">—</span><br>
-      <b>Esposizione implicita:</b> <span id="implied">—</span><br>
-      <b>Valore finale (capitale base):</b> <span id="endvalues">—</span>
+    <div class="card stats">
+      <div><b>Portafoglio (LS80+Oro):</b> CAGR <span id="cagr">—</span> · Max DD <span id="mdd">—</span></div>
+      <div><b>Solo LS80:</b> CAGR <span id="cagr_ls80">—</span> · Max DD <span id="mdd_ls80">—</span></div>
+      <div><b>Esposizione implicita:</b> <span id="implied">—</span></div>
+      <div><b>Valore finale (capitale base):</b> <span id="endvalues">—</span></div>
     </div>
 
-    <!-- PERIODO SOPRA GRAFICO -->
-    <div class="panel" style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-      <div>
-        <b>Periodo simulato:</b> <span id="period_top">—</span>
-      </div>
-      <div style="color:var(--muted); font-size:12px;">
-        (ribilanciamento annuale)
+    <div class="card">
+      <div class="row">
+        <div><b>Periodo simulato:</b> <span id="period">—</span></div>
+        <div class="right small">(ribilanciamento annuale)</div>
       </div>
     </div>
 
-    <!-- GRAFICO -->
-    <div class="chartBox" style="margin-top:10px;">
-      <canvas id="chart"></canvas>
-    </div>
-
-    <!-- MESSAGGIO CHIAVE -->
-    <div class="panel" style="margin-top:15px;">
-      <b>Messaggio chiave:</b><br>
-      La differenza non è indovinare il mercato.<br>
-      È avere una struttura semplice e ribilanciarla una volta l’anno.
-    </div>
-
-    <!-- COME APPLICARLO -->
-    <div class="panel" style="margin-top:25px;">
-      <h2 style="margin-top:0;">Come applicarlo concretamente</h2>
-
-      <ol style="line-height:1.7; margin-bottom:12px;">
-        <li>Scegli le percentuali (es. 80% LS80 – 20% Oro).</li>
-        <li>
-          Investi nei due strumenti attraverso la tua banca con <b>“execution only”</b>.
-          <a class="miniBtn" href="/lettera-execution-only" target="_blank" title="Apri lettera pronta da stampare">📠</a>
-        </li>
-        <li>Non intervenire durante l’anno.</li>
-        <li>A dicembre ribilancia ai pesi originali.</li>
-      </ol>
-    </div>
-
-    <!-- FAQ + DOMANDE LIBERE (2 COLONNE) -->
-    <div class="grid2" style="margin-top:18px;">
-
-      <!-- SINISTRA: DOMANDE LIBERE (MAILTO) -->
-      <div class="panel">
-        <h2 style="margin-top:0;">Domande libere</h2>
-        <div style="color:var(--muted); margin-bottom:10px; line-height:1.5;">
-          Scrivi una domanda. Verrà inviata via email (nessun dato viene salvato sul sito).
-        </div>
-
-        <textarea id="qbox" rows="6" class="qbox"
-          placeholder="Esempi:
-- Come ribilancio a fine anno?
-- Cosa succede se compro tutto oggi e poi scende?
-- Perché aggiungere oro a LS80?"></textarea>
-
-        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-          <a id="sendMail" class="btnLink" href="#">✉ Invia</a>
-          <button type="button" id="copyBtn">📋 Copia domanda</button>
-        </div>
-
-        <div id="copyMsg" style="display:none; margin-top:8px; color:var(--muted); font-size:12px;">
-          Copiato negli appunti.
-        </div>
-      </div>
-
-      <!-- DESTRA: FAQ -->
-      <div class="panel">
-        <h2 style="margin-top:0;">FAQ (passa il mouse)</h2>
-        <div style="color:var(--muted); margin-bottom:10px;">
-          Su mobile: tocca la domanda per vedere la risposta.
-        </div>
-
-        <div class="faqList">
-
-          <div class="faqItem">
-            <div class="faqQ">1) Perché solo due strumenti?</div>
-            <div class="faqA">Per ridurre complessità ed errori: meno decisioni, più disciplina.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">2) Cos’è LS80?</div>
-            <div class="faqA">Un ETF multi-asset globale (circa 80% azioni e 20% obbligazioni), già diversificato.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">3) Perché aggiungere oro?</div>
-            <div class="faqA">Per diversificare: spesso si muove in modo diverso da azioni/obbligazioni e può ridurre i ribassi.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">4) Quando ribilancio?</div>
-            <div class="faqA">Una volta all’anno (es. dicembre): riporti i pesi a 80/20 vendendo ciò che è salito e comprando ciò che è rimasto indietro.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">5) Devo “indovinare” il momento giusto?</div>
-            <div class="faqA">No. Il metodo punta a evitare market timing: entra, mantieni, ribilancia.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">6) Cosa succede se dopo l’acquisto scende?</div>
-            <div class="faqA">È normale. Il metodo funziona su orizzonti lunghi: ribilanciando, compri di più ciò che è sceso.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">7) Perché “execution only”?</div>
-            <div class="faqA">Per acquistare senza consulenza: tu dai l’ordine e non ti vengono proposti prodotti con costi o conflitti di interesse.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">8) Che importo serve per iniziare?</div>
-            <div class="faqA">Anche 10.000€ sono già una base seria. La costanza conta più dell’importo iniziale.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">9) Ogni quanto guardare il portafoglio?</div>
-            <div class="faqA">Il meno possibile: controllare troppo aumenta decisioni emotive. Basta una revisione annuale.</div>
-          </div>
-
-          <div class="faqItem">
-            <div class="faqQ">10) Questo è un consiglio personalizzato?</div>
-            <div class="faqA">No. È materiale educativo generico. Prima di investire valuta la tua situazione e tolleranza al rischio.</div>
-          </div>
-
-        </div>
-      </div>
-
+    <div class="card" id="chart">
+      <canvas id="chart_canvas"></canvas>
     </div>
 
   </div>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
-
-  <script>
-    // Mailto privacy-safe (nessun salvataggio sul sito)
-    const mailTo = "info@gloob.it"; // <-- cambia qui
-    const qbox = document.getElementById("qbox");
-    const send = document.getElementById("sendMail");
-    const copyBtn = document.getElementById("copyBtn");
-    const copyMsg = document.getElementById("copyMsg");
-
-    function refreshMailto(){
-      const q = (qbox.value || "").trim();
-      const subject = encodeURIComponent("Domanda da sito Gloob (Metodo Pigro)");
-      const body = encodeURIComponent("Ciao Gloob,\n\nDomanda:\n" + (q || "[scrivi qui]") + "\n\nGrazie!");
-      send.href = `mailto:${mailTo}?subject=${subject}&body=${body}`;
-    }
-
-    qbox.addEventListener("input", refreshMailto);
-    refreshMailto();
-
-    copyBtn.addEventListener("click", async () => {
-      try{
-        await navigator.clipboard.writeText(qbox.value || "");
-        copyMsg.style.display = "block";
-        setTimeout(() => copyMsg.style.display = "none", 1200);
-      }catch(e){
-        alert("Non riesco a copiare negli appunti. Seleziona il testo e fai Ctrl+C.");
-      }
-    });
-
-    // FAQ: su mobile apri/chiudi con tap
-    document.querySelectorAll(".faqItem").forEach(item => {
-      item.addEventListener("click", () => item.classList.toggle("open"));
-    });
-  </script>
+  <!-- Chart.js UMD (crea window.Chart) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- App -->
+  <script src="/static/app.js?v=1" defer></script>
 </body>
 </html>
