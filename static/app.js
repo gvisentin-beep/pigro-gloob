@@ -5,11 +5,6 @@ function pct1(x) {
   return (x * 100).toFixed(1) + "%";
 }
 
-// % con 0 decimali (se un domani vuoi usarlo)
-function pct0(x) {
-  return (x * 100).toFixed(0) + "%";
-}
-
 // Euro con decimali (per grafico)
 function eur(x) {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(x);
@@ -22,101 +17,136 @@ function eur0(x) {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: 0,
-    minimumFractionDigits: 0
+    minimumFractionDigits: 0,
   }).format(v);
 }
 
-function isoToMonthYear(iso) {
-  // "YYYY-MM-DD" -> "MM-YYYY"
-  if (!iso || iso.length < 10) return iso;
-  const [y, m] = iso.slice(0, 7).split("-");
-  return `${m}-${y}`;
+function safeSet(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
 }
 
 async function loadData() {
-  const w_ls80 = Number(document.getElementById("w_ls80").value) / 100;
-  const w_gold = Number(document.getElementById("w_gold").value) / 100;
-  const initial = Number(document.getElementById("initial").value || 10000);
-
-  const url = `/api/compute?w_ls80=${encodeURIComponent(w_ls80)}&w_gold=${encodeURIComponent(w_gold)}&initial=${encodeURIComponent(initial)}`;
-  const r = await fetch(url);
-  const data = await r.json();
-
-  if (!r.ok) {
-    alert(data.error || "Errore");
+  // Se Chart.js non è caricato correttamente, qui prima si bloccava tutto.
+  if (typeof Chart === "undefined") {
+    console.error("Chart.js non caricato: Chart è undefined. Usa la build UMD.");
+    const box = document.getElementById("chart");
+    if (box) {
+      box.innerHTML =
+        '<div style="padding:12px;font-weight:700;color:#b91c1c">Errore: Chart.js non caricato. (Controlla lo script chart.umd.min.js)</div>';
+    }
     return;
   }
 
-  // Periodo (solo mese/anno)
-  document.getElementById("period_top").textContent =
-    `${isoToMonthYear(data.stats.start)} → ${isoToMonthYear(data.stats.end)}`;
+  const w_ls80 = Number(document.getElementById("w_ls80").value) / 100;
+  const w_gold = Number(document.getElementById("w_gold").value) / 100;
+  const capital = Number(document.getElementById("capital").value || 10000);
 
-  // Stats: 1 decimale
-  document.getElementById("cagr").textContent = pct1(data.stats.cagr);
-  document.getElementById("mdd").textContent = pct1(data.stats.max_drawdown);
-  document.getElementById("cagr_ls80").textContent = pct1(data.stats.cagr_ls80);
-  document.getElementById("mdd_ls80").textContent = pct1(data.stats.max_drawdown_ls80);
+  const url = `/api/compute?w_ls80=${encodeURIComponent(w_ls80)}&w_gold=${encodeURIComponent(w_gold)}&initial=${encodeURIComponent(capital)}`;
 
-  // Esposizione implicita (qui lascio come prima: 2 decimali in %)
-  // Se invece la vuoi a 0 decimali: sostituisci pct1->pct0 o usa una funzione dedicata.
-  document.getElementById("implied").textContent =
-    `Azioni ${pct1(data.implied.equity)} · Obbligazioni ${pct1(data.implied.bonds)} · Oro ${pct1(data.implied.gold)}`;
+  let data;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    console.error("Errore fetch /api/compute:", e);
+    safeSet("cagr", "—");
+    safeSet("mdd", "—");
+    safeSet("cagr_ls80", "—");
+    safeSet("mdd_ls80", "—");
+    safeSet("implied", "—");
+    safeSet("endvalues", "—");
+    return;
+  }
 
-  // Valori finali: arrotondati all'euro (senza decimali)
-  const last = data.series[data.series.length - 1];
-  const lastPort = Math.round(last.eur_port);
-  const lastLS80 = Math.round(last.eur_ls80);
-  const diff = lastPort - lastLS80;
+  // STAT
+  safeSet("cagr", data.cagr != null ? pct1(data.cagr) : "—");
+  safeSet("mdd", data.max_dd != null ? pct1(data.max_dd) : "—");
+  safeSet("cagr_ls80", data.cagr_ls80 != null ? pct1(data.cagr_ls80) : "—");
+  safeSet("mdd_ls80", data.max_dd_ls80 != null ? pct1(data.max_dd_ls80) : "—");
+  safeSet("implied", data.implied != null ? pct1(data.implied) : "—");
+  safeSet("endvalues", data.final_value != null ? eur0(data.final_value) : "—");
 
-  document.getElementById("endvalues").textContent =
-    `LS80+Oro ${eur0(lastPort)} · Solo LS80 ${eur0(lastLS80)} · Differenza ${eur0(diff)}`;
+  // periodo (se presente in pagina)
+  if (data.start && data.end) {
+    safeSet("period", `${data.start} → ${data.end}`);
+  }
 
-  // Asse X: mese/anno
-  const labelsMY = data.series.map(r => isoToMonthYear(r.date));
-  const eurPort = data.series.map(r => r.eur_port);
-  const eurLS80 = data.series.map(r => r.eur_ls80);
+  // GRAFICO
+  const ctx = document.getElementById("chart_canvas").getContext("2d");
 
-  const ctx = document.getElementById("chart");
+  const labels = data.dates || [];
+  const seriesPort = data.portfolio || [];
+  const seriesLs80 = data.ls80 || [];
+
   if (chart) chart.destroy();
 
   chart = new Chart(ctx, {
     type: "line",
     data: {
-      labels: labelsMY,
+      labels,
       datasets: [
         {
-          label: "LS80 + Oro (valore in €)",
-          data: eurPort,
-          fill: false,
-          tension: 0.15,
+          label: "Portafoglio (LS80+Oro)",
+          data: seriesPort,
+          borderWidth: 2,
           pointRadius: 0,
-          pointHoverRadius: 3,
-          borderWidth: 1.6
+          tension: 0.1,
         },
         {
-          label: "Solo LS80 (valore in €)",
-          data: eurLS80,
-          fill: false,
-          tension: 0.15,
+          label: "Solo LS80",
+          data: seriesLs80,
+          borderWidth: 2,
           pointRadius: 0,
-          pointHoverRadius: 3,
-          borderWidth: 1.6
-        }
-      ]
+          tension: 0.1,
+        },
+      ],
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: true } },
       scales: {
+        y: {
+          ticks: {
+            callback: (v) => eur(v),
+          },
+        },
         x: {
-          ticks: { maxTicksLimit: 10, autoSkip: true }
-        }
-      }
-    }
+          ticks: {
+            maxTicksLimit: 10,
+          },
+        },
+      },
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${eur(ctx.parsed.y)}`,
+          },
+        },
+      },
+    },
   });
 }
 
-document.getElementById("btn_update").addEventListener("click", loadData);
-document.getElementById("btn_pdf").addEventListener("click", () => window.print());
-window.addEventListener("load", loadData);
+function setup() {
+  const btnUpdate = document.getElementById("btn_update");
+  const btnPdf = document.getElementById("btn_pdf");
+
+  if (btnUpdate) btnUpdate.addEventListener("click", loadData);
+
+  if (btnPdf) {
+    btnPdf.addEventListener("click", async () => {
+      // se hai un endpoint PDF server-side, chiamalo qui.
+      // per ora: stampa la pagina (funziona ovunque).
+      window.print();
+    });
+  }
+
+  // Primo caricamento automatico
+  loadData();
+}
+
+document.addEventListener("DOMContentLoaded", setup);
