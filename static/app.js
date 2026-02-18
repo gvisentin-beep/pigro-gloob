@@ -1,44 +1,24 @@
 let chart = null;
 
-function pct(x) {
-    return (x * 100).toFixed(1) + "%";
-}
-
-function eur(x) {
+function euro(x) {
     return new Intl.NumberFormat("it-IT", {
         style: "currency",
-        currency: "EUR",
-        maximumFractionDigits: 0
+        currency: "EUR"
     }).format(x);
 }
 
 async function loadData() {
-    const w_ls80 = parseFloat(document.getElementById("w_ls80").value) / 100;
-    const w_gold = parseFloat(document.getElementById("w_gold").value) / 100;
-    const initial = parseFloat(document.getElementById("initial").value);
+    const w_ls80 = Number(document.getElementById("w_ls80").value) / 100;
+    const w_gold = Number(document.getElementById("w_gold").value) / 100;
+    const initial = Number(document.getElementById("initial").value) || 10000;
 
     const url = `/api/compute?w_ls80=${w_ls80}&w_gold=${w_gold}&initial=${initial}`;
 
     const res = await fetch(url);
     const data = await res.json();
 
-    if (data.error) {
-        alert(data.error);
-        return;
-    }
-
-    // Serie
-    const dates = data.series.map(d => d.date);
-    const port = data.series.map(d => d.eur_port);
-    const ls80 = data.series.map(d => d.eur_ls80);
-
-    // Stats
-    document.getElementById("cagr").textContent = pct(data.stats.cagr);
-    document.getElementById("mdd").textContent = pct(data.stats.max_drawdown);
-    document.getElementById("cagr_ls").textContent = pct(data.stats.cagr_ls80);
-    document.getElementById("mdd_ls").textContent = pct(data.stats.max_drawdown_ls80);
-    document.getElementById("period").textContent =
-        data.stats.start + " → " + data.stats.end;
+    document.getElementById("period").innerText =
+        data.dates[0] + " → " + data.dates[data.dates.length - 1];
 
     const ctx = document.getElementById("chart").getContext("2d");
 
@@ -49,19 +29,17 @@ async function loadData() {
     chart = new Chart(ctx, {
         type: "line",
         data: {
-            labels: dates,
+            labels: data.dates,
             datasets: [
                 {
                     label: "Portafoglio (LS80+Oro)",
-                    data: port,
-                    borderWidth: 2,
-                    tension: 0.1
+                    data: data.portfolio,
+                    borderWidth: 2
                 },
                 {
                     label: "Solo LS80",
-                    data: ls80,
-                    borderWidth: 2,
-                    tension: 0.1
+                    data: data.ls80,
+                    borderWidth: 2
                 }
             ]
         },
@@ -74,7 +52,9 @@ async function loadData() {
             scales: {
                 y: {
                     ticks: {
-                        callback: value => eur(value)
+                        callback: function(value) {
+                            return euro(value);
+                        }
                     }
                 }
             }
@@ -82,5 +62,5 @@ async function loadData() {
     });
 }
 
-// Caricamento automatico al primo avvio
+// Carica automaticamente all'avvio
 window.onload = loadData;
