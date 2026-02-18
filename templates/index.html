@@ -3,62 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <title>Gloob — Metodo Pigro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Chart.js (FONDAMENTALE) -->
+    <!-- ⭐ CHART.JS (QUESTO MANCAVA!) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         body {
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-            background: #f4f6fb;
+            font-family: Arial, sans-serif;
+            background: #f2f4f7;
             margin: 0;
             padding: 20px;
         }
 
         .card {
-            background: #fff;
+            background: #e9edf2;
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         h1 {
             margin: 0 0 10px 0;
-            color: #1f3b82;
+            color: #1f3b6d;
         }
 
-        .inputs {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        input {
-            padding: 8px;
-            border-radius: 6px;
-            border: 1px solid #ccc;
+        .controls input {
             width: 100px;
+            padding: 6px;
+            margin-right: 10px;
         }
 
         button {
-            padding: 10px 16px;
-            border-radius: 8px;
-            border: none;
-            background: #2f4bb2;
+            background: #2d4ea2;
             color: white;
-            font-weight: 600;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
             cursor: pointer;
         }
 
         canvas {
-            max-height: 420px;
-        }
-
-        .stats {
-            font-weight: 600;
-            line-height: 1.6;
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
         }
     </style>
 </head>
@@ -71,40 +59,33 @@
         <li><b>Pochi strumenti:</b> due mattoni globali</li>
         <li><b>Costi bassi:</b> struttura semplice</li>
         <li><b>Regole chiare:</b> ribilanciamento una volta l’anno</li>
-        <li><b>Struttura > Previsioni</b></li>
+        <li><b>Struttura &gt; Previsioni</b></li>
     </ul>
 </div>
 
-<div class="card inputs">
-    <div>
-        <label>Peso LS80 (%)</label><br>
-        <input id="w_ls80" value="80">
-    </div>
+<div class="card controls">
+    Peso LS80 (%)
+    <input id="w_ls80" value="80">
 
-    <div>
-        <label>Peso Oro (%)</label><br>
-        <input id="w_gold" value="20">
-    </div>
+    Peso Oro (%)
+    <input id="w_gold" value="20">
 
-    <div>
-        <label>Capitale (€)</label><br>
-        <input id="initial" value="10000">
-    </div>
+    Capitale (€)
+    <input id="initial" value="10000">
 
     <button onclick="loadData()">Aggiorna</button>
 </div>
 
-<div class="card stats">
-    Portafoglio (LS80+Oro): CAGR <span id="cagr">—</span> | Max DD <span id="mdd">—</span><br>
-    Solo LS80: CAGR <span id="cagr_ls">—</span> | Max DD <span id="mdd_ls">—</span><br>
-    Periodo: <span id="period">—</span>
+<div class="card">
+    <b>Portafoglio (LS80+Oro):</b> CAGR — | Max DD —<br>
+    <b>Solo LS80:</b> CAGR — | Max DD —<br>
+    <b>Periodo:</b> <span id="period">—</span>
 </div>
 
 <div class="card">
-    <canvas id="chart"></canvas>
+    <canvas id="chart" height="120"></canvas>
 </div>
 
 <script src="/static/app.js"></script>
-
 </body>
 </html>
