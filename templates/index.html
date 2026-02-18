@@ -1,92 +1,110 @@
-<!doctype html>
-<html lang="it-IT">
+<!DOCTYPE html>
+<html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gloob — Metodo Pigro</title>
-  <style>
-    :root { --b:#d9e1ef; --bg:#f6f9ff; --card:#fff; --txt:#0f172a; --mut:#475569; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--txt); }
-    .container { max-width: 980px; margin: 22px auto; padding: 0 16px; }
-    .card { background:var(--card); border:1px solid var(--b); border-radius:14px; padding:18px; margin-bottom:14px; }
-    .title { display:flex; align-items:center; gap:10px; font-size:34px; font-weight:800; }
-    .subtitle { color:var(--mut); margin-top:6px; }
-    .row { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
-    label { display:block; font-size:13px; color:var(--mut); margin-bottom:6px; }
-    input { width:110px; padding:8px 10px; border:1px solid var(--b); border-radius:10px; font-size:14px; }
-    input#capital { width:160px; }
-    button { padding:9px 14px; border:0; border-radius:10px; font-weight:700; cursor:pointer; }
-    .btn { background:#1e3a8a; color:#fff; }
-    .btn2 { background:#0f766e; color:#fff; }
-    .small { font-size:12px; color:var(--mut); }
-    .stats b { font-weight:800; }
-    #chart { height: 420px; }
-    canvas { width:100% !important; height:100% !important; }
-    .right { margin-left:auto; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Gloob — Metodo Pigro</title>
+
+    <!-- Chart.js (FONDAMENTALE) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            background: #f4f6fb;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            color: #1f3b82;
+        }
+
+        .inputs {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        input {
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            width: 100px;
+        }
+
+        button {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            background: #2f4bb2;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        canvas {
+            max-height: 420px;
+        }
+
+        .stats {
+            font-weight: 600;
+            line-height: 1.6;
+        }
+    </style>
 </head>
-
 <body>
-  <div class="container">
 
-    <div class="card">
-      <div class="title">
-        <span style="display:inline-block;width:34px;height:34px;border-radius:8px;border:1px solid var(--b);background:#eef2ff"></span>
-        Gloob
-      </div>
-      <div class="subtitle">Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.</div>
-      <ul class="subtitle" style="margin:10px 0 0 18px;">
-        <li><b>Pochi strumenti:</b> due mattoni globali, niente complicazioni.</li>
-        <li><b>Costi bassi:</b> il costo è un rendimento certo… ma al contrario.</li>
-        <li><b>Regole chiare:</b> ribilanciamento <b>una volta l’anno</b>.</li>
-        <li><b>Struttura &gt; Previsioni.</b></li>
-      </ul>
-      <div class="small" style="margin-top:10px;">Contenuto informativo, non consulenza. Rendimenti passati ≠ garanzia per il futuro.</div>
+<div class="card">
+    <h1>Gloob</h1>
+    <p>Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.</p>
+    <ul>
+        <li><b>Pochi strumenti:</b> due mattoni globali</li>
+        <li><b>Costi bassi:</b> struttura semplice</li>
+        <li><b>Regole chiare:</b> ribilanciamento una volta l’anno</li>
+        <li><b>Struttura > Previsioni</b></li>
+    </ul>
+</div>
+
+<div class="card inputs">
+    <div>
+        <label>Peso LS80 (%)</label><br>
+        <input id="w_ls80" value="80">
     </div>
 
-    <div class="card">
-      <div class="row">
-        <div>
-          <label for="w_ls80">Peso LS80 (%)</label>
-          <input id="w_ls80" type="number" min="0" max="100" step="1" value="80" />
-        </div>
-        <div>
-          <label for="w_gold">Peso Oro (%)</label>
-          <input id="w_gold" type="number" min="0" max="100" step="1" value="20" />
-        </div>
-        <div>
-          <label for="capital">Capitale (€)</label>
-          <input id="capital" type="number" min="0" step="100" value="10000" />
-        </div>
-
-        <button class="btn" id="btn_update">Aggiorna</button>
-        <button class="btn" id="btn_pdf">Crea PDF</button>
-      </div>
+    <div>
+        <label>Peso Oro (%)</label><br>
+        <input id="w_gold" value="20">
     </div>
 
-    <div class="card stats">
-      <div><b>Portafoglio (LS80+Oro):</b> CAGR <span id="cagr">—</span> · Max DD <span id="mdd">—</span></div>
-      <div><b>Solo LS80:</b> CAGR <span id="cagr_ls80">—</span> · Max DD <span id="mdd_ls80">—</span></div>
-      <div><b>Esposizione implicita:</b> <span id="implied">—</span></div>
-      <div><b>Valore finale (capitale base):</b> <span id="endvalues">—</span></div>
+    <div>
+        <label>Capitale (€)</label><br>
+        <input id="initial" value="10000">
     </div>
 
-    <div class="card">
-      <div class="row">
-        <div><b>Periodo simulato:</b> <span id="period">—</span></div>
-        <div class="right small">(ribilanciamento annuale)</div>
-      </div>
-    </div>
+    <button onclick="loadData()">Aggiorna</button>
+</div>
 
-    <div class="card" id="chart">
-      <canvas id="chart_canvas"></canvas>
-    </div>
+<div class="card stats">
+    Portafoglio (LS80+Oro): CAGR <span id="cagr">—</span> | Max DD <span id="mdd">—</span><br>
+    Solo LS80: CAGR <span id="cagr_ls">—</span> | Max DD <span id="mdd_ls">—</span><br>
+    Periodo: <span id="period">—</span>
+</div>
 
-  </div>
+<div class="card">
+    <canvas id="chart"></canvas>
+</div>
 
-  <!-- Chart.js UMD (crea window.Chart) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- App -->
-  <script src="/static/app.js?v=1" defer></script>
+<script src="/static/app.js"></script>
+
 </body>
 </html>
