@@ -9,53 +9,78 @@ function euro(x) {
 }
 
 function pct(x) {
-  if (x === null || x === undefined || Number.isNaN(Number(x))) return "—";
-  return (Number(x) * 100).toFixed(1) + "%";
-}
-
-function setText(id, text) {
-  const el = document.getElementById(id);
-  if (el) el.innerText = text;
+  const n = Number(x);
+  if (!Number.isFinite(n)) return "—";
+  return (n * 100).toFixed(1) + "%";
 }
 
 async function loadData() {
-  const w_ls80 = Number(document.getElementById("w_ls80").value);
-  const w_gold = Number(document.getElementById("w_gold").value);
-  const capital = Number(document.getElementById("initial").value) || 10000;
+  const w_ls80 = Number(document.getElementById("w_ls80")?.value);
+  const w_gold = Number(document.getElementById("w_gold")?.value);
+  const capital = Number(document.getElementById("initial")?.value) || 10000;
 
+  // Anti-cache totale (fondamentale su Render)
   const url =
-    `/api/compute?w_ls80=${encodeURIComponent(w_ls80)}` +
+    `/api/compute` +
+    `?w_ls80=${encodeURIComponent(w_ls80)}` +
     `&w_gold=${encodeURIComponent(w_gold)}` +
     `&capital=${encodeURIComponent(capital)}` +
     `&t=${Date.now()}`;
 
-  const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    data = await res.json();
+  } catch (err) {
+    console.error(err);
+    alert("Errore di rete nel caricamento dati.");
+    return;
+  }
 
-  if (data.error) {
+  if (data?.error) {
     console.error(data.error);
     alert(data.error);
     return;
   }
 
-  // Periodo
+  // Aggiorna periodo (se esiste lo span/id)
   if (Array.isArray(data.dates) && data.dates.length > 1) {
-    setText("period", `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`);
+    const periodEl = document.getElementById("period");
+    if (periodEl) {
+      periodEl.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
+    }
   }
 
-  // Metriche
-  if (data.metrics) {
-    setText("cagr_portfolio", pct(data.metrics.cagr_portfolio));
-    setText("max_dd_portfolio", pct(data.metrics.max_dd_portfolio));
-    setText("cagr_solo", pct(data.metrics.cagr_solo));
-    setText("max_dd_solo", pct(data.metrics.max_dd_solo));
+  // ✅ Aggiorna testo CAGR e Max DD in modo ROBUSTO (senza dipendere da <span>)
+  if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
+    const m = data.metrics;
+
+    const riga1 =
+      `Portafoglio (LS80+Oro): CAGR ${pct(m.cagr_portfolio)} | Max DD ${pct(m.max_dd_portfolio)}`;
+    const riga2 =
+      `Solo LS80: CAGR ${pct(m.cagr_solo)} | Max DD ${pct(m.max_dd_solo)}`;
+    const riga3 =
+      `Periodo: ${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
+
+    // trova la card che contiene il testo "Portafoglio (LS80+Oro)"
+    const card = Array.from(document.querySelectorAll(".card")).find((el) =>
+      el.innerText.includes("Portafoglio (LS80+Oro)")
+    );
+
+    if (card) {
+      card.innerHTML = `<b>${riga1}</b><br>${riga2}<br>${riga3}`;
+    }
   }
 
   // Grafico
   const canvas = document.getElementById("chart");
-  if (!canvas) return;
-
+  if (!canvas) {
+    console.warn("Canvas #chart non trovato.");
+    return;
+  }
   const ctx = canvas.getContext("2d");
+
+  // Distrugge il grafico precedente (fondamentale)
   if (chart) chart.destroy();
 
   chart = new Chart(ctx, {
@@ -67,30 +92,33 @@ async function loadData() {
           label: "Portafoglio (LS80+Oro)",
           data: data.portfolio,
           borderWidth: 2,
-          pointRadius: 0,
           tension: 0.15,
+          pointRadius: 0,
         },
         {
           label: "Solo LS80",
-          data: data.solo_ls80,
+          data: data.solo_ls80, // backend: "solo_ls80"
           borderWidth: 2,
-          pointRadius: 0,
           tension: 0.15,
+          pointRadius: 0,
         },
       ],
     },
     options: {
       responsive: true,
       interaction: { mode: "index", intersect: false },
-      scales: {
-        y: {
-          ticks: { callback: (value) => euro(value) },
-        },
-      },
       plugins: {
         tooltip: {
           callbacks: {
-            label: (c) => `${c.dataset.label}: ${euro(c.parsed.y)}`,
+            label: (context) =>
+              `${context.dataset.label}: ${euro(context.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback: (value) => euro(value),
           },
         },
       },
@@ -98,8 +126,12 @@ async function loadData() {
   });
 }
 
-function wireUI() {
-  // Bottone Aggiorna (prende il primo button che trova)
+// Collegamento SOLIDO al bottone Aggiorna (+ Enter sui campi)
+function init() {
+  // primo caricamento
+  loadData();
+
+  // Bottone Aggiorna
   const btn = document.querySelector("button");
   if (btn) {
     btn.addEventListener("click", (e) => {
@@ -107,9 +139,18 @@ function wireUI() {
       loadData();
     });
   }
+
+  // Enter nei campi
+  ["w_ls80", "w_gold", "initial"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        loadData();
+      }
+    });
+  });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  wireUI();
-  loadData();
-});
+window.addEventListener("DOMContentLoaded", init);
