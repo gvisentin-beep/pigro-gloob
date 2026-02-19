@@ -25,12 +25,10 @@ function snapToStep(v, step) {
 function fmtYearsIt(n) {
   const x = Number(n);
   if (!Number.isFinite(x) || x <= 0) return "—";
-  // 1 decimale, con virgola italiana
   return x.toFixed(1).replace(".", ",");
 }
 
-// Calcola composizione a 3 componenti partendo da Oro (0..20 step 5)
-// Ritorna: gold, ls80, equity, bonds (tutti in %)
+// Calcola composizione (Oro max 20%, resto LS80 80/20)
 function computeCompositionFromGoldInput() {
   let gold = Number(document.getElementById("w_gold")?.value);
   if (!Number.isFinite(gold)) gold = 10;
@@ -38,7 +36,6 @@ function computeCompositionFromGoldInput() {
   gold = clamp(gold, 0, 20);
   gold = snapToStep(gold, 5);
 
-  // riscrivo il valore (lo slider “scatta” bene)
   const goldEl = document.getElementById("w_gold");
   if (goldEl) goldEl.value = gold;
 
@@ -49,13 +46,11 @@ function computeCompositionFromGoldInput() {
   return { gold, ls80, equity, bonds };
 }
 
-// Nasconde la riga "Composizione risultante ..." sotto i controlli (se presente)
-// Mantiene SOLO il badge dello slider Oro
+// Badge oro + nasconde composizione duplicata sotto lo slider
 function updateGoldBadgeAndHideInlineComposition(comp) {
   const badge = document.getElementById("gold_badge");
   if (badge) badge.innerText = `${comp.gold.toFixed(0)}%`;
 
-  // Se nel tuo HTML c'è la riga con questi span, nascondila (evita duplicazione)
   const ge = document.getElementById("w_equity");
   if (ge) {
     let container = ge.closest("div");
@@ -69,11 +64,9 @@ function findMetricsCard() {
   );
 }
 
-// Ritorna:
-// - yearStart: Set indici del primo giorno disponibile dell'anno
-// - yearMarkers: Set indici per le linee verticali "importanti" (2/anno): inizio + metà
+// Marker anni: inizio anno + metà anno (2 linee verticali)
 function computeYearMarkers(dateStrings) {
-  const byYear = {}; // year -> array indici
+  const byYear = {};
 
   for (let i = 0; i < dateStrings.length; i++) {
     const y = String(dateStrings[i]).slice(0, 4);
@@ -87,27 +80,24 @@ function computeYearMarkers(dateStrings) {
   Object.values(byYear).forEach((arr) => {
     if (arr.length === 0) return;
 
-    yearStart.add(arr[0]);
+    yearStart.add(arr[0]); // primo giorno disponibile dell’anno
     yearMarkers.add(arr[0]);
 
     const mid = arr[Math.floor(arr.length / 2)];
-    yearMarkers.add(mid);
+    yearMarkers.add(mid); // metà anno
   });
 
   return { yearStart, yearMarkers };
 }
 
 async function loadData() {
-  // 1) composizione vincolata (oro max 20, step 5)
   const comp = computeCompositionFromGoldInput();
   updateGoldBadgeAndHideInlineComposition(comp);
 
-  // 2) parametri per API (strumenti reali: LS80 + Oro)
-  const w_ls80 = comp.ls80; // %
-  const w_gold = comp.gold; // %
+  const w_ls80 = comp.ls80;
+  const w_gold = comp.gold;
   const capital = Number(document.getElementById("initial")?.value) || 10000;
 
-  // 3) chiamata API con anti-cache
   const url =
     `/api/compute` +
     `?w_ls80=${encodeURIComponent(w_ls80)}` +
@@ -131,26 +121,25 @@ async function loadData() {
     return;
   }
 
-  // 4) periodo (resta QUI, sotto, non nel blocco metriche)
+  // Periodo (resta sotto, non nel blocco metriche)
   if (Array.isArray(data.dates) && data.dates.length > 1) {
     const p = document.getElementById("period");
     if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
   }
 
-  // 5) metriche + composizione + raddoppio (UNA SOLA VOLTA, qui)
+  // ===== METRICHE CON TESTO COMPRENSIBILE =====
   if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
     const m = data.metrics;
 
     const riga1 =
-      `Portafoglio (LS80+Oro): CAGR ${pct(m.cagr_portfolio)} | Max DD ${pct(m.max_dd_portfolio)}`;
+      `Portafoglio (LS80+Oro): Rendimento annualizzato ${pct(m.cagr_portfolio)} | Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
 
     const riga2 =
-      `Solo LS80: CAGR ${pct(m.cagr_solo)} | Max DD ${pct(m.max_dd_solo)}`;
+      `Solo LS80: Rendimento annualizzato ${pct(m.cagr_solo)} | Max Ribasso nel periodo ${pct(m.max_dd_solo)}`;
 
     const riga3 =
       `Composizione: Azionario ${comp.equity.toFixed(0)}% | Obbligazionario ${comp.bonds.toFixed(0)}% | Oro ${comp.gold.toFixed(0)}%`;
 
-    // Raddoppio: uso years_to_double se disponibile, altrimenti lo calcolo dal CAGR
     let ytd = m.years_to_double;
     if (!(Number.isFinite(Number(ytd)) && Number(ytd) > 0)) {
       const cagr = Number(m.cagr_portfolio);
@@ -160,6 +149,7 @@ async function loadData() {
         ytd = null;
       }
     }
+
     const riga4 = `Raddoppio del portafoglio in anni: ${fmtYearsIt(ytd)}`;
 
     const card = findMetricsCard();
@@ -168,7 +158,7 @@ async function loadData() {
     }
   }
 
-  // 6) grafico
+  // ===== GRAFICO =====
   const canvas = document.getElementById("chart");
   if (!canvas) return;
 
@@ -214,7 +204,7 @@ async function loadData() {
           ticks: {
             callback: function (value, index) {
               if (!yearStart.has(index)) return "";
-              return String(labels[index]).slice(0, 4); // YYYY
+              return String(labels[index]).slice(0, 4);
             },
             autoSkip: false,
             maxRotation: 0,
@@ -222,7 +212,9 @@ async function loadData() {
           },
           grid: {
             color: function (context) {
-              if (yearMarkers.has(context.index)) return "rgba(0,0,0,0.16)";
+              if (yearMarkers.has(context.index)) {
+                return "rgba(0,0,0,0.18)";
+              }
               return "rgba(0,0,0,0.03)";
             },
             lineWidth: function (context) {
@@ -232,7 +224,9 @@ async function loadData() {
           },
         },
         y: {
-          ticks: { callback: (v) => euro(v) },
+          ticks: {
+            callback: (v) => euro(v),
+          },
         },
       },
     },
@@ -242,7 +236,6 @@ async function loadData() {
 function init() {
   loadData();
 
-  // Bottone Aggiorna
   const btn = document.querySelector("button");
   if (btn) {
     btn.addEventListener("click", (e) => {
@@ -251,7 +244,6 @@ function init() {
     });
   }
 
-  // Enter nel capitale
   const capEl = document.getElementById("initial");
   if (capEl) {
     capEl.addEventListener("keydown", (e) => {
@@ -262,9 +254,6 @@ function init() {
     });
   }
 
-  // Slider Oro:
-  // - input: aggiorna badge (e nasconde composizione duplicata)
-  // - change: ricalcola grafico
   const goldEl = document.getElementById("w_gold");
   if (goldEl) {
     goldEl.addEventListener("input", () => {
