@@ -28,13 +28,15 @@ function computeCompositionFromGoldInput() {
   let gold = Number(document.getElementById("w_gold")?.value);
   if (!Number.isFinite(gold)) gold = 10;
 
+  // vincoli e step
   gold = clamp(gold, 0, 20);
   gold = snapToStep(gold, 5);
 
-  // riscrivo il valore (così lo slider “scatta” bene)
+  // riscrivo il valore (lo slider “scatta” bene)
   const goldEl = document.getElementById("w_gold");
   if (goldEl) goldEl.value = gold;
 
+  // badge
   const badge = document.getElementById("gold_badge");
   if (badge) badge.innerText = `${gold.toFixed(0)}%`;
 
@@ -67,19 +69,34 @@ function findMetricsCard() {
   );
 }
 
-// Crea una mappa: per ogni indice label, true se è la prima data del suo anno
-function computeYearFirstIndexMap(dateStrings) {
-  const firstIndexByYear = {};
+// Ritorna:
+// - yearStart: Set degli indici corrispondenti al primo giorno disponibile dell'anno
+// - yearMarkers: Set degli indici per le linee verticali "importanti" (2/anno): inizio + metà
+function computeYearMarkers(dateStrings) {
+  const byYear = {}; // year -> array indici
+
   for (let i = 0; i < dateStrings.length; i++) {
-    const ds = dateStrings[i];
-    const year = String(ds).slice(0, 4); // "YYYY"
-    if (!(year in firstIndexByYear)) firstIndexByYear[year] = i;
+    const y = String(dateStrings[i]).slice(0, 4);
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(i);
   }
-  const isFirstOfYear = new Array(dateStrings.length).fill(false);
-  Object.values(firstIndexByYear).forEach((idx) => {
-    isFirstOfYear[idx] = true;
+
+  const yearStart = new Set();
+  const yearMarkers = new Set();
+
+  Object.values(byYear).forEach((arr) => {
+    if (arr.length === 0) return;
+
+    // inizio anno (primo giorno presente nel dataset)
+    yearStart.add(arr[0]);
+    yearMarkers.add(arr[0]);
+
+    // metà anno (indice centrale)
+    const mid = arr[Math.floor(arr.length / 2)];
+    yearMarkers.add(mid);
   });
-  return isFirstOfYear;
+
+  return { yearStart, yearMarkers };
 }
 
 async function loadData() {
@@ -88,8 +105,8 @@ async function loadData() {
   showCompositionInline(comp);
 
   // 2) parametri per API (strumenti reali: LS80 + Oro)
-  const w_ls80 = comp.ls80; // in %
-  const w_gold = comp.gold; // in %
+  const w_ls80 = comp.ls80; // %
+  const w_gold = comp.gold; // %
   const capital = Number(document.getElementById("initial")?.value) || 10000;
 
   // 3) chiamata API con anti-cache
@@ -122,7 +139,7 @@ async function loadData() {
     if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
   }
 
-  // 5) metriche + composizione nel testo (didattica)
+  // 5) metriche + composizione nel testo
   if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
     const m = data.metrics;
 
@@ -144,7 +161,7 @@ async function loadData() {
     }
   }
 
-  // 6) grafico con asse X: 1 etichetta/anno (prima data disponibile dell’anno)
+  // 6) grafico
   const canvas = document.getElementById("chart");
   if (!canvas) return;
 
@@ -152,7 +169,7 @@ async function loadData() {
   if (chart) chart.destroy();
 
   const labels = data.dates;
-  const isFirstOfYear = computeYearFirstIndexMap(labels);
+  const { yearStart, yearMarkers } = computeYearMarkers(labels);
 
   chart = new Chart(ctx, {
     type: "line",
@@ -188,15 +205,31 @@ async function loadData() {
       scales: {
         x: {
           ticks: {
-            // Mostra solo l'anno, ma solo sul primo punto di ogni anno
+            // Etichetta solo sul primo giorno disponibile dell'anno
             callback: function (value, index) {
-              if (!isFirstOfYear[index]) return "";
+              if (!yearStart.has(index)) return "";
               const ds = labels[index];
-              return String(ds).slice(0, 4); // "YYYY"
+              return String(ds).slice(0, 4); // YYYY
             },
             autoSkip: false,
             maxRotation: 0,
             minRotation: 0,
+          },
+          grid: {
+            // Solo 2 linee verticali "visibili" per anno: inizio + metà.
+            // Le altre restano quasi invisibili per non disturbare.
+            color: function (context) {
+              if (yearMarkers.has(context.index)) {
+                return "rgba(0,0,0,0.16)";
+              }
+              return "rgba(0,0,0,0.03)";
+            },
+            lineWidth: function (context) {
+              if (yearMarkers.has(context.index)) {
+                return 1.2;
+              }
+              return 0.2;
+            },
           },
         },
         y: {
@@ -231,7 +264,9 @@ function init() {
     });
   }
 
-  // Slider: aggiorno composizione live mentre lo muovi
+  // Slider Oro:
+  // - input: aggiorna composizione in tempo reale
+  // - change: aggiorna anche grafico (quando rilasci)
   const goldEl = document.getElementById("w_gold");
   if (goldEl) {
     goldEl.addEventListener("input", () => {
@@ -239,7 +274,6 @@ function init() {
       showCompositionInline(comp);
     });
 
-    // e al change (quando rilasci) aggiorno anche il grafico
     goldEl.addEventListener("change", () => {
       loadData();
     });
