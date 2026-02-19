@@ -31,9 +31,12 @@ function computeCompositionFromGoldInput() {
   gold = clamp(gold, 0, 20);
   gold = snapToStep(gold, 5);
 
-  // riscrivo il valore (così l’utente vede lo snap)
+  // riscrivo il valore (così lo slider “scatta” bene)
   const goldEl = document.getElementById("w_gold");
   if (goldEl) goldEl.value = gold;
+
+  const badge = document.getElementById("gold_badge");
+  if (badge) badge.innerText = `${gold.toFixed(0)}%`;
 
   const ls80 = 100 - gold;
   const equity = ls80 * 0.80;
@@ -53,12 +56,30 @@ function showCompositionInline(comp) {
 
   const gg = document.getElementById("w_gold_show");
   if (gg) gg.innerText = fmt(comp.gold);
+
+  const badge = document.getElementById("gold_badge");
+  if (badge) badge.innerText = fmt(comp.gold);
 }
 
 function findMetricsCard() {
   return Array.from(document.querySelectorAll(".card")).find((el) =>
     el.innerText.includes("Portafoglio (LS80+Oro)")
   );
+}
+
+// Crea una mappa: per ogni indice label, true se è la prima data del suo anno
+function computeYearFirstIndexMap(dateStrings) {
+  const firstIndexByYear = {};
+  for (let i = 0; i < dateStrings.length; i++) {
+    const ds = dateStrings[i];
+    const year = String(ds).slice(0, 4); // "YYYY"
+    if (!(year in firstIndexByYear)) firstIndexByYear[year] = i;
+  }
+  const isFirstOfYear = new Array(dateStrings.length).fill(false);
+  Object.values(firstIndexByYear).forEach((idx) => {
+    isFirstOfYear[idx] = true;
+  });
+  return isFirstOfYear;
 }
 
 async function loadData() {
@@ -95,7 +116,7 @@ async function loadData() {
     return;
   }
 
-  // 4) periodo (se esiste span/id)
+  // 4) periodo
   if (Array.isArray(data.dates) && data.dates.length > 1) {
     const p = document.getElementById("period");
     if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
@@ -123,17 +144,20 @@ async function loadData() {
     }
   }
 
-  // 6) grafico
+  // 6) grafico con asse X: 1 etichetta/anno (prima data disponibile dell’anno)
   const canvas = document.getElementById("chart");
   if (!canvas) return;
 
   const ctx = canvas.getContext("2d");
   if (chart) chart.destroy();
 
+  const labels = data.dates;
+  const isFirstOfYear = computeYearFirstIndexMap(labels);
+
   chart = new Chart(ctx, {
     type: "line",
     data: {
-      labels: data.dates,
+      labels,
       datasets: [
         {
           label: "Portafoglio (LS80+Oro)",
@@ -162,6 +186,19 @@ async function loadData() {
         },
       },
       scales: {
+        x: {
+          ticks: {
+            // Mostra solo l'anno, ma solo sul primo punto di ogni anno
+            callback: function (value, index) {
+              if (!isFirstOfYear[index]) return "";
+              const ds = labels[index];
+              return String(ds).slice(0, 4); // "YYYY"
+            },
+            autoSkip: false,
+            maxRotation: 0,
+            minRotation: 0,
+          },
+        },
         y: {
           ticks: { callback: (v) => euro(v) },
         },
@@ -183,24 +220,28 @@ function init() {
     });
   }
 
-  // Enter nei campi
-  ["w_gold", "initial"].forEach((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener("keydown", (e) => {
+  // Enter nel capitale
+  const capEl = document.getElementById("initial");
+  if (capEl) {
+    capEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         loadData();
       }
     });
-  });
+  }
 
-  // Se l’utente cambia Oro e sposta il focus, aggiorno composizione visiva subito
+  // Slider: aggiorno composizione live mentre lo muovi
   const goldEl = document.getElementById("w_gold");
   if (goldEl) {
-    goldEl.addEventListener("change", () => {
+    goldEl.addEventListener("input", () => {
       const comp = computeCompositionFromGoldInput();
       showCompositionInline(comp);
+    });
+
+    // e al change (quando rilasci) aggiorno anche il grafico
+    goldEl.addEventListener("change", () => {
+      loadData();
     });
   }
 }
