@@ -51,7 +51,7 @@ async function loadData() {
     }
   }
 
-  // ✅ Aggiorna testo CAGR e Max DD in modo ROBUSTO (senza dipendere da <span>)
+  // ✅ Aggiorna testo CAGR e Max DD in modo ROBUSTO
   if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
     const m = data.metrics;
 
@@ -62,7 +62,7 @@ async function loadData() {
     const riga3 =
       `Periodo: ${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
 
-    // trova la card che contiene il testo "Portafoglio (LS80+Oro)"
+    // trova la card che contiene "Portafoglio (LS80+Oro)"
     const card = Array.from(document.querySelectorAll(".card")).find((el) =>
       el.innerText.includes("Portafoglio (LS80+Oro)")
     );
@@ -80,7 +80,6 @@ async function loadData() {
   }
   const ctx = canvas.getContext("2d");
 
-  // Distrugge il grafico precedente (fondamentale)
   if (chart) chart.destroy();
 
   chart = new Chart(ctx, {
@@ -97,7 +96,7 @@ async function loadData() {
         },
         {
           label: "Solo LS80",
-          data: data.solo_ls80, // backend: "solo_ls80"
+          data: data.solo_ls80,
           borderWidth: 2,
           tension: 0.15,
           pointRadius: 0,
@@ -126,9 +125,7 @@ async function loadData() {
   });
 }
 
-// Collegamento SOLIDO al bottone Aggiorna (+ Enter sui campi)
 function init() {
-  // primo caricamento
   loadData();
 
   // Bottone Aggiorna
