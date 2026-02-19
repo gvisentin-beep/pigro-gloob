@@ -1,91 +1,132 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-    <meta charset="UTF-8">
-    <title>Gloob — Metodo Pigro</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+let chart = null;
 
-    <!-- ⭐ CHART.JS (QUESTO MANCAVA!) -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+function euro(x) {
+  return new Intl.NumberFormat("it-IT", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(Number(x));
+}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f2f4f7;
-            margin: 0;
-            padding: 20px;
+function pct(x) {
+  if (x === null || x === undefined || isNaN(x)) return "—";
+  return (x * 100).toFixed(1) + "%";
+}
+
+async function loadData() {
+  const w_ls80 = Number(document.getElementById("w_ls80").value);
+  const w_gold = Number(document.getElementById("w_gold").value);
+  const capital = Number(document.getElementById("initial").value) || 10000;
+
+  // Anti-cache totale (fondamentale su Render)
+  const url = `/api/compute?w_ls80=${encodeURIComponent(w_ls80)}&w_gold=${encodeURIComponent(w_gold)}&capital=${encodeURIComponent(capital)}&t=${Date.now()}`;
+
+  const res = await fetch(url, { cache: "no-store" });
+  const data = await res.json();
+
+  if (data.error) {
+    console.error(data.error);
+    alert(data.error);
+    return;
+  }
+
+  // Aggiorna periodo
+  if (data.dates && data.dates.length > 1) {
+    document.getElementById("period").innerText =
+      data.dates[0] + " → " + data.dates[data.dates.length - 1];
+  }
+
+  // 🔴 AGGIORNAMENTO TESTO CAGR E MAX DD (compatibile col tuo HTML attuale)
+  if (data.metrics) {
+    const m = data.metrics;
+
+    const riga1 =
+      `Portafoglio (LS80+Oro): CAGR ${pct(m.cagr_portfolio)} | Max DD ${pct(m.max_dd_portfolio)}`;
+    const riga2 =
+      `Solo LS80: CAGR ${pct(m.cagr_solo)} | Max DD ${pct(m.max_dd_solo)}`;
+
+    // Trova automaticamente il blocco testo e lo aggiorna
+    const blocks = document.querySelectorAll("div.card");
+    blocks.forEach((block) => {
+      if (block.innerText.includes("Portafoglio (LS80+Oro)")) {
+        const lines = block.querySelectorAll("div, p, span, b");
+        if (lines.length >= 2) {
+          lines[0].innerText = riga1;
+          lines[1].innerText = riga2;
+        } else {
+          block.innerHTML = `<b>${riga1}</b><br>${riga2}<br>Periodo: ${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
         }
+      }
+    });
+  }
 
-        .card {
-            background: #e9edf2;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
+  const ctx = document.getElementById("chart").getContext("2d");
 
-        h1 {
-            margin: 0 0 10px 0;
-            color: #1f3b6d;
-        }
+  // Distrugge il grafico precedente (fondamentale)
+  if (chart) {
+    chart.destroy();
+  }
 
-        .controls input {
-            width: 100px;
-            padding: 6px;
-            margin-right: 10px;
-        }
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: data.dates,
+      datasets: [
+        {
+          label: "Portafoglio (LS80+Oro)",
+          data: data.portfolio,
+          borderWidth: 2,
+          tension: 0.15,
+          pointRadius: 0,
+        },
+        {
+          label: "Solo LS80",
+          data: data.solo_ls80,
+          borderWidth: 2,
+          tension: 0.15,
+          pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return context.dataset.label + ": " + euro(context.parsed.y);
+            },
+          },
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback: function (value) {
+              return euro(value);
+            },
+          },
+        },
+      },
+    },
+  });
+}
 
-        button {
-            background: #2d4ea2;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-        }
+// 🔵 Collegamento SOLIDO al bottone Aggiorna
+function init() {
+  loadData();
 
-        canvas {
-            background: white;
-            border-radius: 10px;
-            padding: 10px;
-        }
-    </style>
-</head>
-<body>
+  const btn = document.querySelector("button");
+  if (btn) {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      loadData();
+    });
+  }
+}
 
-<div class="card">
-    <h1>Gloob</h1>
-    <p>Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.</p>
-    <ul>
-        <li><b>Pochi strumenti:</b> due mattoni globali</li>
-        <li><b>Costi bassi:</b> struttura semplice</li>
-        <li><b>Regole chiare:</b> ribilanciamento una volta l’anno</li>
-        <li><b>Struttura &gt; Previsioni</b></li>
-    </ul>
-</div>
-
-<div class="card controls">
-    Peso LS80 (%)
-    <input id="w_ls80" value="80">
-
-    Peso Oro (%)
-    <input id="w_gold" value="20">
-
-    Capitale (€)
-    <input id="initial" value="10000">
-
-    <button onclick="loadData()">Aggiorna</button>
-</div>
-
-<div class="card">
-    <b>Portafoglio (LS80+Oro):</b> CAGR — | Max DD —<br>
-    <b>Solo LS80:</b> CAGR — | Max DD —<br>
-    <b>Periodo:</b> <span id="period">—</span>
-</div>
-
-<div class="card">
-    <canvas id="chart" height="120"></canvas>
-</div>
-
-<script src="/static/app.js"></script>
-</body>
-</html>
+window.addEventListener("DOMContentLoaded", init);
