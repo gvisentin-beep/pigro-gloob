@@ -22,6 +22,13 @@ function snapToStep(v, step) {
   return Math.round(v / step) * step;
 }
 
+function fmtYearsIt(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x <= 0) return "—";
+  // 1 decimale, con virgola italiana
+  return x.toFixed(1).replace(".", ",");
+}
+
 // Calcola composizione a 3 componenti partendo da Oro (0..20 step 5)
 // Ritorna: gold, ls80, equity, bonds (tutti in %)
 function computeCompositionFromGoldInput() {
@@ -51,8 +58,6 @@ function updateGoldBadgeAndHideInlineComposition(comp) {
   // Se nel tuo HTML c'è la riga con questi span, nascondila (evita duplicazione)
   const ge = document.getElementById("w_equity");
   if (ge) {
-    // cerca un contenitore ragionevole da nascondere
-    // (di solito è il div che contiene "Composizione risultante:")
     let container = ge.closest("div");
     if (container) container.style.display = "none";
   }
@@ -82,11 +87,9 @@ function computeYearMarkers(dateStrings) {
   Object.values(byYear).forEach((arr) => {
     if (arr.length === 0) return;
 
-    // inizio anno (primo giorno presente nel dataset)
     yearStart.add(arr[0]);
     yearMarkers.add(arr[0]);
 
-    // metà anno (indice centrale)
     const mid = arr[Math.floor(arr.length / 2)];
     yearMarkers.add(mid);
   });
@@ -128,13 +131,13 @@ async function loadData() {
     return;
   }
 
-  // 4) periodo
+  // 4) periodo (resta QUI, sotto, non nel blocco metriche)
   if (Array.isArray(data.dates) && data.dates.length > 1) {
     const p = document.getElementById("period");
     if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
   }
 
-  // 5) metriche + composizione (UNA SOLA VOLTA, qui)
+  // 5) metriche + composizione + raddoppio (UNA SOLA VOLTA, qui)
   if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
     const m = data.metrics;
 
@@ -147,8 +150,17 @@ async function loadData() {
     const riga3 =
       `Composizione: Azionario ${comp.equity.toFixed(0)}% | Obbligazionario ${comp.bonds.toFixed(0)}% | Oro ${comp.gold.toFixed(0)}%`;
 
-    const riga4 =
-      `Periodo: ${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
+    // Raddoppio: uso years_to_double se disponibile, altrimenti lo calcolo dal CAGR
+    let ytd = m.years_to_double;
+    if (!(Number.isFinite(Number(ytd)) && Number(ytd) > 0)) {
+      const cagr = Number(m.cagr_portfolio);
+      if (Number.isFinite(cagr) && cagr > 0) {
+        ytd = Math.log(2) / Math.log(1 + cagr);
+      } else {
+        ytd = null;
+      }
+    }
+    const riga4 = `Raddoppio del portafoglio in anni: ${fmtYearsIt(ytd)}`;
 
     const card = findMetricsCard();
     if (card) {
@@ -200,29 +212,21 @@ async function loadData() {
       scales: {
         x: {
           ticks: {
-            // Etichetta solo sul primo giorno disponibile dell'anno
             callback: function (value, index) {
               if (!yearStart.has(index)) return "";
-              const ds = labels[index];
-              return String(ds).slice(0, 4); // YYYY
+              return String(labels[index]).slice(0, 4); // YYYY
             },
             autoSkip: false,
             maxRotation: 0,
             minRotation: 0,
           },
           grid: {
-            // Solo 2 linee verticali "visibili" per anno: inizio + metà.
-            // Le altre quasi invisibili per pulizia grafica.
             color: function (context) {
-              if (yearMarkers.has(context.index)) {
-                return "rgba(0,0,0,0.16)";
-              }
+              if (yearMarkers.has(context.index)) return "rgba(0,0,0,0.16)";
               return "rgba(0,0,0,0.03)";
             },
             lineWidth: function (context) {
-              if (yearMarkers.has(context.index)) {
-                return 1.2;
-              }
+              if (yearMarkers.has(context.index)) return 1.2;
               return 0.2;
             },
           },
@@ -236,7 +240,6 @@ async function loadData() {
 }
 
 function init() {
-  // primo caricamento
   loadData();
 
   // Bottone Aggiorna
