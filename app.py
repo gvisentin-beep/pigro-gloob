@@ -8,10 +8,8 @@ from typing import Dict, List, Tuple, Optional
 
 from flask import Flask, jsonify, render_template, request, make_response
 
-# IMPORTANTISSIMO: fissiamo esplicitamente le cartelle
-# così Render/Flask non si "confondono" e / torna sempre HTML.
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # evita cache dei file statici (app.js)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # no cache per static
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -171,7 +169,6 @@ def _backtest_two_assets(
         total = ls_shares * ls_price + gold_shares * g_price
         solo_total = solo_shares * ls_price
 
-        # ribilanciamento annuale
         if d.year != last_year:
             ls_shares = (total * w_ls) / ls_price
             gold_shares = (total * w_gold) / g_price
@@ -184,10 +181,19 @@ def _backtest_two_assets(
     return port_vals, solo_vals
 
 
-# ✅ HOME: deve tornare HTML sempre
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
+
+
 @app.get("/")
 def index():
-    return render_template("index.html")
+    # anti-cache anche per la home (evita “incastri”)
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.get("/api/compute")
@@ -206,7 +212,6 @@ def api_compute():
         if w_ls80 < 0 or w_gold < 0:
             return jsonify({"error": "I pesi devono essere >= 0"}), 400
 
-        # percentuali -> quote
         s = w_ls80 + w_gold
         if s <= 0:
             return jsonify({"error": "Somma pesi deve essere > 0"}), 400
@@ -254,5 +259,4 @@ def api_compute():
 
 
 if __name__ == "__main__":
-    # su Render non serve, ma in locale sì
     app.run(host="127.0.0.1", port=5000, debug=True)
