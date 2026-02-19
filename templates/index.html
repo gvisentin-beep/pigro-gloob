@@ -25,16 +25,20 @@
   </div>
 
   <div class="card controls">
-    <label>Peso LS80 (%)</label>
-    <input id="w_ls80" type="number" value="60" />
-
-    <label>Peso Oro (%)</label>
-    <input id="w_gold" type="number" value="40" />
+    <label>Oro (%) (0–20, step 5)</label>
+    <input id="w_gold" type="number" value="10" min="0" max="20" step="5" />
 
     <label>Capitale (€)</label>
     <input id="initial" type="number" value="10000" />
 
     <button>Aggiorna</button>
+
+    <div style="margin-top:10px; font-size: 0.95em;">
+      <b>Composizione risultante:</b>
+      Azionario <span id="w_equity">—</span> |
+      Obbligazionario <span id="w_bonds">—</span> |
+      Oro <span id="w_gold_show">—</span>
+    </div>
   </div>
 
   <div class="card">
@@ -47,7 +51,7 @@
     <canvas id="chart" height="120"></canvas>
   </div>
 
-  <!-- Il tuo vero JavaScript -->
+  <!-- JS -->
   <script src="/static/app.js"></script>
 </body>
 </html>
