@@ -28,17 +28,12 @@ function computeCompositionFromGoldInput() {
   let gold = Number(document.getElementById("w_gold")?.value);
   if (!Number.isFinite(gold)) gold = 10;
 
-  // vincoli e step
   gold = clamp(gold, 0, 20);
   gold = snapToStep(gold, 5);
 
   // riscrivo il valore (lo slider “scatta” bene)
   const goldEl = document.getElementById("w_gold");
   if (goldEl) goldEl.value = gold;
-
-  // badge
-  const badge = document.getElementById("gold_badge");
-  if (badge) badge.innerText = `${gold.toFixed(0)}%`;
 
   const ls80 = 100 - gold;
   const equity = ls80 * 0.80;
@@ -47,20 +42,20 @@ function computeCompositionFromGoldInput() {
   return { gold, ls80, equity, bonds };
 }
 
-function showCompositionInline(comp) {
-  const fmt = (x) => `${x.toFixed(0)}%`;
-
-  const ge = document.getElementById("w_equity");
-  if (ge) ge.innerText = fmt(comp.equity);
-
-  const gb = document.getElementById("w_bonds");
-  if (gb) gb.innerText = fmt(comp.bonds);
-
-  const gg = document.getElementById("w_gold_show");
-  if (gg) gg.innerText = fmt(comp.gold);
-
+// Nasconde la riga "Composizione risultante ..." sotto i controlli (se presente)
+// Mantiene SOLO il badge dello slider Oro
+function updateGoldBadgeAndHideInlineComposition(comp) {
   const badge = document.getElementById("gold_badge");
-  if (badge) badge.innerText = fmt(comp.gold);
+  if (badge) badge.innerText = `${comp.gold.toFixed(0)}%`;
+
+  // Se nel tuo HTML c'è la riga con questi span, nascondila (evita duplicazione)
+  const ge = document.getElementById("w_equity");
+  if (ge) {
+    // cerca un contenitore ragionevole da nascondere
+    // (di solito è il div che contiene "Composizione risultante:")
+    let container = ge.closest("div");
+    if (container) container.style.display = "none";
+  }
 }
 
 function findMetricsCard() {
@@ -70,8 +65,8 @@ function findMetricsCard() {
 }
 
 // Ritorna:
-// - yearStart: Set degli indici corrispondenti al primo giorno disponibile dell'anno
-// - yearMarkers: Set degli indici per le linee verticali "importanti" (2/anno): inizio + metà
+// - yearStart: Set indici del primo giorno disponibile dell'anno
+// - yearMarkers: Set indici per le linee verticali "importanti" (2/anno): inizio + metà
 function computeYearMarkers(dateStrings) {
   const byYear = {}; // year -> array indici
 
@@ -102,7 +97,7 @@ function computeYearMarkers(dateStrings) {
 async function loadData() {
   // 1) composizione vincolata (oro max 20, step 5)
   const comp = computeCompositionFromGoldInput();
-  showCompositionInline(comp);
+  updateGoldBadgeAndHideInlineComposition(comp);
 
   // 2) parametri per API (strumenti reali: LS80 + Oro)
   const w_ls80 = comp.ls80; // %
@@ -139,7 +134,7 @@ async function loadData() {
     if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
   }
 
-  // 5) metriche + composizione nel testo
+  // 5) metriche + composizione (UNA SOLA VOLTA, qui)
   if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
     const m = data.metrics;
 
@@ -217,7 +212,7 @@ async function loadData() {
           },
           grid: {
             // Solo 2 linee verticali "visibili" per anno: inizio + metà.
-            // Le altre restano quasi invisibili per non disturbare.
+            // Le altre quasi invisibili per pulizia grafica.
             color: function (context) {
               if (yearMarkers.has(context.index)) {
                 return "rgba(0,0,0,0.16)";
@@ -265,13 +260,13 @@ function init() {
   }
 
   // Slider Oro:
-  // - input: aggiorna composizione in tempo reale
-  // - change: aggiorna anche grafico (quando rilasci)
+  // - input: aggiorna badge (e nasconde composizione duplicata)
+  // - change: ricalcola grafico
   const goldEl = document.getElementById("w_gold");
   if (goldEl) {
     goldEl.addEventListener("input", () => {
       const comp = computeCompositionFromGoldInput();
-      showCompositionInline(comp);
+      updateGoldBadgeAndHideInlineComposition(comp);
     });
 
     goldEl.addEventListener("change", () => {
