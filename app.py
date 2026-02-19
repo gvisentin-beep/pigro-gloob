@@ -6,9 +6,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, make_response
 
 app = Flask(__name__)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # evita cache dei file statici (app.js)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -22,7 +23,6 @@ def _parse_float(s: str) -> float:
     s = (s or "").strip()
     if s == "":
         return float("nan")
-    # EU/US: "1.234,56" -> "1234.56", "1,234.56" -> "1234.56"
     if s.count(",") and s.count("."):
         if s.rfind(",") > s.rfind("."):
             s = s.replace(".", "").replace(",", ".")
@@ -51,7 +51,7 @@ def _read_price_series(path: Path) -> Tuple[List[date], List[float]]:
 
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         head = f.read(4096)
-    delim = _detect_delimiter(head)
+        delim = _detect_delimiter(head)
 
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f, delimiter=delim)
@@ -96,9 +96,7 @@ def _read_price_series(path: Path) -> Tuple[List[date], List[float]]:
         tmp.append((d, p))
 
     if not tmp:
-        raise ValueError(
-            f"Nel CSV {path.name} non trovo righe valide (serve colonna data + prezzo)."
-        )
+        raise ValueError(f"Nel CSV {path.name} non trovo righe valide (serve colonna data + prezzo).")
 
     tmp.sort(key=lambda x: x[0])
     return [d for d, _ in tmp], [p for _, p in tmp]
@@ -158,12 +156,10 @@ def _backtest_two_assets(
     solo_vals: List[float] = []
 
     last_year = dates[0].year
-
     for d, ls_price, g_price in zip(dates, p_ls, p_gold):
         total = ls_shares * ls_price + gold_shares * g_price
         solo_total = solo_shares * ls_price
 
-        # rebalance al primo giorno disponibile del nuovo anno
         if d.year != last_year:
             ls_shares = (total * w_ls) / ls_price
             gold_shares = (total * w_gold) / g_price
@@ -182,26 +178,39 @@ def index():
 @app.route("/api/compute", methods=["GET"])
 def api_compute():
     try:
+        # accetto sia percentuali (80) sia frazioni (0.8)
         w_ls80 = float(request.args.get("w_ls80", "80"))
         w_gold = float(request.args.get("w_gold", "20"))
-        capital = float(request.args.get("capital", "10000"))
+
+        # accetto sia capital sia initial (compatibilità)
+        capital = request.args.get("capital", None)
+        if capital is None:
+            capital = request.args.get("initial", "10000")
+        capital = float(capital)
 
         if capital <= 0:
             return jsonify({"error": "Capitale deve essere > 0"}), 400
         if w_ls80 < 0 or w_gold < 0:
             return jsonify({"error": "I pesi devono essere >= 0"}), 400
 
-        s = w_ls80 + w_gold
-        if s <= 0:
-            return jsonify({"error": "Somma pesi deve essere > 0"}), 400
-
-        w_ls = w_ls80 / s
-        w_g = w_gold / s
+        # Se arrivano come percentuali (es. 80/20) converto in quote
+        if w_ls80 > 1.0 or w_gold > 1.0:
+            s = w_ls80 + w_gold
+            if s <= 0:
+                return jsonify({"error": "Somma pesi deve essere > 0"}), 400
+            w_ls = w_ls80 / s
+            w_g = w_gold / s
+        else:
+            s = w_ls80 + w_gold
+            if s <= 0:
+                return jsonify({"error": "Somma pesi deve essere > 0"}), 400
+            w_ls = w_ls80 / s
+            w_g = w_gold / s
 
         d_ls, p_ls = _read_price_series(DATA_DIR / ASSET_FILES["ls80"])
         d_g, p_g = _read_price_series(DATA_DIR / ASSET_FILES["gold"])
-
         dates, p_ls_al, p_g_al = _align_by_date(d_ls, p_ls, d_g, p_g)
+
         port_vals, solo_vals = _backtest_two_assets(dates, p_ls_al, p_g_al, w_ls, w_g, capital)
 
         cagr_port = _cagr(port_vals, dates)
@@ -210,7 +219,7 @@ def api_compute():
         mdd_solo = _max_drawdown(solo_vals)
         yd = _years_to_double(cagr_port)
 
-        return jsonify({
+        payload = {
             "dates": [d.isoformat() for d in dates],
             "portfolio": port_vals,
             "solo_ls80": solo_vals,
@@ -225,7 +234,15 @@ def api_compute():
                 "final_portfolio": port_vals[-1],
                 "final_solo": solo_vals[-1],
             },
-        })
+        }
+
+        resp = make_response(jsonify(payload))
+        # anti-cache risposta API
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
