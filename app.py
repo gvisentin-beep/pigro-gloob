@@ -8,7 +8,9 @@ from typing import Dict, List, Tuple, Optional
 
 from flask import Flask, jsonify, render_template, request, make_response
 
-app = Flask(__name__)
+# IMPORTANTISSIMO: fissiamo esplicitamente le cartelle
+# così Render/Flask non si "confondono" e / torna sempre HTML.
+app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # evita cache dei file statici (app.js)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,6 +20,7 @@ ASSET_FILES: Dict[str, str] = {
     "ls80": "ls80.csv",
     "gold": "gold.csv",
 }
+
 
 def _parse_float(s: str) -> float:
     s = (s or "").strip()
@@ -33,6 +36,7 @@ def _parse_float(s: str) -> float:
             s = s.replace(",", ".")
     return float(s)
 
+
 def _parse_date(s: str) -> date:
     s = (s or "").strip()
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y", "%Y/%m/%d"):
@@ -42,8 +46,10 @@ def _parse_date(s: str) -> date:
             pass
     raise ValueError(f"Data non riconosciuta: {s!r}")
 
+
 def _detect_delimiter(sample: str) -> str:
     return ";" if sample.count(";") > sample.count(",") else ","
+
 
 def _read_price_series(path: Path) -> Tuple[List[date], List[float]]:
     if not path.exists():
@@ -101,6 +107,7 @@ def _read_price_series(path: Path) -> Tuple[List[date], List[float]]:
     tmp.sort(key=lambda x: x[0])
     return [d for d, _ in tmp], [p for _, p in tmp]
 
+
 def _align_by_date(
     a_dates: List[date], a_vals: List[float],
     b_dates: List[date], b_vals: List[float],
@@ -111,6 +118,7 @@ def _align_by_date(
     if len(common) < 2:
         raise ValueError("Serie con poche date comuni tra LS80 e Oro.")
     return common, [ad[d] for d in common], [bd[d] for d in common]
+
 
 def _max_drawdown(values: List[float]) -> float:
     peak = -float("inf")
@@ -124,6 +132,7 @@ def _max_drawdown(values: List[float]) -> float:
                 mdd = dd
     return mdd
 
+
 def _cagr(values: List[float], dates: List[date]) -> float:
     if len(values) < 2:
         return 0.0
@@ -135,10 +144,12 @@ def _cagr(values: List[float], dates: List[date]) -> float:
         return 0.0
     return (end / start) ** (1 / years) - 1
 
+
 def _years_to_double(cagr: float) -> Optional[float]:
     if cagr <= 0:
         return None
     return math.log(2) / math.log(1 + cagr)
+
 
 def _backtest_two_assets(
     dates: List[date],
@@ -160,6 +171,7 @@ def _backtest_two_assets(
         total = ls_shares * ls_price + gold_shares * g_price
         solo_total = solo_shares * ls_price
 
+        # ribilanciamento annuale
         if d.year != last_year:
             ls_shares = (total * w_ls) / ls_price
             gold_shares = (total * w_gold) / g_price
@@ -171,19 +183,20 @@ def _backtest_two_assets(
 
     return port_vals, solo_vals
 
-@app.route("/")
+
+# ✅ HOME: deve tornare HTML sempre
+@app.get("/")
 def index():
     return render_template("index.html")
 
-@app.route("/api/compute", methods=["GET"])
+
+@app.get("/api/compute")
 def api_compute():
     try:
-        # accetto sia percentuali (80) sia frazioni (0.8)
         w_ls80 = float(request.args.get("w_ls80", "80"))
         w_gold = float(request.args.get("w_gold", "20"))
 
-        # accetto sia capital sia initial (compatibilità)
-        capital = request.args.get("capital", None)
+        capital = request.args.get("capital")
         if capital is None:
             capital = request.args.get("initial", "10000")
         capital = float(capital)
@@ -193,19 +206,13 @@ def api_compute():
         if w_ls80 < 0 or w_gold < 0:
             return jsonify({"error": "I pesi devono essere >= 0"}), 400
 
-        # Se arrivano come percentuali (es. 80/20) converto in quote
-        if w_ls80 > 1.0 or w_gold > 1.0:
-            s = w_ls80 + w_gold
-            if s <= 0:
-                return jsonify({"error": "Somma pesi deve essere > 0"}), 400
-            w_ls = w_ls80 / s
-            w_g = w_gold / s
-        else:
-            s = w_ls80 + w_gold
-            if s <= 0:
-                return jsonify({"error": "Somma pesi deve essere > 0"}), 400
-            w_ls = w_ls80 / s
-            w_g = w_gold / s
+        # percentuali -> quote
+        s = w_ls80 + w_gold
+        if s <= 0:
+            return jsonify({"error": "Somma pesi deve essere > 0"}), 400
+
+        w_ls = w_ls80 / s
+        w_g = w_gold / s
 
         d_ls, p_ls = _read_price_series(DATA_DIR / ASSET_FILES["ls80"])
         d_g, p_g = _read_price_series(DATA_DIR / ASSET_FILES["gold"])
@@ -237,7 +244,6 @@ def api_compute():
         }
 
         resp = make_response(jsonify(payload))
-        # anti-cache risposta API
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
@@ -246,5 +252,7 @@ def api_compute():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
 if __name__ == "__main__":
+    # su Render non serve, ma in locale sì
     app.run(host="127.0.0.1", port=5000, debug=True)
