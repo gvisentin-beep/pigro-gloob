@@ -8,7 +8,7 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- CSS principale -->
+    <!-- CSS principale (se vuoi tenere il tuo stile) -->
     <link rel="stylesheet" href="/static/style_4.css">
 
     <style>
@@ -27,7 +27,7 @@
             box-shadow: 0 4px 14px rgba(0,0,0,0.06);
         }
 
-        /* ===== BRAND HEADER PROFESSIONALE ===== */
+        /* ===== BRAND HEADER ===== */
         .brand-header {
             display: flex;
             align-items: center;
@@ -68,6 +68,9 @@
             font-size: 1rem;
         }
 
+        ul { margin-top: 10px; }
+
+        /* ===== CONTROLLI ===== */
         .controls label {
             font-weight: 600;
             display: block;
@@ -87,27 +90,35 @@
         }
 
         .gold-badge {
-            font-weight: 700;
+            font-weight: 800;
             color: #2c5aa0;
-            min-width: 40px;
+            min-width: 46px;
+            text-align: right;
         }
 
-        input[type="number"] {
-            padding: 6px;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-            width: 120px;
+        input[type="text"] {
+            padding: 7px 10px;
+            border-radius: 10px;
+            border: 1px solid #cfd6df;
+            width: 140px;
+            font-weight: 700;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
         button {
             background: #2c5aa0;
             color: white;
             border: none;
-            padding: 8px 16px;
+            padding: 9px 16px;
             border-radius: 10px;
             cursor: pointer;
-            font-weight: 600;
-            margin-left: 10px;
+            font-weight: 700;
         }
 
         button:hover {
@@ -120,11 +131,10 @@
             margin-top: 6px;
         }
 
-        canvas {
-            max-width: 100%;
-        }
+        canvas { max-width: 100%; }
     </style>
 </head>
+
 <body>
 
     <!-- ===== HEADER BRAND ===== -->
@@ -158,12 +168,13 @@
         </div>
 
         <label>Capitale (€)</label>
-        <div style="display:flex; align-items:center; gap:10px;">
-            <input id="initial" type="number" value="10000">
+        <div class="row">
+            <!-- input text per poter mostrare "10.000" -->
+            <input id="initial" type="text" value="10.000" inputmode="numeric" aria-label="Capitale in euro">
             <button>Aggiorna</button>
         </div>
 
-        <!-- Questa riga viene automaticamente nascosta da app.js per evitare duplicazioni -->
+        <!-- Questa riga è “di servizio” e viene nascosta da app.js per evitare duplicazione -->
         <div style="margin-top:8px;">
             <span id="w_equity"></span>
             <span id="w_bonds"></span>
@@ -183,7 +194,42 @@
         <canvas id="chart" height="120"></canvas>
     </div>
 
-    <!-- JS -->
+    <!-- ===== Formattazione capitale (10.000) ===== -->
+    <script>
+        function formatThousandsIT(value) {
+            const numeric = String(value || "").replace(/\D/g, "");
+            if (!numeric) return "";
+            return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Number(numeric));
+        }
+
+        function setCaretToEnd(el) {
+            try {
+                const len = el.value.length;
+                el.setSelectionRange(len, len);
+            } catch (_) {}
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            const capitalInput = document.getElementById("initial");
+            if (!capitalInput) return;
+
+            // Normalizza al caricamento (es: 10000 -> 10.000)
+            capitalInput.value = formatThousandsIT(capitalInput.value);
+
+            capitalInput.addEventListener("input", function () {
+                const before = this.value;
+                const formatted = formatThousandsIT(before);
+                this.value = formatted;
+                setCaretToEnd(this); // semplice e robusto
+            });
+
+            capitalInput.addEventListener("blur", function () {
+                this.value = formatThousandsIT(this.value);
+            });
+        });
+    </script>
+
+    <!-- JS applicazione -->
     <script src="/static/app.js"></script>
 
 </body>
