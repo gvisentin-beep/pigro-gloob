@@ -1,227 +1,428 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <title>Gloob — Metodo Pigro</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <title>Gloob — Metodo Pigro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- CSS principale -->
-    <link rel="stylesheet" href="/static/style_4.css">
+  <!-- CSS principale -->
+  <link rel="stylesheet" href="/static/style_4.css">
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f8;
-            margin: 0;
-            padding: 20px;
-        }
-        .card {
-            background: white;
-            border-radius: 14px;
-            padding: 22px;
-            margin-bottom: 18px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.06);
-        }
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+    }
 
-        /* BRAND HEADER */
-        .brand-header {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 8px;
-        }
-        .logo {
-            height: 54px;
-            width: 54px;
-            object-fit: contain;
-            border-radius: 14px;
-        }
-        .brand-text {
-            display: flex;
-            flex-direction: column;
-            line-height: 1.05;
-        }
-        .brand-name {
-            font-size: 2.4rem;
-            font-weight: 800;
-            margin: 0;
-            color: #1f3b73;
-            letter-spacing: 0.3px;
-        }
-        .brand-subtitle {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #4a5a75;
-            margin-top: 4px;
-        }
+    /* BRAND HEADER */
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    .logo {
+      height: 54px;
+      width: 54px;
+      object-fit: contain;
+      border-radius: 14px;
+    }
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.05;
+    }
+    .brand-name {
+      font-size: 2.4rem;
+      font-weight: 800;
+      margin: 0;
+      color: #1f3b73;
+      letter-spacing: 0.3px;
+    }
+    .brand-subtitle {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #4a5a75;
+      margin-top: 4px;
+    }
 
-        .intro { margin-top: 12px; font-size: 1rem; }
-        ul { margin-top: 10px; }
+    .intro { margin-top: 12px; font-size: 1rem; }
+    ul { margin-top: 10px; }
 
-        /* CONTROLLI */
-        .controls label {
-            font-weight: 600;
-            display: block;
-            margin-top: 10px;
-            margin-bottom: 4px;
-        }
-        .slider-row {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-        input[type="range"] { width: 100%; accent-color: #2c5aa0; }
-        .gold-badge {
-            font-weight: 800;
-            color: #2c5aa0;
-            min-width: 46px;
-            text-align: right;
-        }
+    /* CONTROLLI */
+    .controls label {
+      font-weight: 600;
+      display: block;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    input[type="range"] { width: 100%; accent-color: #2c5aa0; }
+    .gold-badge {
+      font-weight: 800;
+      color: #2c5aa0;
+      min-width: 46px;
+      text-align: right;
+    }
 
-        input[type="text"] {
-            padding: 7px 10px;
-            border-radius: 10px;
-            border: 1px solid #cfd6df;
-            width: 140px;
-            font-weight: 700;
-        }
+    input[type="text"] {
+      padding: 7px 10px;
+      border-radius: 10px;
+      border: 1px solid #cfd6df;
+      width: 140px;
+      font-weight: 700;
+    }
 
-        .row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-        button {
-            background: #2c5aa0;
-            color: white;
-            border: none;
-            padding: 9px 16px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-        }
-        button:hover { background: #1f3b73; }
+    button {
+      background: #2c5aa0;
+      color: white;
+      border: none;
+      padding: 9px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    button:hover { background: #1f3b73; }
 
-        /* Finale + anni sulla stessa riga */
-        .final-inline {
-            margin-left: 10px;
-            font-weight: 700;
-            color: #1f3b73;
-            white-space: nowrap;
-        }
-        .final-inline small {
-            font-weight: 700;
-            color: #4a5a75;
-        }
+    /* Finale + anni sulla stessa riga */
+    .final-inline {
+      margin-left: 10px;
+      font-weight: 700;
+      color: #1f3b73;
+      white-space: nowrap;
+    }
+    .final-inline small {
+      font-weight: 700;
+      color: #4a5a75;
+    }
 
-        #period {
-            font-size: 0.9rem;
-            color: #6b7280;
-            margin-top: 6px;
-        }
+    #period {
+      font-size: 0.9rem;
+      color: #6b7280;
+      margin-top: 6px;
+      display: none; /* lo teniamo nascosto: tu volevi togliere “Periodo” */
+    }
 
-        canvas { max-width: 100%; }
-    </style>
+    canvas { max-width: 100%; }
+
+    /* ===== Seconda parte (come foto) ===== */
+    .h2 {
+      color: #1f3b73;
+      font-size: 1.15rem;
+      font-weight: 800;
+      margin: 0 0 10px 0;
+    }
+
+    .note {
+      background: #f3f6fb;
+      border: 1px solid #dbe6f7;
+      padding: 12px 14px;
+      border-radius: 12px;
+      color: #374151;
+      font-size: 0.98rem;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 900px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    .subcard {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .muted {
+      color: #6b7280;
+      font-size: 0.92rem;
+      margin-top: 2px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      border-radius: 10px;
+      border: 1px solid #cfd6df;
+      padding: 10px;
+      font-size: 0.98rem;
+      line-height: 1.35;
+    }
+
+    .examples {
+      margin-top: 10px;
+      color: #4b5563;
+      font-size: 0.93rem;
+    }
+    .examples ul { margin: 6px 0 0 18px; }
+
+    /* FAQ hover/tap */
+    .faq-title {
+      font-weight: 800;
+      color: #1f3b73;
+      margin-bottom: 6px;
+    }
+    .faq-hint {
+      color: #6b7280;
+      font-size: 0.92rem;
+      margin-bottom: 10px;
+    }
+    details.faq {
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+    details.faq summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #111827;
+      list-style: none;
+    }
+    details.faq summary::-webkit-details-marker { display: none; }
+    details.faq .ans {
+      margin-top: 8px;
+      color: #374151;
+      font-size: 0.96rem;
+      line-height: 1.35;
+    }
+    /* Desktop: “passa il mouse” apre l’item */
+    @media (hover: hover) {
+      details.faq:hover { border-color: #bcd0f2; background: #f7faff; }
+      details.faq:hover .ans { display: block; }
+    }
+  </style>
 </head>
 
 <body>
 
-    <div class="card">
-        <div class="brand-header">
-            <img src="/static/logo.png" alt="Logo Gloob" class="logo">
-            <div class="brand-text">
-                <div class="brand-name">Gloob</div>
-                <div class="brand-subtitle">Metodo Pigro</div>
-            </div>
-        </div>
-
-        <div class="intro">
-            Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.
-        </div>
-
-        <ul>
-            <li><b>Pochi strumenti:</b> due mattoni globali</li>
-            <li><b>Costi bassi:</b> struttura semplice</li>
-            <li><b>Regole chiare:</b> ribilanciamento una volta l’anno</li>
-            <li><b>Struttura &gt; Previsioni</b></li>
-        </ul>
+  <!-- Header -->
+  <div class="card">
+    <div class="brand-header">
+      <img src="/static/logo.png" alt="Logo Gloob" class="logo">
+      <div class="brand-text">
+        <div class="brand-name">Gloob</div>
+        <div class="brand-subtitle">Metodo Pigro</div>
+      </div>
     </div>
 
-    <div class="card controls">
-        <label>Oro (%) (0–50, step 5)</label>
-        <div class="slider-row">
-            <input id="w_gold" type="range" min="0" max="50" step="5" value="10">
-            <span id="gold_badge" class="gold-badge">10%</span>
-        </div>
-
-        <label>Capitale (€)</label>
-        <div class="row">
-            <input id="initial" type="text" value="10.000" inputmode="numeric" aria-label="Capitale in euro">
-            <button>Aggiorna</button>
-
-            <!-- NUOVO: Capitale finale + anni sulla stessa riga -->
-            <span class="final-inline">
-                Finale: <span id="final_capital">—</span>
-                <small> (in anni <span id="final_years">—</span>)</small>
-            </span>
-        </div>
-
-        <!-- Riga “di servizio” (nascosta da app.js) -->
-        <div style="margin-top:8px;">
-            <span id="w_equity"></span>
-            <span id="w_bonds"></span>
-            <span id="w_gold_show"></span>
-        </div>
+    <div class="intro">
+      Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.
     </div>
 
-    <div class="card">
-        <div><b>Portafoglio (LS80+Oro):</b> Rendimento annualizzato — | Max Ribasso nel periodo —</div>
-        <div>Solo LS80: Rendimento annualizzato — | Max Ribasso nel periodo —</div>
-        <div id="period"></div>
+    <ul>
+      <li><b>Pochi strumenti:</b> due mattoni globali</li>
+      <li><b>Costi bassi:</b> struttura semplice</li>
+      <li><b>Regole chiare:</b> ribilanciamento una volta l’anno</li>
+      <li><b>Struttura &gt; Previsioni</b></li>
+    </ul>
+  </div>
+
+  <!-- Controlli -->
+  <div class="card controls">
+    <label>Oro (%) (0–50, step 5)</label>
+    <div class="slider-row">
+      <input id="w_gold" type="range" min="0" max="50" step="5" value="10">
+      <span id="gold_badge" class="gold-badge">10%</span>
     </div>
 
-    <div class="card">
-        <canvas id="chart" height="120"></canvas>
+    <label>Capitale (€)</label>
+    <div class="row">
+      <input id="initial" type="text" value="10.000" inputmode="numeric" aria-label="Capitale in euro">
+      <button>Aggiorna</button>
+
+      <span class="final-inline">
+        Finale: <span id="final_capital">—</span>
+        <small> (in anni <span id="final_years">—</span>)</small>
+      </span>
     </div>
 
-    <!-- Formattazione capitale (10.000) -->
-    <script>
-        function formatThousandsIT(value) {
-            const numeric = String(value || "").replace(/\D/g, "");
-            if (!numeric) return "";
-            return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Number(numeric));
-        }
+    <!-- Riga “di servizio” (nascosta da app.js) -->
+    <div style="margin-top:8px;">
+      <span id="w_equity"></span>
+      <span id="w_bonds"></span>
+      <span id="w_gold_show"></span>
+    </div>
+  </div>
 
-        function setCaretToEnd(el) {
-            try {
-                const len = el.value.length;
-                el.setSelectionRange(len, len);
-            } catch (_) {}
-        }
+  <!-- Metriche -->
+  <div class="card">
+    <div><b>Portafoglio (ETF Azion-Obblig + ETC Oro):</b> Rendimento annualizzato — | Max Ribasso nel periodo —</div>
+    <div id="period"></div>
+  </div>
 
-        window.addEventListener("DOMContentLoaded", () => {
-            const capitalInput = document.getElementById("initial");
-            if (!capitalInput) return;
+  <!-- Grafico -->
+  <div class="card">
+    <canvas id="chart" height="120"></canvas>
+  </div>
 
-            capitalInput.value = formatThousandsIT(capitalInput.value);
+  <!-- ====== SECONDA PARTE (come foto) ====== -->
 
-            capitalInput.addEventListener("input", function () {
-                this.value = formatThousandsIT(this.value);
-                setCaretToEnd(this);
-            });
+  <!-- Messaggio chiave -->
+  <div class="card">
+    <div class="note">
+      <b>Messaggio chiave:</b><br>
+      La differenza non è indovinare il mercato.<br>
+      È avere una struttura semplice e ribilanciarla una volta l’anno.
+    </div>
+  </div>
 
-            capitalInput.addEventListener("blur", function () {
-                this.value = formatThousandsIT(this.value);
-            });
-        });
-    </script>
+  <!-- Come applicarlo concretamente -->
+  <div class="card">
+    <div class="h2">Come applicarlo concretamente</div>
+    <ol style="margin: 0 0 0 18px; color:#374151; line-height:1.5;">
+      <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
+      <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
+      <li>Non intervenire durante l’anno.</li>
+      <li>A dicembre ribilancia ai pesi originali.</li>
+    </ol>
+  </div>
 
-    <script src="/static/app.js"></script>
+  <!-- Domande libere + FAQ -->
+  <div class="card">
+    <div class="two-col">
 
+      <!-- Domande libere -->
+      <div class="subcard">
+        <div class="h2" style="margin-bottom:6px;">Domande libere</div>
+        <div class="muted">Scrivi una domanda. Verrà inviata via email (nessun dato viene salvato sul sito).</div>
+
+        <div style="margin-top:10px;">
+          <textarea id="free_question" placeholder="Scrivi qui la tua domanda..."></textarea>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="send_question_btn" type="button">Invia via email</button>
+          <span class="muted" id="send_status" style="display:none;"></span>
+        </div>
+
+        <div class="examples">
+          <b>Esempi:</b>
+          <ul>
+            <li>Come ribilancio a fine anno?</li>
+            <li>Cosa succede se compro tutto oggi e poi scende?</li>
+            <li>Perché aggiungere oro all’ETF?</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- FAQ -->
+      <div class="subcard">
+        <div class="faq-title">FAQ (passa il mouse)</div>
+        <div class="faq-hint">Su mobile: tocca la domanda per vedere la risposta.</div>
+
+        <details class="faq">
+          <summary>1) Perché solo due strumenti?</summary>
+          <div class="ans">Per ridurre complessità e costi: l’obiettivo è una struttura semplice, facile da mantenere nel tempo.</div>
+        </details>
+
+        <details class="faq">
+          <summary>2) Cos’è l’ETF Azion-Obblig?</summary>
+          <div class="ans">È un unico ETF globale “bilanciato” che contiene azioni e obbligazioni (qui assumiamo 80% azioni e 20% obbligazioni).</div>
+        </details>
+
+        <details class="faq">
+          <summary>3) Perché aggiungere oro?</summary>
+          <div class="ans">Per aumentare la robustezza: spesso l’oro si comporta diversamente da azioni/obbligazioni nei momenti di stress.</div>
+        </details>
+
+        <details class="faq">
+          <summary>4) Quando ribilanciare?</summary>
+          <div class="ans">Una volta l’anno (es. a dicembre): riporti i pesi ai valori scelti, senza inseguire il mercato.</div>
+        </details>
+
+        <details class="faq">
+          <summary>5) Devo “indovinare” il momento giusto?</summary>
+          <div class="ans">No. Il metodo punta su disciplina e tempo, non su previsioni o market timing.</div>
+        </details>
+
+        <details class="faq">
+          <summary>6) Cosa succede se dopo l’acquisto scende?</summary>
+          <div class="ans">È normale che ci siano fasi negative. La regola è: non intervenire durante l’anno; ribilanciare a fine anno.</div>
+        </details>
+
+        <details class="faq">
+          <summary>7) Perché “execution only”?</summary>
+          <div class="ans">Per evitare conflitti di interesse e costi nascosti: scegli strumenti e regole, poi esegui l’ordine.</div>
+        </details>
+
+        <details class="faq">
+          <summary>8) Che importo serve per iniziare?</summary>
+          <div class="ans">Dipende dalla tua situazione. L’importante è iniziare con una cifra che ti faccia dormire tranquillo e mantenere la disciplina.</div>
+        </details>
+
+        <details class="faq">
+          <summary>9) Ogni quanto guardare il portafoglio?</summary>
+          <div class="ans">Poco. Idealmente: controlli periodici “di servizio” e ribilanci una volta l’anno.</div>
+        </details>
+
+        <details class="faq">
+          <summary>10) Questo è un consiglio personalizzato?</summary>
+          <div class="ans">No. È una spiegazione generale di una filosofia di investimento. Per decisioni personali serve valutare obiettivi e rischio.</div>
+        </details>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Formattazione capitale (10.000) -->
+  <script>
+    function formatThousandsIT(value) {
+      const numeric = String(value || "").replace(/\D/g, "");
+      if (!numeric) return "";
+      return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Number(numeric));
+    }
+    function setCaretToEnd(el) {
+      try {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      } catch (_) {}
+    }
+    window.addEventListener("DOMContentLoaded", () => {
+      const capitalInput = document.getElementById("initial");
+      if (!capitalInput) return;
+
+      capitalInput.value = formatThousandsIT(capitalInput.value);
+      capitalInput.addEventListener("input", function () {
+        this.value = formatThousandsIT(this.value);
+        setCaretToEnd(this);
+      });
+      capitalInput.addEventListener("blur", function () {
+        this.value = formatThousandsIT(this.value);
+      });
+    });
+  </script>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>
