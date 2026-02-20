@@ -28,12 +28,20 @@ function fmtYearsIt(n) {
   return x.toFixed(1).replace(".", ",");
 }
 
-// Calcola composizione (Oro max 20%, resto LS80 80/20)
+// Legge capitale anche se formattato "10.000"
+function parseCapitalEuro() {
+  const raw = String(document.getElementById("initial")?.value || "");
+  const digits = raw.replace(/\D/g, ""); // tiene solo numeri
+  const n = Number(digits);
+  return Number.isFinite(n) && n > 0 ? n : 10000;
+}
+
+// Calcola composizione (Oro max 50%, resto LS80 80/20)
 function computeCompositionFromGoldInput() {
   let gold = Number(document.getElementById("w_gold")?.value);
   if (!Number.isFinite(gold)) gold = 10;
 
-  gold = clamp(gold, 0, 20);
+  gold = clamp(gold, 0, 50);
   gold = snapToStep(gold, 5);
 
   const goldEl = document.getElementById("w_gold");
@@ -96,7 +104,7 @@ async function loadData() {
 
   const w_ls80 = comp.ls80;
   const w_gold = comp.gold;
-  const capital = Number(document.getElementById("initial")?.value) || 10000;
+  const capital = parseCapitalEuro();
 
   const url =
     `/api/compute` +
@@ -224,9 +232,7 @@ async function loadData() {
           },
         },
         y: {
-          ticks: {
-            callback: (v) => euro(v),
-          },
+          ticks: { callback: (v) => euro(v) },
         },
       },
     },
