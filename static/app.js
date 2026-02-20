@@ -31,7 +31,7 @@ function fmtYearsIt(n) {
 // Legge capitale anche se formattato "10.000"
 function parseCapitalEuro() {
   const raw = String(document.getElementById("initial")?.value || "");
-  const digits = raw.replace(/\D/g, ""); // tiene solo numeri
+  const digits = raw.replace(/\D/g, "");
   const n = Number(digits);
   return Number.isFinite(n) && n > 0 ? n : 10000;
 }
@@ -61,7 +61,7 @@ function updateGoldBadgeAndHideInlineComposition(comp) {
 
   const ge = document.getElementById("w_equity");
   if (ge) {
-    let container = ge.closest("div");
+    const container = ge.closest("div");
     if (container) container.style.display = "none";
   }
 }
@@ -87,15 +87,21 @@ function computeYearMarkers(dateStrings) {
 
   Object.values(byYear).forEach((arr) => {
     if (arr.length === 0) return;
-
-    yearStart.add(arr[0]); // primo giorno disponibile dell’anno
+    yearStart.add(arr[0]);
     yearMarkers.add(arr[0]);
-
     const mid = arr[Math.floor(arr.length / 2)];
-    yearMarkers.add(mid); // metà anno
+    yearMarkers.add(mid);
   });
 
   return { yearStart, yearMarkers };
+}
+
+function computeYearsBetween(dateStartStr, dateEndStr) {
+  const t0 = Date.parse(dateStartStr);
+  const t1 = Date.parse(dateEndStr);
+  if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0) return null;
+  const years = (t1 - t0) / (365.25 * 24 * 3600 * 1000);
+  return years;
 }
 
 async function loadData() {
@@ -129,13 +135,25 @@ async function loadData() {
     return;
   }
 
-  // Periodo (resta sotto, non nel blocco metriche)
+  // Periodo (rimane sotto)
   if (Array.isArray(data.dates) && data.dates.length > 1) {
     const p = document.getElementById("period");
     if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
   }
 
-  // ===== METRICHE CON TESTO COMPRENSIBILE =====
+  // ===== NUOVO: capitale finale + anni (sulla riga capitale) =====
+  if (Array.isArray(data.dates) && data.dates.length > 1 && Array.isArray(data.portfolio) && data.portfolio.length > 1) {
+    const finalValue = data.portfolio[data.portfolio.length - 1];
+    const years = computeYearsBetween(data.dates[0], data.dates[data.dates.length - 1]);
+
+    const outFinal = document.getElementById("final_capital");
+    const outYears = document.getElementById("final_years");
+
+    if (outFinal) outFinal.innerText = euro(finalValue);
+    if (outYears) outYears.innerText = fmtYearsIt(years);
+  }
+
+  // ===== METRICHE =====
   if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
     const m = data.metrics;
 
@@ -210,7 +228,7 @@ async function loadData() {
       scales: {
         x: {
           ticks: {
-            callback: function (value, index) {
+            callback: function (_value, index) {
               if (!yearStart.has(index)) return "";
               return String(labels[index]).slice(0, 4);
             },
@@ -219,16 +237,8 @@ async function loadData() {
             minRotation: 0,
           },
           grid: {
-            color: function (context) {
-              if (yearMarkers.has(context.index)) {
-                return "rgba(0,0,0,0.18)";
-              }
-              return "rgba(0,0,0,0.03)";
-            },
-            lineWidth: function (context) {
-              if (yearMarkers.has(context.index)) return 1.2;
-              return 0.2;
-            },
+            color: (context) => (yearMarkers.has(context.index) ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.03)"),
+            lineWidth: (context) => (yearMarkers.has(context.index) ? 1.2 : 0.2),
           },
         },
         y: {
@@ -266,10 +276,7 @@ function init() {
       const comp = computeCompositionFromGoldInput();
       updateGoldBadgeAndHideInlineComposition(comp);
     });
-
-    goldEl.addEventListener("change", () => {
-      loadData();
-    });
+    goldEl.addEventListener("change", () => loadData());
   }
 }
 
