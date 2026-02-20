@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import csv
+import io
 import json
 import math
 import os
@@ -10,9 +12,14 @@ import urllib.request
 from collections import deque
 from datetime import date, datetime
 from pathlib import Path
-from typing import Deque, Dict, List, Tuple
+from typing import Deque, Dict, List, Optional, Tuple
 
-from flask import Flask, jsonify, make_response, render_template, request
+from flask import Flask, jsonify, make_response, render_template, request, send_file
+
+# PDF (ReportLab)
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # no cache per static
@@ -26,14 +33,11 @@ ASSET_FILES: Dict[str, str] = {
 }
 
 # -----------------------------
-# Rate limit assistente (in-memory)
+# Rate limit semplice (in-memory)
 # -----------------------------
-# Limite: 10 richieste / 24h / IP (rolling)
-ASK_LIMIT_PER_DAY = int(os.getenv("ASK_LIMIT_PER_DAY", "10"))
-ASK_COOLDOWN_SECONDS = int(os.getenv("ASK_COOLDOWN_SECONDS", "8"))
-
-_ask_hits_day: Dict[str, Deque[float]] = {}
-_last_ask_at: Dict[str, float] = {}
+# 20 richieste / ora / IP
+ASK_LIMIT_PER_HOUR = int(os.getenv("ASK_LIMIT_PER_HOUR", "20"))
+_ask_hits: Dict[str, Deque[float]] = {}
 
 
 def _client_ip() -> str:
@@ -44,51 +48,24 @@ def _client_ip() -> str:
     return request.remote_addr or "unknown"
 
 
-def _check_ask_limits(ip: str) -> Tuple[bool, str, int]:
-    """
-    Ritorna: (ok, messaggio_errore, remaining_today)
-    remaining_today è sempre 0..ASK_LIMIT_PER_DAY
-    """
+def _rate_limit_ok(ip: str) -> Tuple[bool, int]:
     now = time.time()
+    window = 3600.0
 
-    # Cooldown anti-click spam
-    last = _last_ask_at.get(ip, 0.0)
-    if (now - last) < ASK_COOLDOWN_SECONDS:
-        wait = int(math.ceil(ASK_COOLDOWN_SECONDS - (now - last)))
-        remaining = _remaining_today(ip, now)
-        return False, f"Troppo veloce 🙂 Riprova tra {wait} secondi.", remaining
-
-    # Limite rolling 24h
-    window = 86400.0  # 24 ore
-    q = _ask_hits_day.get(ip)
+    q = _ask_hits.get(ip)
     if q is None:
         q = deque()
-        _ask_hits_day[ip] = q
+        _ask_hits[ip] = q
 
     while q and (now - q[0]) > window:
         q.popleft()
 
-    if len(q) >= ASK_LIMIT_PER_DAY:
-        return False, "Hai raggiunto il limite di 10 domande oggi. Riprova domani.", 0
+    if len(q) >= ASK_LIMIT_PER_HOUR:
+        return False, 0
 
-    # Consuma una richiesta
     q.append(now)
-    _last_ask_at[ip] = now
-
-    remaining = max(0, ASK_LIMIT_PER_DAY - len(q))
-    return True, "", remaining
-
-
-def _remaining_today(ip: str, now: float | None = None) -> int:
-    if now is None:
-        now = time.time()
-    window = 86400.0
-    q = _ask_hits_day.get(ip)
-    if not q:
-        return ASK_LIMIT_PER_DAY
-    while q and (now - q[0]) > window:
-        q.popleft()
-    return max(0, ASK_LIMIT_PER_DAY - len(q))
+    remaining = max(0, ASK_LIMIT_PER_HOUR - len(q))
+    return True, remaining
 
 
 def _parse_float(s: str) -> float:
@@ -134,7 +111,7 @@ def _detect_and_read_csv(path: Path) -> Tuple[List[date], List[float]]:
         reader = csv.reader(f, dialect)
         rows = list(reader)
 
-    # header?
+    # Prova a capire se c’è header
     start_i = 0
     if rows and any("date" in (c or "").lower() for c in rows[0]):
         start_i = 1
@@ -199,17 +176,19 @@ def _build_portfolio(
     w_gold_pct: float,
     capital: float,
 ) -> Tuple[List[float], List[float]]:
+    # Normalizzazione in € partendo da capital
     w_ls = w_ls80_pct / 100.0
     w_g = w_gold_pct / 100.0
 
     if w_ls < 0 or w_g < 0 or (w_ls + w_g) <= 0:
         raise ValueError("Pesi non validi")
 
-    # normalizza per sicurezza
+    # normalizza per sicurezza (se arriva 95+10 ecc)
     s = w_ls + w_g
     w_ls /= s
     w_g /= s
 
+    # Serie indice -> euro
     ls0 = ls80_vals[0]
     g0 = gold_vals[0]
     if ls0 <= 0 or g0 <= 0:
@@ -244,11 +223,14 @@ def api_compute():
         w_gold = float(request.args.get("w_gold", "10"))
         capital = float(request.args.get("capital", "10000"))
 
+        # Legge CSV
         d_ls, v_ls = _detect_and_read_csv(DATA_DIR / ASSET_FILES["ls80"])
         d_g, v_g = _detect_and_read_csv(DATA_DIR / ASSET_FILES["gold"])
 
+        # Allinea
         dates, ls, g = _align_series(d_ls, v_ls, d_g, v_g)
 
+        # Portafoglio
         port_vals, solo_vals = _build_portfolio(dates, ls, g, w_ls80, w_gold, capital)
 
         years = _years_between(dates[0], dates[-1])
@@ -258,6 +240,7 @@ def api_compute():
         mdd_port = _max_drawdown(port_vals)
         mdd_solo = _max_drawdown(solo_vals)
 
+        # anni per raddoppio (se cagr>0)
         yd = float("nan")
         if math.isfinite(cagr_port) and cagr_port > 0:
             yd = math.log(2) / math.log(1 + cagr_port)
@@ -265,7 +248,7 @@ def api_compute():
         payload = {
             "dates": [d.isoformat() for d in dates],
             "portfolio": port_vals,
-            "solo_ls80": solo_vals,  # compatibilità
+            "solo_ls80": solo_vals,  # lasciamo compatibilità (anche se non lo mostri)
             "metrics": {
                 "cagr_portfolio": cagr_port,
                 "cagr_solo": cagr_solo,
@@ -290,9 +273,180 @@ def api_compute():
 
 
 # -----------------------------
+# PDF (stampa)
+# -----------------------------
+def _pct_str(x: Optional[float]) -> str:
+    try:
+        if x is None:
+            return "—"
+        if not math.isfinite(float(x)):
+            return "—"
+        return f"{float(x) * 100:.1f}%"
+    except Exception:
+        return "—"
+
+
+def _euro_str(x: Optional[float]) -> str:
+    try:
+        if x is None:
+            return "—"
+        v = float(x)
+        if not math.isfinite(v):
+            return "—"
+        return f"{v:,.0f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
+        return "—"
+
+
+def _clean_data_url_png(data_url: str) -> bytes:
+    if not data_url:
+        raise ValueError("Manca immagine del grafico.")
+    s = data_url.strip()
+    prefix = "data:image/png;base64,"
+    if s.startswith(prefix):
+        s = s[len(prefix):]
+    return base64.b64decode(s, validate=True)
+
+
+@app.post("/api/pdf")
+def api_pdf():
+    """
+    Riceve:
+      - chart_png: dataURL PNG del canvas Chart.js
+      - meta: titolo/sottotitolo e campi numerici (opzionali)
+    Ritorna un PDF pronto per stampa (A4).
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        chart_png = payload.get("chart_png", "")
+        meta = payload.get("meta", {}) or {}
+
+        img_bytes = _clean_data_url_png(chart_png)
+        img = ImageReader(io.BytesIO(img_bytes))
+
+        # A4 portrait
+        page_w, page_h = A4
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+
+        # Margini
+        ml = 36
+        mr = 36
+        mt = 40
+        mb = 36
+
+        y = page_h - mt
+
+        # Header con logo + brand
+        logo_path = BASE_DIR / "static" / "logo.png"
+        if logo_path.exists():
+            try:
+                logo = ImageReader(str(logo_path))
+                c.drawImage(logo, ml, y - 44, width=40, height=40, mask="auto")
+                x_text = ml + 48
+            except Exception:
+                x_text = ml
+        else:
+            x_text = ml
+
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(x_text, y - 18, "Gloob")
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(x_text, y - 36, "Metodo Pigro")
+
+        # Data stampa
+        c.setFont("Helvetica", 9)
+        c.drawRightString(page_w - mr, y - 20, f"Stampato il {datetime.now().strftime('%d/%m/%Y')}")
+
+        y -= 58
+
+        # Meta / riepilogo
+        oro = meta.get("oro_pct")
+        az = meta.get("azionario_pct")
+        ob = meta.get("obbligazionario_pct")
+        cap0 = meta.get("capitale_iniziale")
+        capf = meta.get("capitale_finale")
+        anni = meta.get("anni_periodo")
+        cagr = meta.get("cagr")
+        mdd = meta.get("max_dd")
+        ytd = meta.get("years_to_double")
+        start = meta.get("start")
+        end = meta.get("end")
+
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(ml, y, "Riepilogo")
+        y -= 14
+        c.setFont("Helvetica", 10)
+
+        lines = []
+        if start and end:
+            lines.append(f"Periodo: {start} → {end}")
+        if oro is not None and az is not None and ob is not None:
+            lines.append(f"Composizione: Azionario {az}% | Obbligazionario {ob}% | Oro {oro}%")
+        if cap0 is not None or capf is not None:
+            lines.append(f"Capitale: iniziale {_euro_str(cap0)}  →  finale {_euro_str(capf)}")
+        if anni is not None:
+            try:
+                lines.append(f"Durata: {float(anni):.1f} anni".replace(".", ","))
+            except Exception:
+                pass
+        lines.append(f"Rendimento annualizzato: {_pct_str(cagr)}")
+        lines.append(f"Max ribasso nel periodo: {_pct_str(mdd)}")
+        try:
+            if ytd is not None and math.isfinite(float(ytd)) and float(ytd) > 0:
+                lines.append(f"Raddoppio del portafoglio in anni: {float(ytd):.1f}".replace(".", ","))
+        except Exception:
+            pass
+
+        for ln in lines:
+            c.drawString(ml, y, ln)
+            y -= 13
+
+        y -= 8
+
+        # Grafico (riempie la pagina in modo “print-friendly”)
+        # area disponibile:
+        img_x = ml
+        img_w = page_w - ml - mr
+        img_h = min(360, y - mb)  # lascia spazio al footer
+        img_y = y - img_h
+
+        c.setLineWidth(0.6)
+        c.rect(img_x, img_y, img_w, img_h)
+
+        # Mantieni aspect ratio dell'immagine ma fallo stare nella box
+        iw, ih = img.getSize()
+        scale = min(img_w / iw, img_h / ih)
+        draw_w = iw * scale
+        draw_h = ih * scale
+        dx = img_x + (img_w - draw_w) / 2
+        dy = img_y + (img_h - draw_h) / 2
+        c.drawImage(img, dx, dy, width=draw_w, height=draw_h, mask="auto")
+
+        # Footer / disclaimer
+        c.setFont("Helvetica", 8.5)
+        c.drawString(ml, mb - 12, "Nota: documento informativo, non consulenza finanziaria.")
+
+        c.showPage()
+        c.save()
+
+        buf.seek(0)
+        return send_file(
+            buf,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="gloob_metodo_pigro.pdf",
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# -----------------------------
 # CHAT ASSISTANT (OpenAI)
 # -----------------------------
 def _extract_text_from_responses_api(payload: dict) -> str:
+    # Responses API: payload["output"] è una lista; cerchiamo il primo testo
     out = payload.get("output", [])
     for item in out:
         content = item.get("content", [])
@@ -301,6 +455,7 @@ def _extract_text_from_responses_api(payload: dict) -> str:
                 return str(c["text"]).strip()
             if c.get("type") == "text" and c.get("text"):
                 return str(c["text"]).strip()
+    # fallback
     if "text" in payload and payload["text"]:
         return str(payload["text"]).strip()
     return ""
@@ -322,6 +477,7 @@ def _openai_answer(question: str, context: dict) -> str:
         "'Nota: risposta informativa, non consulenza finanziaria.'"
     )
 
+    # contesto utile e “sicuro”
     ctx_lines = []
     if isinstance(context, dict):
         oro = context.get("oro_pct")
@@ -329,9 +485,7 @@ def _openai_answer(question: str, context: dict) -> str:
         ob = context.get("obbligazionario_pct")
         cap = context.get("capitale_eur")
         if oro is not None and az is not None and ob is not None:
-            ctx_lines.append(
-                f"Composizione attuale: Azionario {az}% | Obbligazionario {ob}% | Oro {oro}%."
-            )
+            ctx_lines.append(f"Composizione attuale: Azionario {az}% | Obbligazionario {ob}% | Oro {oro}%.")
         if cap is not None:
             ctx_lines.append(f"Capitale iniziale indicato: {cap} €.")
     ctx_text = "\n".join(ctx_lines)
@@ -380,42 +534,24 @@ def _openai_answer(question: str, context: dict) -> str:
 def api_ask():
     try:
         ip = _client_ip()
-
-        ok, msg, remaining = _check_ask_limits(ip)
+        ok, remaining = _rate_limit_ok(ip)
         if not ok:
-            return jsonify(
-                {
-                    "error": msg,
-                    "remaining_today": remaining,
-                    "limit_per_day": ASK_LIMIT_PER_DAY,
-                }
-            ), 429
+            return jsonify({"error": "Troppe richieste. Riprova più tardi."}), 429
 
         payload = request.get_json(silent=True) or {}
         q = (payload.get("question") or "").strip()
         if not q:
-            # non consumiamo ulteriormente: abbiamo già “consumato” per semplicità,
-            # ma è un caso rarissimo perché il client non manda vuoto.
-            return jsonify({"error": "Scrivi una domanda.", "remaining_today": remaining, "limit_per_day": ASK_LIMIT_PER_DAY}), 400
+            return jsonify({"error": "Scrivi una domanda."}), 400
         if len(q) > 800:
-            return jsonify({"error": "Domanda troppo lunga (max 800 caratteri).", "remaining_today": remaining, "limit_per_day": ASK_LIMIT_PER_DAY}), 400
+            return jsonify({"error": "Domanda troppo lunga (max 800 caratteri)."}), 400
 
         context = payload.get("context") or {}
         answer = _openai_answer(q, context)
 
-        return jsonify(
-            {
-                "answer": answer,
-                "remaining_today": remaining,
-                "limit_per_day": ASK_LIMIT_PER_DAY,
-            }
-        )
+        return jsonify({"answer": answer, "remaining": remaining})
 
     except Exception as e:
-        # in caso di errore “vero”, proviamo comunque a mostrare quota residua se possibile
-        ip = _client_ip()
-        rem = _remaining_today(ip)
-        return jsonify({"error": str(e), "remaining_today": rem, "limit_per_day": ASK_LIMIT_PER_DAY}), 400
+        return jsonify({"error": str(e)}), 400
 
 
 if __name__ == "__main__":
