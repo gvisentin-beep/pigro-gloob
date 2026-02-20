@@ -8,7 +8,7 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- CSS principale (se vuoi tenere il tuo stile) -->
+    <!-- CSS principale -->
     <link rel="stylesheet" href="/static/style_4.css">
 
     <style>
@@ -18,7 +18,6 @@
             margin: 0;
             padding: 20px;
         }
-
         .card {
             background: white;
             border-radius: 14px;
@@ -26,28 +25,23 @@
             margin-bottom: 18px;
             box-shadow: 0 4px 14px rgba(0,0,0,0.06);
         }
-
-        /* ===== BRAND HEADER ===== */
         .brand-header {
             display: flex;
             align-items: center;
             gap: 16px;
             margin-bottom: 8px;
         }
-
         .logo {
             height: 54px;
             width: 54px;
             object-fit: contain;
             border-radius: 14px;
         }
-
         .brand-text {
             display: flex;
             flex-direction: column;
             line-height: 1.05;
         }
-
         .brand-name {
             font-size: 2.4rem;
             font-weight: 800;
@@ -55,47 +49,39 @@
             color: #1f3b73;
             letter-spacing: 0.3px;
         }
-
         .brand-subtitle {
             font-size: 1.05rem;
             font-weight: 700;
             color: #4a5a75;
             margin-top: 4px;
         }
-
         .intro {
             margin-top: 12px;
             font-size: 1rem;
         }
-
         ul { margin-top: 10px; }
 
-        /* ===== CONTROLLI ===== */
         .controls label {
             font-weight: 600;
             display: block;
             margin-top: 10px;
             margin-bottom: 4px;
         }
-
         .slider-row {
             display: flex;
             align-items: center;
             gap: 14px;
         }
-
         input[type="range"] {
             width: 100%;
             accent-color: #2c5aa0;
         }
-
         .gold-badge {
             font-weight: 800;
             color: #2c5aa0;
             min-width: 46px;
             text-align: right;
         }
-
         input[type="text"] {
             padding: 7px 10px;
             border-radius: 10px;
@@ -103,14 +89,12 @@
             width: 140px;
             font-weight: 700;
         }
-
         .row {
             display: flex;
             align-items: center;
             gap: 10px;
             flex-wrap: wrap;
         }
-
         button {
             background: #2c5aa0;
             color: white;
@@ -120,24 +104,18 @@
             cursor: pointer;
             font-weight: 700;
         }
-
-        button:hover {
-            background: #1f3b73;
-        }
-
+        button:hover { background: #1f3b73; }
         #period {
             font-size: 0.9rem;
             color: #6b7280;
             margin-top: 6px;
         }
-
         canvas { max-width: 100%; }
     </style>
 </head>
 
 <body>
 
-    <!-- ===== HEADER BRAND ===== -->
     <div class="card">
         <div class="brand-header">
             <img src="/static/logo.png" alt="Logo Gloob" class="logo">
@@ -159,22 +137,20 @@
         </ul>
     </div>
 
-    <!-- ===== CONTROLLI ===== -->
     <div class="card controls">
-        <label>Oro (%) (0–20, step 5)</label>
+        <label>Oro (%) (0–50, step 5)</label>
         <div class="slider-row">
-            <input id="w_gold" type="range" min="0" max="20" step="5" value="10">
+            <input id="w_gold" type="range" min="0" max="50" step="5" value="10">
             <span id="gold_badge" class="gold-badge">10%</span>
         </div>
 
         <label>Capitale (€)</label>
         <div class="row">
-            <!-- input text per poter mostrare "10.000" -->
             <input id="initial" type="text" value="10.000" inputmode="numeric" aria-label="Capitale in euro">
             <button>Aggiorna</button>
         </div>
 
-        <!-- Questa riga è “di servizio” e viene nascosta da app.js per evitare duplicazione -->
+        <!-- Riga “di servizio” (nascosta da app.js) -->
         <div style="margin-top:8px;">
             <span id="w_equity"></span>
             <span id="w_bonds"></span>
@@ -182,19 +158,17 @@
         </div>
     </div>
 
-    <!-- ===== METRICHE ===== -->
     <div class="card">
         <div><b>Portafoglio (LS80+Oro):</b> Rendimento annualizzato — | Max Ribasso nel periodo —</div>
         <div>Solo LS80: Rendimento annualizzato — | Max Ribasso nel periodo —</div>
         <div id="period"></div>
     </div>
 
-    <!-- ===== GRAFICO ===== -->
     <div class="card">
         <canvas id="chart" height="120"></canvas>
     </div>
 
-    <!-- ===== Formattazione capitale (10.000) ===== -->
+    <!-- Formattazione capitale (10.000) -->
     <script>
         function formatThousandsIT(value) {
             const numeric = String(value || "").replace(/\D/g, "");
@@ -213,14 +187,11 @@
             const capitalInput = document.getElementById("initial");
             if (!capitalInput) return;
 
-            // Normalizza al caricamento (es: 10000 -> 10.000)
             capitalInput.value = formatThousandsIT(capitalInput.value);
 
             capitalInput.addEventListener("input", function () {
-                const before = this.value;
-                const formatted = formatThousandsIT(before);
-                this.value = formatted;
-                setCaretToEnd(this); // semplice e robusto
+                this.value = formatThousandsIT(this.value);
+                setCaretToEnd(this);
             });
 
             capitalInput.addEventListener("blur", function () {
@@ -229,7 +200,6 @@
         });
     </script>
 
-    <!-- JS applicazione -->
     <script src="/static/app.js"></script>
 
 </body>
