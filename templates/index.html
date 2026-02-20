@@ -40,6 +40,22 @@
 
     canvas { max-width: 100%; }
 
+    /* ✅ Grafico: altezza responsive (evita grafico appiattito su smartphone) */
+    .chart-wrap{
+      position: relative;
+      width: 100%;
+      height: 520px;   /* desktop */
+    }
+    @media (max-width: 900px){
+      .chart-wrap{ height: 420px; }  /* tablet */
+    }
+    @media (max-width: 600px){
+      .chart-wrap{ height: 340px; }  /* smartphone */
+    }
+    @media (max-width: 420px){
+      .chart-wrap{ height: 300px; }  /* telefoni piccoli */
+    }
+
     /* Seconda parte */
     .h2 { color:#1f3b73; font-size:1.15rem; font-weight:800; margin:0 0 10px 0; }
     .note { background:#f3f6fb; border:1px solid #dbe6f7; padding:12px 14px; border-radius:12px; color:#374151; font-size:.98rem; }
@@ -129,8 +145,11 @@
     <div id="period"></div>
   </div>
 
+  <!-- ✅ GRAFICO: wrapper responsive -->
   <div class="card">
-    <canvas id="chart" height="120"></canvas>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+    </div>
   </div>
 
   <!-- Seconda parte -->
@@ -170,11 +189,6 @@
         <div class="row" style="margin-top:10px;">
           <button id="ask_btn" type="button">Chiedi all’assistente</button>
           <span class="muted" id="ask_status" style="display:none;"></span>
-        </div>
-
-        <!-- ✅ NUOVO: quota rimanente -->
-        <div class="muted" id="ask_remaining" style="margin-top:6px;">
-          Domande rimanenti oggi: —/10
         </div>
 
         <div id="ask_answer" class="answer-box" style="display:block;"></div>
