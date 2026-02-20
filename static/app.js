@@ -36,7 +36,7 @@ function parseCapitalEuro() {
   return Number.isFinite(n) && n > 0 ? n : 10000;
 }
 
-// Calcola composizione (Oro max 50%, resto LS80 80/20)
+// Composizione: Oro 0-50%, resto ETF 80/20
 function computeCompositionFromGoldInput() {
   let gold = Number(document.getElementById("w_gold")?.value);
   if (!Number.isFinite(gold)) gold = 10;
@@ -54,7 +54,6 @@ function computeCompositionFromGoldInput() {
   return { gold, ls80, equity, bonds };
 }
 
-// Badge oro + nasconde composizione duplicata sotto lo slider
 function updateGoldBadgeAndHideInlineComposition(comp) {
   const badge = document.getElementById("gold_badge");
   if (badge) badge.innerText = `${comp.gold.toFixed(0)}%`;
@@ -68,11 +67,10 @@ function updateGoldBadgeAndHideInlineComposition(comp) {
 
 function findMetricsCard() {
   return Array.from(document.querySelectorAll(".card")).find((el) =>
-    el.innerText.includes("Portafoglio (LS80+Oro)")
+    el.innerText.includes("Portafoglio")
   );
 }
 
-// Marker anni: inizio anno + metà anno (2 linee verticali)
 function computeYearMarkers(dateStrings) {
   const byYear = {};
 
@@ -100,8 +98,7 @@ function computeYearsBetween(dateStartStr, dateEndStr) {
   const t0 = Date.parse(dateStartStr);
   const t1 = Date.parse(dateEndStr);
   if (!Number.isFinite(t0) || !Number.isFinite(t1) || t1 <= t0) return null;
-  const years = (t1 - t0) / (365.25 * 24 * 3600 * 1000);
-  return years;
+  return (t1 - t0) / (365.25 * 24 * 3600 * 1000);
 }
 
 async function loadData() {
@@ -135,16 +132,13 @@ async function loadData() {
     return;
   }
 
-  // Periodo (rimane sotto)
-  if (Array.isArray(data.dates) && data.dates.length > 1) {
-    const p = document.getElementById("period");
-    if (p) p.innerText = `${data.dates[0]} → ${data.dates[data.dates.length - 1]}`;
-  }
-
-  // ===== NUOVO: capitale finale + anni (sulla riga capitale) =====
-  if (Array.isArray(data.dates) && data.dates.length > 1 && Array.isArray(data.portfolio) && data.portfolio.length > 1) {
+  // Capitale finale + anni (riga accanto al bottone)
+  if (Array.isArray(data.dates) && data.portfolio?.length > 1) {
     const finalValue = data.portfolio[data.portfolio.length - 1];
-    const years = computeYearsBetween(data.dates[0], data.dates[data.dates.length - 1]);
+    const years = computeYearsBetween(
+      data.dates[0],
+      data.dates[data.dates.length - 1]
+    );
 
     const outFinal = document.getElementById("final_capital");
     const outYears = document.getElementById("final_years");
@@ -153,18 +147,19 @@ async function loadData() {
     if (outYears) outYears.innerText = fmtYearsIt(years);
   }
 
-  // ===== METRICHE =====
-  if (data.metrics && Array.isArray(data.dates) && data.dates.length > 1) {
+  // ===== METRICHE (MODIFICATE COME RICHIESTO) =====
+  if (data.metrics) {
     const m = data.metrics;
 
     const riga1 =
-      `Portafoglio (LS80+Oro): Rendimento annualizzato ${pct(m.cagr_portfolio)} | Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
+      `Portafoglio (ETF Azion-Obblig + ETC Oro): ` +
+      `Rendimento annualizzato ${pct(m.cagr_portfolio)} | ` +
+      `Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
 
     const riga2 =
-      `Solo LS80: Rendimento annualizzato ${pct(m.cagr_solo)} | Max Ribasso nel periodo ${pct(m.max_dd_solo)}`;
-
-    const riga3 =
-      `Composizione: Azionario ${comp.equity.toFixed(0)}% | Obbligazionario ${comp.bonds.toFixed(0)}% | Oro ${comp.gold.toFixed(0)}%`;
+      `Composizione: Azionario ${comp.equity.toFixed(0)}% | ` +
+      `Obbligazionario ${comp.bonds.toFixed(0)}% | ` +
+      `Oro ${comp.gold.toFixed(0)}%`;
 
     let ytd = m.years_to_double;
     if (!(Number.isFinite(Number(ytd)) && Number(ytd) > 0)) {
@@ -176,19 +171,16 @@ async function loadData() {
       }
     }
 
-    const riga4 = `Raddoppio del portafoglio in anni: ${fmtYearsIt(ytd)}`;
+    const riga3 = `Raddoppio del portafoglio in anni: ${fmtYearsIt(ytd)}`;
 
     const card = findMetricsCard();
     if (card) {
-      card.innerHTML = `<b>${riga1}</b><br>${riga2}<br><b>${riga3}</b><br>${riga4}`;
+      card.innerHTML = `<b>${riga1}</b><br><b>${riga2}</b><br>${riga3}`;
     }
   }
 
   // ===== GRAFICO =====
-  const canvas = document.getElementById("chart");
-  if (!canvas) return;
-
-  const ctx = canvas.getContext("2d");
+  const ctx = document.getElementById("chart").getContext("2d");
   if (chart) chart.destroy();
 
   const labels = data.dates;
@@ -200,15 +192,8 @@ async function loadData() {
       labels,
       datasets: [
         {
-          label: "Portafoglio (LS80+Oro)",
+          label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
           data: data.portfolio,
-          borderWidth: 2,
-          tension: 0.15,
-          pointRadius: 0,
-        },
-        {
-          label: "Solo LS80",
-          data: data.solo_ls80,
           borderWidth: 2,
           tension: 0.15,
           pointRadius: 0,
@@ -221,7 +206,8 @@ async function loadData() {
       plugins: {
         tooltip: {
           callbacks: {
-            label: (c) => `${c.dataset.label}: ${euro(c.parsed.y)}`,
+            label: (c) =>
+              `Portafoglio: ${euro(c.parsed.y)}`,
           },
         },
       },
@@ -237,8 +223,11 @@ async function loadData() {
             minRotation: 0,
           },
           grid: {
-            color: (context) => (yearMarkers.has(context.index) ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.03)"),
-            lineWidth: (context) => (yearMarkers.has(context.index) ? 1.2 : 0.2),
+            color: (ctx) =>
+              yearMarkers.has(ctx.index)
+                ? "rgba(0,0,0,0.18)"
+                : "rgba(0,0,0,0.03)",
+            lineWidth: (ctx) => (yearMarkers.has(ctx.index) ? 1.2 : 0.2),
           },
         },
         y: {
@@ -257,16 +246,6 @@ function init() {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       loadData();
-    });
-  }
-
-  const capEl = document.getElementById("initial");
-  if (capEl) {
-    capEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        loadData();
-      }
     });
   }
 
