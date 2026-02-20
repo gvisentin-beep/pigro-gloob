@@ -74,7 +74,6 @@ function findMetricsCard() {
 // Marker anni: inizio anno + metà anno (2 linee verticali)
 function computeYearMarkers(dateStrings) {
   const byYear = {};
-
   for (let i = 0; i < dateStrings.length; i++) {
     const y = String(dateStrings[i]).slice(0, 4);
     if (!byYear[y]) byYear[y] = [];
@@ -85,7 +84,7 @@ function computeYearMarkers(dateStrings) {
   const yearMarkers = new Set();
 
   Object.values(byYear).forEach((arr) => {
-    if (arr.length === 0) return;
+    if (!arr.length) return;
     yearStart.add(arr[0]);
     yearMarkers.add(arr[0]);
     const mid = arr[Math.floor(arr.length / 2)];
@@ -171,13 +170,10 @@ async function loadData() {
         ytd = null;
       }
     }
-
     const riga3 = `Raddoppio del portafoglio in anni: ${fmtYearsIt(ytd)}`;
 
     const card = findMetricsCard();
-    if (card) {
-      card.innerHTML = `<b>${riga1}</b><br><b>${riga2}</b><br>${riga3}`;
-    }
+    if (card) card.innerHTML = `<b>${riga1}</b><br><b>${riga2}</b><br>${riga3}`;
   }
 
   // ===== GRAFICO =====
@@ -238,18 +234,16 @@ async function loadData() {
   });
 }
 
-/* ====== Domande libere (Invio via email senza salvare dati) ====== */
-function setupFreeQuestionsMailto() {
-  const btn = document.getElementById("send_question_btn");
-  const ta = document.getElementById("free_question");
-  const status = document.getElementById("send_status");
+/* ===== Assistente (ChatGPT) ===== */
+function setupAssistant() {
+  const btn = document.getElementById("ask_btn");
+  const ta = document.getElementById("ask_text");
+  const out = document.getElementById("ask_answer");
+  const status = document.getElementById("ask_status");
 
-  if (!btn || !ta) return;
+  if (!btn || !ta || !out) return;
 
-  // ⬇️ Cambia qui se vuoi un altro destinatario
-  const TO_EMAIL = "g.visentin@yahoo.it";
-
-  btn.addEventListener("click", () => {
+  async function ask() {
     const q = (ta.value || "").trim();
     if (!q) {
       alert("Scrivi prima una domanda.");
@@ -257,33 +251,57 @@ function setupFreeQuestionsMailto() {
       return;
     }
 
-    // Aggiungo contesto (oro/capitale) per rendere utile la mail
+    btn.disabled = true;
+    if (status) {
+      status.style.display = "inline";
+      status.innerText = "Sto pensando…";
+    }
+    out.innerText = "";
+
     const comp = computeCompositionFromGoldInput();
     const capital = parseCapitalEuro();
 
-    const subject = "Domanda dal sito Gloob — Metodo Pigro";
-    const body =
-      `Domanda:\n${q}\n\n` +
-      `Contesto (in questo momento):\n` +
-      `- Oro: ${comp.gold.toFixed(0)}%\n` +
-      `- Azionario: ${(comp.equity).toFixed(0)}%\n` +
-      `- Obbligazionario: ${(comp.bonds).toFixed(0)}%\n` +
-      `- Capitale iniziale: ${new Intl.NumberFormat("it-IT").format(capital)} €\n\n` +
-      `Nota: nessun dato viene salvato sul sito.`;
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          question: q,
+          context: {
+            oro_pct: comp.gold.toFixed(0),
+            azionario_pct: comp.equity.toFixed(0),
+            obbligazionario_pct: comp.bonds.toFixed(0),
+            capitale_eur: new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(capital),
+          },
+        }),
+      });
 
-    const mailto =
-      `mailto:${encodeURIComponent(TO_EMAIL)}` +
-      `?subject=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(body)}`;
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Errore assistente.");
+      }
 
-    // apre il client mail dell’utente
-    window.location.href = mailto;
-
-    if (status) {
-      status.style.display = "inline";
-      status.innerText = "Apro la tua email…";
-      setTimeout(() => (status.style.display = "none"), 2000);
+      out.innerText = data.answer || "(risposta vuota)";
+      if (status) {
+        status.innerText = data.remaining !== undefined
+          ? `Ok (richieste residue nell’ora: ${data.remaining}).`
+          : "Ok.";
+        setTimeout(() => (status.style.display = "none"), 2500);
+      }
+    } catch (e) {
+      console.error(e);
+      out.innerText = "";
+      alert(String(e.message || e));
+      if (status) status.style.display = "none";
+    } finally {
+      btn.disabled = false;
     }
+  }
+
+  btn.addEventListener("click", ask);
+  ta.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) ask();
   });
 }
 
@@ -307,7 +325,7 @@ function init() {
     goldEl.addEventListener("change", () => loadData());
   }
 
-  setupFreeQuestionsMailto();
+  setupAssistant();
 }
 
 window.addEventListener("DOMContentLoaded", init);
