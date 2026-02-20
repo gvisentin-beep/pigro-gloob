@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
+import os
+import time
+import urllib.error
+import urllib.request
+from collections import deque
 from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Deque, Dict, List, Optional, Tuple
 
-from flask import Flask, jsonify, render_template, request, make_response
+from flask import Flask, jsonify, make_response, render_template, request
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # no cache per static
@@ -18,6 +24,41 @@ ASSET_FILES: Dict[str, str] = {
     "ls80": "ls80.csv",
     "gold": "gold.csv",
 }
+
+# -----------------------------
+# Rate limit semplice (in-memory)
+# -----------------------------
+# 20 richieste / ora / IP
+ASK_LIMIT_PER_HOUR = int(os.getenv("ASK_LIMIT_PER_HOUR", "20"))
+_ask_hits: Dict[str, Deque[float]] = {}
+
+
+def _client_ip() -> str:
+    # Render spesso mette X-Forwarded-For
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _rate_limit_ok(ip: str) -> Tuple[bool, int]:
+    now = time.time()
+    window = 3600.0
+
+    q = _ask_hits.get(ip)
+    if q is None:
+        q = deque()
+        _ask_hits[ip] = q
+
+    while q and (now - q[0]) > window:
+        q.popleft()
+
+    if len(q) >= ASK_LIMIT_PER_HOUR:
+        return False, 0
+
+    q.append(now)
+    remaining = max(0, ASK_LIMIT_PER_HOUR - len(q))
+    return True, remaining
 
 
 def _parse_float(s: str) -> float:
@@ -42,143 +83,116 @@ def _parse_date(s: str) -> date:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             pass
-    raise ValueError(f"Data non riconosciuta: {s!r}")
+    raise ValueError(f"Formato data non riconosciuto: {s}")
 
 
-def _detect_delimiter(sample: str) -> str:
-    return ";" if sample.count(";") > sample.count(",") else ","
-
-
-def _read_price_series(path: Path) -> Tuple[List[date], List[float]]:
+def _detect_and_read_csv(path: Path) -> Tuple[List[date], List[float]]:
     if not path.exists():
-        raise FileNotFoundError(f"File non trovato: {path}")
+        raise FileNotFoundError(f"File mancante: {path}")
+
+    dates: List[date] = []
+    values: List[float] = []
 
     with path.open("r", encoding="utf-8-sig", newline="") as f:
-        head = f.read(4096)
-        delim = _detect_delimiter(head)
+        sample = f.read(2048)
+        f.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=";,|\t,")
+        except Exception:
+            dialect = csv.excel
 
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.reader(f, delimiter=delim)
+        reader = csv.reader(f, dialect)
         rows = list(reader)
 
-    if not rows or len(rows) < 2:
-        raise ValueError(f"CSV vuoto o troppo corto: {path.name}")
+    # Prova a capire se c’è header
+    start_i = 0
+    if rows and any("date" in (c or "").lower() for c in rows[0]):
+        start_i = 1
 
-    header = [c.strip() for c in rows[0]]
-    data_rows = rows[1:]
-
-    date_idx = 0
-    price_idx = 1 if len(header) > 1 else 0
-
-    for i, c in enumerate(header):
-        cl = c.lower()
-        if "date" in cl or "data" in cl:
-            date_idx = i
-            break
-
-    for i, c in enumerate(header):
-        cl = c.lower()
-        if any(k in cl for k in ("close", "prezzo", "price", "nav")):
-            price_idx = i
-            break
-
-    tmp: List[Tuple[date, float]] = []
-    for r in data_rows:
-        if not r or len(r) <= max(date_idx, price_idx):
+    for r in rows[start_i:]:
+        if not r or len(r) < 2:
             continue
-        ds = r[date_idx].strip()
-        ps = r[price_idx].strip()
-        if not ds or not ps:
+        d = _parse_date(r[0])
+        v = _parse_float(r[1])
+        if not math.isfinite(v):
             continue
-        try:
-            d = _parse_date(ds)
-            p = _parse_float(ps)
-        except Exception:
-            continue
-        if math.isnan(p):
-            continue
-        tmp.append((d, p))
+        dates.append(d)
+        values.append(float(v))
 
-    if not tmp:
-        raise ValueError(f"Nel CSV {path.name} non trovo righe valide (serve colonna data + prezzo).")
+    if not dates:
+        raise ValueError(f"Nessun dato valido in {path}")
 
-    tmp.sort(key=lambda x: x[0])
-    return [d for d, _ in tmp], [p for _, p in tmp]
+    return dates, values
 
 
-def _align_by_date(
-    a_dates: List[date], a_vals: List[float],
-    b_dates: List[date], b_vals: List[float],
+def _align_series(
+    d1: List[date], v1: List[float], d2: List[date], v2: List[float]
 ) -> Tuple[List[date], List[float], List[float]]:
-    ad = {d: v for d, v in zip(a_dates, a_vals)}
-    bd = {d: v for d, v in zip(b_dates, b_vals)}
-    common = sorted(set(ad.keys()) & set(bd.keys()))
-    if len(common) < 2:
-        raise ValueError("Serie con poche date comuni tra LS80 e Oro.")
-    return common, [ad[d] for d in common], [bd[d] for d in common]
+    m1 = dict(zip(d1, v1))
+    m2 = dict(zip(d2, v2))
+    common = sorted(set(m1.keys()) & set(m2.keys()))
+    if len(common) < 10:
+        raise ValueError("Serie troppo corte o poche date in comune.")
+    a1 = [m1[d] for d in common]
+    a2 = [m2[d] for d in common]
+    return common, a1, a2
+
+
+def _compute_cagr(start_val: float, end_val: float, years: float) -> float:
+    if start_val <= 0 or end_val <= 0 or years <= 0:
+        return float("nan")
+    return (end_val / start_val) ** (1 / years) - 1
 
 
 def _max_drawdown(values: List[float]) -> float:
-    peak = -float("inf")
+    peak = -1e18
     mdd = 0.0
-    for v in values:
-        if v > peak:
-            peak = v
+    for x in values:
+        if x > peak:
+            peak = x
         if peak > 0:
-            dd = (v / peak) - 1.0
+            dd = (x / peak) - 1.0
             if dd < mdd:
                 mdd = dd
     return mdd
 
 
-def _cagr(values: List[float], dates: List[date]) -> float:
-    if len(values) < 2:
-        return 0.0
-    start = values[0]
-    end = values[-1]
-    days = (dates[-1] - dates[0]).days
-    years = days / 365.25 if days > 0 else 0.0
-    if years <= 0 or start <= 0:
-        return 0.0
-    return (end / start) ** (1 / years) - 1
+def _years_between(d0: date, d1: date) -> float:
+    return (d1.toordinal() - d0.toordinal()) / 365.25
 
 
-def _years_to_double(cagr: float) -> Optional[float]:
-    if cagr <= 0:
-        return None
-    return math.log(2) / math.log(1 + cagr)
-
-
-def _backtest_two_assets(
+def _build_portfolio(
     dates: List[date],
-    p_ls: List[float],
-    p_gold: List[float],
-    w_ls: float,
-    w_gold: float,
+    ls80_vals: List[float],
+    gold_vals: List[float],
+    w_ls80_pct: float,
+    w_gold_pct: float,
     capital: float,
 ) -> Tuple[List[float], List[float]]:
-    ls_shares = (capital * w_ls) / p_ls[0]
-    gold_shares = (capital * w_gold) / p_gold[0]
-    solo_shares = capital / p_ls[0]
+    # Normalizzazione in € partendo da capital
+    w_ls = w_ls80_pct / 100.0
+    w_g = w_gold_pct / 100.0
 
-    port_vals: List[float] = []
-    solo_vals: List[float] = []
+    if w_ls < 0 or w_g < 0 or (w_ls + w_g) <= 0:
+        raise ValueError("Pesi non validi")
 
-    last_year = dates[0].year
-    for d, ls_price, g_price in zip(dates, p_ls, p_gold):
-        total = ls_shares * ls_price + gold_shares * g_price
-        solo_total = solo_shares * ls_price
+    # normalizza per sicurezza (se arriva 95+10 ecc)
+    s = w_ls + w_g
+    w_ls /= s
+    w_g /= s
 
-        if d.year != last_year:
-            ls_shares = (total * w_ls) / ls_price
-            gold_shares = (total * w_gold) / g_price
-            last_year = d.year
-            total = ls_shares * ls_price + gold_shares * g_price
+    # Serie indice -> euro
+    ls0 = ls80_vals[0]
+    g0 = gold_vals[0]
+    if ls0 <= 0 or g0 <= 0:
+        raise ValueError("Valori iniziali non validi")
 
-        port_vals.append(total)
-        solo_vals.append(solo_total)
+    ls_eur = [capital * w_ls * (x / ls0) for x in ls80_vals]
+    g_eur = [capital * w_g * (x / g0) for x in gold_vals]
 
-    return port_vals, solo_vals
+    port = [ls_eur[i] + g_eur[i] for i in range(len(dates))]
+    solo = [capital * (x / ls0) for x in ls80_vals]
+    return port, solo
 
 
 @app.get("/health")
@@ -187,8 +201,7 @@ def health():
 
 
 @app.get("/")
-def index():
-    # anti-cache anche per la home (evita “incastri”)
+def home():
     resp = make_response(render_template("index.html"))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"] = "no-cache"
@@ -199,42 +212,36 @@ def index():
 @app.get("/api/compute")
 def api_compute():
     try:
-        w_ls80 = float(request.args.get("w_ls80", "80"))
-        w_gold = float(request.args.get("w_gold", "20"))
+        w_ls80 = float(request.args.get("w_ls80", "90"))
+        w_gold = float(request.args.get("w_gold", "10"))
+        capital = float(request.args.get("capital", "10000"))
 
-        capital = request.args.get("capital")
-        if capital is None:
-            capital = request.args.get("initial", "10000")
-        capital = float(capital)
+        # Legge CSV
+        d_ls, v_ls = _detect_and_read_csv(DATA_DIR / ASSET_FILES["ls80"])
+        d_g, v_g = _detect_and_read_csv(DATA_DIR / ASSET_FILES["gold"])
 
-        if capital <= 0:
-            return jsonify({"error": "Capitale deve essere > 0"}), 400
-        if w_ls80 < 0 or w_gold < 0:
-            return jsonify({"error": "I pesi devono essere >= 0"}), 400
+        # Allinea
+        dates, ls, g = _align_series(d_ls, v_ls, d_g, v_g)
 
-        s = w_ls80 + w_gold
-        if s <= 0:
-            return jsonify({"error": "Somma pesi deve essere > 0"}), 400
+        # Portafoglio
+        port_vals, solo_vals = _build_portfolio(dates, ls, g, w_ls80, w_gold, capital)
 
-        w_ls = w_ls80 / s
-        w_g = w_gold / s
+        years = _years_between(dates[0], dates[-1])
+        cagr_port = _compute_cagr(port_vals[0], port_vals[-1], years)
+        cagr_solo = _compute_cagr(solo_vals[0], solo_vals[-1], years)
 
-        d_ls, p_ls = _read_price_series(DATA_DIR / ASSET_FILES["ls80"])
-        d_g, p_g = _read_price_series(DATA_DIR / ASSET_FILES["gold"])
-        dates, p_ls_al, p_g_al = _align_by_date(d_ls, p_ls, d_g, p_g)
-
-        port_vals, solo_vals = _backtest_two_assets(dates, p_ls_al, p_g_al, w_ls, w_g, capital)
-
-        cagr_port = _cagr(port_vals, dates)
-        cagr_solo = _cagr(solo_vals, dates)
         mdd_port = _max_drawdown(port_vals)
         mdd_solo = _max_drawdown(solo_vals)
-        yd = _years_to_double(cagr_port)
+
+        # anni per raddoppio (se cagr>0)
+        yd = float("nan")
+        if math.isfinite(cagr_port) and cagr_port > 0:
+            yd = math.log(2) / math.log(1 + cagr_port)
 
         payload = {
             "dates": [d.isoformat() for d in dates],
             "portfolio": port_vals,
-            "solo_ls80": solo_vals,
+            "solo_ls80": solo_vals,  # lasciamo compatibilità (anche se non lo mostri)
             "metrics": {
                 "cagr_portfolio": cagr_port,
                 "cagr_solo": cagr_solo,
@@ -253,6 +260,118 @@ def api_compute():
         resp.headers["Pragma"] = "no-cache"
         resp.headers["Expires"] = "0"
         return resp
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# -----------------------------
+# CHAT ASSISTANT (OpenAI)
+# -----------------------------
+def _extract_text_from_responses_api(payload: dict) -> str:
+    # Responses API: payload["output"] è una lista; cerchiamo il primo testo
+    out = payload.get("output", [])
+    for item in out:
+        content = item.get("content", [])
+        for c in content:
+            if c.get("type") == "output_text" and c.get("text"):
+                return str(c["text"]).strip()
+            if c.get("type") == "text" and c.get("text"):
+                return str(c["text"]).strip()
+    # fallback
+    if "text" in payload and payload["text"]:
+        return str(payload["text"]).strip()
+    return ""
+
+
+def _openai_answer(question: str, context: dict) -> str:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("Assistente non configurato: manca OPENAI_API_KEY su Render.")
+
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+
+    system = (
+        "Sei l'assistente del sito Gloob (Metodo Pigro). "
+        "Rispondi in italiano, in modo chiaro e pratico, senza fare consulenza personalizzata. "
+        "Non dare istruzioni su strumenti complessi, non fare promesse di rendimento. "
+        "Se la domanda è ambigua, proponi 1-2 chiarimenti. "
+        "In chiusura aggiungi sempre una riga di disclaimer: "
+        "'Nota: risposta informativa, non consulenza finanziaria.'"
+    )
+
+    # contesto utile e “sicuro”
+    ctx_lines = []
+    if isinstance(context, dict):
+        oro = context.get("oro_pct")
+        az = context.get("azionario_pct")
+        ob = context.get("obbligazionario_pct")
+        cap = context.get("capitale_eur")
+        if oro is not None and az is not None and ob is not None:
+            ctx_lines.append(f"Composizione attuale: Azionario {az}% | Obbligazionario {ob}% | Oro {oro}%.")
+        if cap is not None:
+            ctx_lines.append(f"Capitale iniziale indicato: {cap} €.")
+    ctx_text = "\n".join(ctx_lines)
+
+    user = (
+        f"Domanda utente:\n{question}\n\n"
+        f"Contesto:\n{ctx_text}\n"
+        "Rispondi con massimo 10 righe, se possibile."
+    )
+
+    body = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Errore OpenAI HTTP {e.code}: {msg[:400]}")
+    except Exception as e:
+        raise RuntimeError(f"Errore chiamata OpenAI: {e}")
+
+    text = _extract_text_from_responses_api(data)
+    if not text:
+        raise RuntimeError("Risposta vuota dall'assistente.")
+    return text
+
+
+@app.post("/api/ask")
+def api_ask():
+    try:
+        ip = _client_ip()
+        ok, remaining = _rate_limit_ok(ip)
+        if not ok:
+            return jsonify({"error": "Troppe richieste. Riprova più tardi."}), 429
+
+        payload = request.get_json(silent=True) or {}
+        q = (payload.get("question") or "").strip()
+        if not q:
+            return jsonify({"error": "Scrivi una domanda."}), 400
+        if len(q) > 800:
+            return jsonify({"error": "Domanda troppo lunga (max 800 caratteri)."}), 400
+
+        context = payload.get("context") or {}
+        answer = _openai_answer(q, context)
+
+        return jsonify({"answer": answer, "remaining": remaining})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 400
