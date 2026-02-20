@@ -199,6 +199,7 @@ async function loadData() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false, // ✅ fondamentale per usare l’altezza della chart-wrap
       interaction: { mode: "index", intersect: false },
       plugins: {
         tooltip: {
@@ -234,51 +235,6 @@ async function loadData() {
   });
 }
 
-function renderAssistantBox(outEl, kind, text) {
-  // kind: "ok" | "warn" | "err"
-  const styles = {
-    ok: {
-      bg: "#f4f6fb",
-      bd: "#dce3f0",
-      fg: "#111827",
-    },
-    warn: {
-      bg: "#fff3cd",
-      bd: "#ffeeba",
-      fg: "#856404",
-    },
-    err: {
-      bg: "#f8d7da",
-      bd: "#f5c2c7",
-      fg: "#842029",
-    },
-  };
-  const s = styles[kind] || styles.ok;
-  outEl.innerHTML = `
-    <div style="
-      background:${s.bg};
-      border:1px solid ${s.bd};
-      color:${s.fg};
-      padding:12px 12px;
-      border-radius:12px;
-      line-height:1.35;
-      white-space:pre-wrap;
-    ">${text}</div>
-  `;
-}
-
-function updateRemainingUI(remaining, limit) {
-  const el = document.getElementById("ask_remaining");
-  if (!el) return;
-  const r = Number(remaining);
-  const L = Number(limit);
-  if (Number.isFinite(r) && Number.isFinite(L)) {
-    el.innerText = `Domande rimanenti oggi: ${r}/${L}`;
-  } else {
-    el.innerText = `Domande rimanenti oggi: —/${Number.isFinite(L) ? L : 10}`;
-  }
-}
-
 /* ===== Assistente (ChatGPT) ===== */
 function setupAssistant() {
   const btn = document.getElementById("ask_btn");
@@ -291,7 +247,7 @@ function setupAssistant() {
   async function ask() {
     const q = (ta.value || "").trim();
     if (!q) {
-      renderAssistantBox(out, "warn", "Scrivi prima una domanda 🙂");
+      alert("Scrivi prima una domanda.");
       ta.focus();
       return;
     }
@@ -301,8 +257,7 @@ function setupAssistant() {
       status.style.display = "inline";
       status.innerText = "Sto pensando…";
     }
-
-    renderAssistantBox(out, "ok", "Sto pensando…");
+    out.innerText = "";
 
     const comp = computeCompositionFromGoldInput();
     const capital = parseCapitalEuro();
@@ -318,41 +273,27 @@ function setupAssistant() {
             oro_pct: comp.gold.toFixed(0),
             azionario_pct: comp.equity.toFixed(0),
             obbligazionario_pct: comp.bonds.toFixed(0),
-            capitale_eur: new Intl.NumberFormat("it-IT", {
-              maximumFractionDigits: 0,
-            }).format(capital),
+            capitale_eur: new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(capital),
           },
         }),
       });
 
-      const data = await res.json().catch(() => ({}));
-
-      // Aggiorna “Domande rimanenti oggi”
-      updateRemainingUI(data.remaining_today, data.limit_per_day);
-
+      const data = await res.json();
       if (!res.ok || data.error) {
-        const msg =
-          data.error ||
-          "Errore nella risposta dell’assistente. Riprova tra poco.";
-        renderAssistantBox(out, "warn", msg);
-        if (status) status.style.display = "none";
-        return;
+        throw new Error(data.error || "Errore assistente.");
       }
 
-      const answer = data.answer || "(risposta vuota)";
-      renderAssistantBox(out, "ok", answer);
-
+      out.innerText = data.answer || "(risposta vuota)";
       if (status) {
-        status.innerText = "Ok.";
-        setTimeout(() => (status.style.display = "none"), 1200);
+        status.innerText = data.remaining !== undefined
+          ? `Ok (richieste residue nell’ora: ${data.remaining}).`
+          : "Ok.";
+        setTimeout(() => (status.style.display = "none"), 2500);
       }
     } catch (e) {
       console.error(e);
-      renderAssistantBox(
-        out,
-        "err",
-        "Connessione all’assistente non disponibile. Riprova tra poco."
-      );
+      out.innerText = "";
+      alert(String(e.message || e));
       if (status) status.style.display = "none";
     } finally {
       btn.disabled = false;
@@ -363,9 +304,6 @@ function setupAssistant() {
   ta.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) ask();
   });
-
-  // Stato iniziale UI
-  updateRemainingUI(undefined, 10);
 }
 
 function init() {
