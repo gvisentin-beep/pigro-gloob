@@ -1,4 +1,5 @@
 let chart = null;
+let _lastCompute = null; // { data, comp, capital }
 
 function euro(x) {
   return new Intl.NumberFormat("it-IT", {
@@ -132,6 +133,9 @@ async function loadData() {
     return;
   }
 
+  // salva ultimo calcolo per PDF
+  _lastCompute = { data, comp, capital };
+
   // Capitale finale + anni (riga accanto al bottone)
   if (Array.isArray(data.dates) && data.portfolio?.length > 1) {
     const finalValue = data.portfolio[data.portfolio.length - 1];
@@ -199,7 +203,7 @@ async function loadData() {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false, // ✅ fondamentale per usare l’altezza della chart-wrap
+      maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
         tooltip: {
@@ -233,6 +237,94 @@ async function loadData() {
       },
     },
   });
+}
+
+/* ===== PDF ===== */
+async function creaPdf() {
+  if (!chart || !_lastCompute || !_lastCompute.data) {
+    alert("Prima genera il grafico (premi Aggiorna).");
+    return;
+  }
+
+  const btn = document.getElementById("pdf_btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Creo PDF…";
+  }
+
+  try {
+    const { data, comp, capital } = _lastCompute;
+    const m = data.metrics || {};
+
+    // immagine del grafico
+    const chart_png = chart.toBase64Image("image/png", 1.0);
+
+    // meta per il PDF
+    const start = data.dates?.[0] || "";
+    const end = data.dates?.[data.dates.length - 1] || "";
+    const anni_periodo = computeYearsBetween(start, end);
+
+    const capitale_finale = (data.portfolio && data.portfolio.length)
+      ? data.portfolio[data.portfolio.length - 1]
+      : null;
+
+    // anni raddoppio (fallback)
+    let ytd = m.years_to_double;
+    if (!(Number.isFinite(Number(ytd)) && Number(ytd) > 0)) {
+      const cagr = Number(m.cagr_portfolio);
+      if (Number.isFinite(cagr) && cagr > 0) ytd = Math.log(2) / Math.log(1 + cagr);
+      else ytd = null;
+    }
+
+    const body = {
+      chart_png,
+      meta: {
+        start,
+        end,
+        oro_pct: comp.gold.toFixed(0),
+        azionario_pct: comp.equity.toFixed(0),
+        obbligazionario_pct: comp.bonds.toFixed(0),
+        capitale_iniziale: capital,
+        capitale_finale: capitale_finale,
+        anni_periodo: anni_periodo,
+        cagr: m.cagr_portfolio,
+        max_dd: m.max_dd_portfolio,
+        years_to_double: ytd,
+      }
+    };
+
+    const res = await fetch("/api/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Errore nella generazione del PDF.");
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "gloob_metodo_pigro.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (e) {
+    console.error(e);
+    alert(String(e.message || e));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "Crea PDF";
+    }
+  }
 }
 
 /* ===== Assistente (ChatGPT) ===== */
@@ -309,11 +401,19 @@ function setupAssistant() {
 function init() {
   loadData();
 
-  const btn = document.querySelector("button");
+  const btn = document.querySelector("button"); // Aggiorna (primo button)
   if (btn) {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       loadData();
+    });
+  }
+
+  const pdfBtn = document.getElementById("pdf_btn");
+  if (pdfBtn) {
+    pdfBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      creaPdf();
     });
   }
 
