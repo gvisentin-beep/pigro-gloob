@@ -71,6 +71,7 @@ function findMetricsCard() {
   );
 }
 
+// Marker anni: inizio anno + metà anno (2 linee verticali)
 function computeYearMarkers(dateStrings) {
   const byYear = {};
 
@@ -147,7 +148,7 @@ async function loadData() {
     if (outYears) outYears.innerText = fmtYearsIt(years);
   }
 
-  // ===== METRICHE (MODIFICATE COME RICHIESTO) =====
+  // ===== METRICHE =====
   if (data.metrics) {
     const m = data.metrics;
 
@@ -206,8 +207,7 @@ async function loadData() {
       plugins: {
         tooltip: {
           callbacks: {
-            label: (c) =>
-              `Portafoglio: ${euro(c.parsed.y)}`,
+            label: (c) => `Portafoglio: ${euro(c.parsed.y)}`,
           },
         },
       },
@@ -238,6 +238,55 @@ async function loadData() {
   });
 }
 
+/* ====== Domande libere (Invio via email senza salvare dati) ====== */
+function setupFreeQuestionsMailto() {
+  const btn = document.getElementById("send_question_btn");
+  const ta = document.getElementById("free_question");
+  const status = document.getElementById("send_status");
+
+  if (!btn || !ta) return;
+
+  // ⬇️ Cambia qui se vuoi un altro destinatario
+  const TO_EMAIL = "g.visentin@yahoo.it";
+
+  btn.addEventListener("click", () => {
+    const q = (ta.value || "").trim();
+    if (!q) {
+      alert("Scrivi prima una domanda.");
+      ta.focus();
+      return;
+    }
+
+    // Aggiungo contesto (oro/capitale) per rendere utile la mail
+    const comp = computeCompositionFromGoldInput();
+    const capital = parseCapitalEuro();
+
+    const subject = "Domanda dal sito Gloob — Metodo Pigro";
+    const body =
+      `Domanda:\n${q}\n\n` +
+      `Contesto (in questo momento):\n` +
+      `- Oro: ${comp.gold.toFixed(0)}%\n` +
+      `- Azionario: ${(comp.equity).toFixed(0)}%\n` +
+      `- Obbligazionario: ${(comp.bonds).toFixed(0)}%\n` +
+      `- Capitale iniziale: ${new Intl.NumberFormat("it-IT").format(capital)} €\n\n` +
+      `Nota: nessun dato viene salvato sul sito.`;
+
+    const mailto =
+      `mailto:${encodeURIComponent(TO_EMAIL)}` +
+      `?subject=${encodeURIComponent(subject)}` +
+      `&body=${encodeURIComponent(body)}`;
+
+    // apre il client mail dell’utente
+    window.location.href = mailto;
+
+    if (status) {
+      status.style.display = "inline";
+      status.innerText = "Apro la tua email…";
+      setTimeout(() => (status.style.display = "none"), 2000);
+    }
+  });
+}
+
 function init() {
   loadData();
 
@@ -257,6 +306,8 @@ function init() {
     });
     goldEl.addEventListener("change", () => loadData());
   }
+
+  setupFreeQuestionsMailto();
 }
 
 window.addEventListener("DOMContentLoaded", init);
