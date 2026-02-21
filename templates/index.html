@@ -1,248 +1,244 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <title>Gloob — Metodo Pigro</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gloob — Metodo Pigro</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="/static/style_4.css">
+    <link rel="icon" type="image/png" href="/static/logo.png" />
+    <link rel="stylesheet" href="/static/style_4.css" />
 
-  <style>
-    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }
-    .card { background: white; border-radius: 14px; padding: 22px; margin-bottom: 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+    <!-- Chart.js + time adapter -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.30.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 
-    .brand-header { display:flex; align-items:center; gap:16px; margin-bottom:8px; }
-    .logo { height:54px; width:54px; object-fit:contain; border-radius:14px; }
-    .brand-text { display:flex; flex-direction:column; line-height:1.05; }
-    .brand-name { font-size:2.4rem; font-weight:800; margin:0; color:#1f3b73; letter-spacing:.3px; }
-    .brand-subtitle { font-size:1.05rem; font-weight:700; color:#4a5a75; margin-top:4px; }
+    <style>
+      /* alza il grafico su mobile */
+      #chartWrap {
+        height: 520px;
+      }
+      @media (max-width: 680px) {
+        #chartWrap {
+          height: 420px;
+        }
+      }
 
-    .intro { margin-top:12px; font-size:1rem; }
-    ul { margin-top: 10px; }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 18px 0 6px;
+      }
+      .brand img {
+        width: 42px;
+        height: 42px;
+      }
+      .brand h1 {
+        margin: 0;
+        font-size: 40px;
+        line-height: 1;
+      }
+      .brand .sub {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        opacity: 0.85;
+      }
 
-    .controls label { font-weight:600; display:block; margin-top:10px; margin-bottom:4px; }
-    .slider-row { display:flex; align-items:center; gap:14px; }
-    input[type="range"] { width:100%; accent-color:#2c5aa0; }
-    .gold-badge { font-weight:800; color:#2c5aa0; min-width:46px; text-align:right; }
+      .controlsRow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: end;
+      }
+      .ctrl {
+        min-width: 220px;
+      }
+      .finalBox {
+        margin-left: auto;
+        font-weight: 700;
+        padding-bottom: 4px;
+      }
+      .muted {
+        opacity: 0.75;
+        font-size: 13px;
+      }
 
-    input[type="text"] { padding:7px 10px; border-radius:10px; border:1px solid #cfd6df; width:140px; font-weight:700; }
-    .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+      #ask_status {
+        display: none;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+      }
+      #ask_status.info { background: #eef4ff; }
+      #ask_status.ok { background: #e9f7ef; }
+      #ask_status.err { background: #fdecec; border: 1px solid #f3b5b5; }
 
-    button { background:#2c5aa0; color:white; border:none; padding:9px 16px; border-radius:10px; cursor:pointer; font-weight:700; }
-    button:hover { background:#1f3b73; }
-    button:disabled { opacity:.65; cursor:not-allowed; }
+      #ask_remaining {
+        margin-left: 10px;
+        font-weight: 700;
+      }
+    </style>
+  </head>
 
-    /* PDF button: secondario */
-    .btn-secondary { background:#425a84; }
-    .btn-secondary:hover { background:#2b3f63; }
-
-    .final-inline { margin-left:10px; font-weight:700; color:#1f3b73; white-space:nowrap; }
-    .final-inline small { font-weight:700; color:#4a5a75; }
-
-    #period { display:none; } /* niente "Periodo" */
-
-    canvas { max-width: 100%; }
-
-    /* Grafico responsive */
-    .chart-wrap{
-      position: relative;
-      width: 100%;
-      height: 520px;
-    }
-    @media (max-width: 900px){ .chart-wrap{ height: 420px; } }
-    @media (max-width: 600px){ .chart-wrap{ height: 340px; } }
-    @media (max-width: 420px){ .chart-wrap{ height: 300px; } }
-
-    /* Seconda parte */
-    .h2 { color:#1f3b73; font-size:1.15rem; font-weight:800; margin:0 0 10px 0; }
-    .note { background:#f3f6fb; border:1px solid #dbe6f7; padding:12px 14px; border-radius:12px; color:#374151; font-size:.98rem; }
-
-    .two-col { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-    @media (max-width: 900px) { .two-col { grid-template-columns:1fr; } }
-
-    .subcard { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:14px; }
-    .muted { color:#6b7280; font-size:.92rem; margin-top:2px; }
-
-    textarea {
-      width:100%; min-height:110px; resize:vertical;
-      border-radius:10px; border:1px solid #cfd6df;
-      padding:10px; font-size:.98rem; line-height:1.35;
-    }
-
-    .answer-box {
-      margin-top:10px;
-      background:#f7faff;
-      border:1px solid #dbe6f7;
-      border-radius:12px;
-      padding:12px 12px;
-      white-space:pre-wrap;
-      line-height:1.35;
-      color:#111827;
-    }
-
-    details.faq { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; margin-bottom:8px; background:#fff; }
-    details.faq summary { cursor:pointer; font-weight:700; color:#111827; list-style:none; }
-    details.faq summary::-webkit-details-marker { display:none; }
-    details.faq .ans { margin-top:8px; color:#374151; font-size:.96rem; line-height:1.35; }
-    @media (hover:hover) { details.faq:hover { border-color:#bcd0f2; background:#f7faff; } }
-  </style>
-</head>
-
-<body>
-
-  <div class="card">
-    <div class="brand-header">
-      <img src="/static/logo.png" alt="Logo Gloob" class="logo">
-      <div class="brand-text">
-        <div class="brand-name">Gloob</div>
-        <div class="brand-subtitle">Metodo Pigro</div>
-      </div>
-    </div>
-
-    <div class="intro">Il Metodo Pigro: due strumenti globali. Nessuna previsione. Solo disciplina.</div>
-
-    <ul>
-      <li><b>Pochi strumenti:</b> due mattoni globali</li>
-      <li><b>Costi bassi:</b> struttura semplice</li>
-      <li><b>Regole chiare:</b> ribilanciamento una volta l’anno</li>
-      <li><b>Struttura &gt; Previsioni</b></li>
-    </ul>
-  </div>
-
-  <div class="card controls">
-    <label>Oro (%) (0–50, step 5)</label>
-    <div class="slider-row">
-      <input id="w_gold" type="range" min="0" max="50" step="5" value="10">
-      <span id="gold_badge" class="gold-badge">10%</span>
-    </div>
-
-    <label>Capitale (€)</label>
-    <div class="row">
-      <input id="initial" type="text" value="10.000" inputmode="numeric" aria-label="Capitale in euro">
-      <button>Aggiorna</button>
-
-      <!-- ✅ Nuovo bottone PDF -->
-      <button id="pdf_btn" type="button" class="btn-secondary">Crea PDF</button>
-
-      <span class="final-inline">
-        Finale: <span id="final_capital">—</span>
-        <small>(in anni <span id="final_years">—</span>)</small>
-      </span>
-    </div>
-
-    <div class="muted" style="margin-top:6px;">
-      Il PDF include grafico e riepilogo (A4 pronto per stampa).
-    </div>
-
-    <div style="margin-top:8px;">
-      <span id="w_equity"></span>
-      <span id="w_bonds"></span>
-      <span id="w_gold_show"></span>
-    </div>
-  </div>
-
-  <div class="card">
-    <div><b>Portafoglio (ETF Azion-Obblig + ETC Oro):</b> Rendimento annualizzato — | Max Ribasso nel periodo —</div>
-    <div id="period"></div>
-  </div>
-
-  <div class="card">
-    <div class="chart-wrap">
-      <canvas id="chart"></canvas>
-    </div>
-  </div>
-
-  <!-- Seconda parte -->
-  <div class="card">
-    <div class="note">
-      <b>Messaggio chiave:</b><br>
-      La differenza non è indovinare il mercato.<br>
-      È avere una struttura semplice e ribilanciarla una volta l’anno.
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="h2">Come applicarlo concretamente</div>
-    <ol style="margin:0 0 0 18px; color:#374151; line-height:1.5;">
-      <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
-      <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
-      <li>Non intervenire durante l’anno.</li>
-      <li>A dicembre ribilancia ai pesi originali.</li>
-    </ol>
-  </div>
-
-  <div class="card">
-    <div class="two-col">
-
-      <!-- Domande libere (ChatGPT) -->
-      <div class="subcard">
-        <div class="h2" style="margin-bottom:6px;">Domande libere</div>
-        <div class="muted">
-          Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).
-          <br><b>Tip:</b> su PC invia con <b>Ctrl+Invio</b>.
-        </div>
-
-        <div style="margin-top:10px;">
-          <textarea id="ask_text" placeholder="Scrivi qui la tua domanda..."></textarea>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <button id="ask_btn" type="button">Chiedi all’assistente</button>
-          <span class="muted" id="ask_status" style="display:none;"></span>
-        </div>
-
-        <div id="ask_answer" class="answer-box" style="display:block;"></div>
-
-        <div class="muted" style="margin-top:10px;">
-          Nota: risposta informativa, non consulenza finanziaria.
+  <body>
+    <div class="container">
+      <!-- BRAND HEADER -->
+      <div class="brand">
+        <img src="/static/logo.png" alt="Logo Gloob" />
+        <div>
+          <h1>Gloob</h1>
+          <p class="sub">Metodo Pigro</p>
         </div>
       </div>
 
-      <!-- FAQ -->
-      <div class="subcard">
-        <div class="h2" style="margin-bottom:6px;">FAQ (passa il mouse)</div>
-        <div class="muted" style="margin-bottom:10px;">Su mobile: tocca la domanda per vedere la risposta.</div>
+      <p>Due strumenti globali. Nessuna previsione. Solo disciplina.</p>
+      <ul>
+        <li><b>Pochi strumenti</b>: due mattoni globali</li>
+        <li><b>Costi bassi</b>: struttura semplice</li>
+        <li><b>Regole chiare</b>: ribilanciamento una volta l’anno</li>
+        <li><b>Struttura &gt; Previsioni</b></li>
+      </ul>
 
-        <details class="faq"><summary>1) Perché solo due strumenti?</summary><div class="ans">Per ridurre complessità e costi: l’obiettivo è una struttura semplice, facile da mantenere nel tempo.</div></details>
-        <details class="faq"><summary>2) Cos’è l’ETF Azion-Obblig?</summary><div class="ans">È un unico ETF globale “bilanciato”. Qui assumiamo 80% azioni e 20% obbligazioni.</div></details>
-        <details class="faq"><summary>3) Perché aggiungere oro?</summary><div class="ans">Per aumentare la robustezza: spesso l’oro si comporta diversamente da azioni/obbligazioni nei momenti di stress.</div></details>
-        <details class="faq"><summary>4) Quando ribilanciare?</summary><div class="ans">Una volta l’anno (es. a dicembre): riporti i pesi ai valori scelti, senza inseguire il mercato.</div></details>
-        <details class="faq"><summary>5) Devo “indovinare” il momento giusto?</summary><div class="ans">No. Il metodo punta su disciplina e tempo, non su previsioni o market timing.</div></details>
-        <details class="faq"><summary>6) Cosa succede se dopo l’acquisto scende?</summary><div class="ans">È normale. Regola: non intervenire durante l’anno; ribilanciare a fine anno.</div></details>
-        <details class="faq"><summary>7) Perché “execution only”?</summary><div class="ans">Per evitare conflitti di interesse e costi nascosti: scegli strumenti e regole, poi esegui l’ordine.</div></details>
-        <details class="faq"><summary>8) Che importo serve per iniziare?</summary><div class="ans">Dipende dalla tua situazione. L’importante è iniziare con una cifra sostenibile e mantenere la disciplina.</div></details>
-        <details class="faq"><summary>9) Ogni quanto guardare il portafoglio?</summary><div class="ans">Poco: controlli “di servizio” e ribilanci una volta l’anno.</div></details>
-        <details class="faq"><summary>10) Questo è un consiglio personalizzato?</summary><div class="ans">No. È informazione generale. Per decisioni personali serve valutare obiettivi e rischio.</div></details>
+      <!-- CONTROLLI -->
+      <div class="card">
+        <div class="controlsRow">
+          <div class="ctrl" style="flex: 1 1 320px;">
+            <label for="w_gold"><b>Oro (%) (0–50, step 5)</b> <span id="w_gold_val">20%</span></label><br />
+            <input id="w_gold" type="range" min="0" max="50" step="5" value="20" style="width: 100%;" />
+          </div>
+
+          <div class="ctrl">
+            <label for="initial"><b>Capitale (€)</b></label><br />
+            <input id="initial" type="text" value="10.000" inputmode="numeric" />
+          </div>
+
+          <div class="ctrl">
+            <button id="btn_update" class="btn">Aggiorna</button>
+          </div>
+
+          <div class="finalBox">
+            Finale: <span id="final_value">—</span>
+            <span class="muted">(in anni <span id="final_years">—</span>)</span>
+          </div>
+        </div>
+
+        <p class="muted">Il grafico include andamento e riepilogo.</p>
       </div>
 
+      <!-- METRICHE -->
+      <div class="card">
+        <div><b id="metrics_line1">Portafoglio (ETF Azion-Obblig + ETC Oro): …</b></div>
+        <div id="metrics_line2">Composizione: …</div>
+        <div id="metrics_line3">Raddoppio del portafoglio in anni: …</div>
+      </div>
+
+      <!-- GRAFICO -->
+      <div class="card" id="chartWrap">
+        <canvas id="chart"></canvas>
+      </div>
+
+      <!-- SECONDA PARTE (come foto) -->
+      <div class="card">
+        <b>Messaggio chiave:</b><br />
+        La differenza non è indovinare il mercato.<br />
+        È avere una struttura semplice e ribilanciarla una volta l’anno.
+      </div>
+
+      <div class="card">
+        <h2>Come applicarlo concretamente</h2>
+        <ol>
+          <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
+          <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
+          <li>Non intervenire durante l’anno.</li>
+          <li>A dicembre ribilancia ai pesi originali.</li>
+        </ol>
+      </div>
+
+      <div class="grid2">
+        <!-- DOMANDE LIBERE -->
+        <div class="card">
+          <h2>Domande libere</h2>
+          <p class="muted">
+            Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).<br />
+            <b>Tip:</b> su PC invia con <b>Ctrl+Invio</b>.
+          </p>
+
+          <textarea id="ask_question" rows="5" placeholder="Scrivi qui la tua domanda…"></textarea>
+
+          <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+            <button id="ask_btn" class="btn">Chiedi all’assistente</button>
+            <span id="ask_remaining" class="muted"></span>
+          </div>
+
+          <div id="ask_status" class="info"></div>
+
+          <div id="ask_answer" class="card" style="margin-top:12px; white-space: pre-wrap;"></div>
+
+          <p class="muted" style="margin-top:10px;">
+            Nota: risposta informativa, non consulenza finanziaria.
+          </p>
+        </div>
+
+        <!-- FAQ -->
+        <div class="card">
+          <h2>FAQ (passa il mouse)</h2>
+          <p class="muted">Su mobile: tocca la domanda per vedere la risposta.</p>
+
+          <details>
+            <summary><b>1) Perché solo due strumenti?</b></summary>
+            <p>Per semplicità, costi bassi e disciplina. Due “mattoni” ben scelti spesso battono strategie complesse.</p>
+          </details>
+
+          <details>
+            <summary><b>2) Cos’è l’ETF Azion-Obblig?</b></summary>
+            <p>Un unico ETF globale “bilanciato”. Qui assumiamo 80% azioni e 20% obbligazioni.</p>
+          </details>
+
+          <details>
+            <summary><b>3) Perché aggiungere oro?</b></summary>
+            <p>Per diversificare e ridurre i ribassi in alcune fasi di mercato.</p>
+          </details>
+
+          <details>
+            <summary><b>4) Quando ribilanciare?</b></summary>
+            <p>Una volta l’anno (es. a dicembre), riportando i pesi a quelli scelti.</p>
+          </details>
+
+          <details>
+            <summary><b>5) Devo “indovinare” il momento giusto?</b></summary>
+            <p>No: la logica è evitare market timing. Conta la disciplina nel tempo.</p>
+          </details>
+
+          <details>
+            <summary><b>6) Cosa succede se dopo l’acquisto scende?</b></summary>
+            <p>È normale. La strategia presuppone volatilità e orizzonte lungo.</p>
+          </details>
+
+          <details>
+            <summary><b>7) Perché “execution only”?</b></summary>
+            <p>Per ridurre conflitti di interesse e costi. Decidi tu la struttura.</p>
+          </details>
+
+          <details>
+            <summary><b>8) Che importo serve per iniziare?</b></summary>
+            <p>Non esiste una cifra unica: l’importante è iniziare sostenibile e restare coerenti.</p>
+          </details>
+
+          <details>
+            <summary><b>9) Ogni quanto guardare il portafoglio?</b></summary>
+            <p>Il meno possibile: controlli periodici, non quotidiani.</p>
+          </details>
+
+          <details>
+            <summary><b>10) Questo è un consiglio personalizzato?</b></summary>
+            <p>No. È informazione generale, non consulenza finanziaria personalizzata.</p>
+          </details>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <!-- Formattazione capitale (10.000) -->
-  <script>
-    function formatThousandsIT(value) {
-      const numeric = String(value || "").replace(/\D/g, "");
-      if (!numeric) return "";
-      return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Number(numeric));
-    }
-    function setCaretToEnd(el) {
-      try { const len = el.value.length; el.setSelectionRange(len, len); } catch (_) {}
-    }
-    window.addEventListener("DOMContentLoaded", () => {
-      const capitalInput = document.getElementById("initial");
-      if (!capitalInput) return;
-      capitalInput.value = formatThousandsIT(capitalInput.value);
-      capitalInput.addEventListener("input", function () {
-        this.value = formatThousandsIT(this.value);
-        setCaretToEnd(this);
-      });
-      capitalInput.addEventListener("blur", function () {
-        this.value = formatThousandsIT(this.value);
-      });
-    });
-  </script>
-
-  <script src="/static/app.js"></script>
-</body>
+    <script src="/static/app.js"></script>
+  </body>
 </html>
