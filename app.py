@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 import os
 import time
-import urllib.parse
 import urllib.request
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -14,13 +14,10 @@ from typing import Dict, List, Tuple
 from flask import Flask, jsonify, make_response, render_template, request
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0  # anti-cache static
 
 BASE_DIR = Path(__file__).resolve().parent
-
-# Se vuoi usare Persistent Disk su Render, imposta DATA_DIR=/var/data (o simile)
-DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).resolve()
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 ASSET_FILES: Dict[str, str] = {
     "ls80": "ls80.csv",
@@ -28,198 +25,196 @@ ASSET_FILES: Dict[str, str] = {
 }
 
 # =========================
-# CONFIG UPDATE QUOTAZIONI
+# ENV / CONFIG
 # =========================
-# Puoi impostarle su Render -> Environment, ma ho messo default sensati.
-# (VNGA80 su Yahoo è VNGA80.MI) :contentReference[oaicite:2]{index=2}
-LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
+LS80_TICKER = (os.getenv("LS80_TICKER") or "VNGA80.MI").strip()
+GOLD_TICKER = (os.getenv("GOLD_TICKER") or "SGLD").strip()
 
-# Per SGLD possiamo provare automaticamente varie piazze.
-# (Esempi Yahoo: SGLD.L, SGLD.MI) :contentReference[oaicite:3]{index=3}
-GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD").strip()
+UPDATE_TOKEN = (os.getenv("UPDATE_TOKEN") or "").strip()
+UPDATE_MIN_INTERVAL_HOURS = float(os.getenv("UPDATE_MIN_INTERVAL_HOURS") or "6")
 
-UPDATE_MIN_INTERVAL_HOURS = float(os.getenv("UPDATE_MIN_INTERVAL_HOURS", "6"))  # max 1 tentativo/6h
-_update_state = {"last_try_ts": 0.0}
+OPENAI_API_KEY = (os.getenv("OPENAI_API_KEY") or "").strip()
+OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "gpt-4o-mini").strip()
 
-UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()  # per cron job /api/update_data?token=...
+ASK_DAILY_LIMIT = int(os.getenv("ASK_DAILY_LIMIT") or "10")
+ASK_SALT = (os.getenv("ASK_SALT") or UPDATE_TOKEN or "gloob_salt").strip()
+ASK_STORE_PATH = DATA_DIR / "ask_limits.json"
 
-
-def _fmt_ddmmyyyy(d: date) -> str:
-    return d.strftime("%d/%m/%Y")
+_last_update_ts_path = DATA_DIR / ".last_update_ts.json"
 
 
-def _parse_float(s: str) -> float:
-    s = (s or "").strip()
-    if s == "":
-        return float("nan")
-    # supporto "1.234,56" e "1234.56"
-    if "," in s and "." in s:
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    elif "," in s and "." not in s:
-        s = s.replace(",", ".")
-    return float(s)
-
-
-def _parse_date(s: str) -> date:
-    s = (s or "").strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            pass
-    raise ValueError(f"Formato data non riconosciuto: {s}")
-
-
+# =========================
+# UTILS: CSV
+# =========================
 def _detect_and_read_csv(path: Path) -> Tuple[List[date], List[float]]:
     if not path.exists():
-        raise FileNotFoundError(f"File mancante: {path}")
+        raise FileNotFoundError(f"File dati mancante: {path.name}")
+
+    # Supporta separatori comuni e header
+    with path.open("r", encoding="utf-8", newline="") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        dialect = csv.Sniffer().sniff(sample, delimiters=";,")
+        reader = csv.reader(f, dialect)
+
+        rows = list(reader)
+
+    # prova a saltare header se presente
+    start_idx = 0
+    if rows and rows[0] and ("date" in rows[0][0].lower() or "data" in rows[0][0].lower()):
+        start_idx = 1
 
     dates: List[date] = []
-    values: List[float] = []
+    vals: List[float] = []
 
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        # i tuoi file sono in stile: Date;Close e righe "gg/mm/aaaa;123.45"
-        reader = csv.reader(f, delimiter=";")
-        header = next(reader, None)
-        for row in reader:
-            if not row or len(row) < 2:
-                continue
-            d = _parse_date(row[0])
-            v = _parse_float(row[1])
-            if math.isfinite(v):
-                dates.append(d)
-                values.append(float(v))
+    for r in rows[start_idx:]:
+        if not r or len(r) < 2:
+            continue
+        ds = r[0].strip()
+        vs = r[1].strip().replace(",", ".")
+        try:
+            d = datetime.fromisoformat(ds).date()
+            v = float(vs)
+        except Exception:
+            continue
+        dates.append(d)
+        vals.append(v)
 
-    if not dates:
-        raise ValueError(f"Nessun dato valido in {path}")
+    if len(dates) < 10:
+        raise ValueError(f"Serie troppo corta in {path.name}")
 
-    return dates, values
-
-
-def _write_csv_same_style(path: Path, rows_desc: List[Tuple[date, float]]) -> None:
-    # Manteniamo lo stesso stile originale: Date;Close e ordine decrescente (più recente in alto)
-    with path.open("w", encoding="utf-8", newline="") as f:
-        f.write("Date;Close\n")
-        for d, v in rows_desc:
-            f.write(f"{_fmt_ddmmyyyy(d)};{v:.2f}\n")
+    return dates, vals
 
 
-def _yahoo_chart_daily_closes(ticker: str, range_days: int = 30) -> List[Tuple[date, float]]:
+# =========================
+# UPDATE DATA (Yahoo via CSV download / fallback)
+# =========================
+def _read_last_update_ts() -> float:
+    try:
+        if _last_update_ts_path.exists():
+            obj = json.loads(_last_update_ts_path.read_text(encoding="utf-8"))
+            return float(obj.get("ts", 0.0))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _write_last_update_ts(ts: float) -> None:
+    try:
+        _last_update_ts_path.write_text(json.dumps({"ts": ts}), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _fetch_yahoo_csv(ticker: str, out_path: Path) -> Dict[str, str]:
     """
-    Scarica close giornalieri da Yahoo Finance (endpoint pubblico chart).
-    Ritorna [(date_utc, close), ...]
+    Scarica storico giornaliero da Yahoo Finance (download CSV).
+    Nota: Yahoo può cambiare formato; questo è un approccio pragmatico.
     """
+    now = int(time.time())
+    # periodo: ultimi ~20 anni
+    period1 = now - int(60 * 60 * 24 * 365.25 * 20)
+    period2 = now
+
     url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(ticker)}"
-        f"?range={range_days}d&interval=1d&includePrePost=false&events=div%7Csplit"
+        "https://query1.finance.yahoo.com/v7/finance/download/"
+        + urllib.request.quote(ticker)
+        + f"?period1={period1}&period2={period2}&interval=1d&events=history&includeAdjustedClose=true"
     )
+
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-        method="GET",
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/csv",
+        },
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
 
-    chart = (data or {}).get("chart", {})
-    if chart.get("error"):
-        raise RuntimeError(str(chart["error"]))
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        raw = resp.read().decode("utf-8", errors="ignore")
 
-    result = (chart.get("result") or [None])[0]
-    if not result:
-        return []
+    # Yahoo header tipico: Date,Open,High,Low,Close,Adj Close,Volume
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    if len(lines) < 3 or not lines[0].lower().startswith("date"):
+        raise ValueError("CSV Yahoo non valido (header inatteso).")
 
-    ts = result.get("timestamp") or []
-    quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
-    closes = quote.get("close") or []
+    # Convertiamo in formato semplice: date,value (usiamo Adj Close se presente)
+    header = lines[0].split(",")
+    try:
+        date_i = header.index("Date")
+        adj_i = header.index("Adj Close")
+    except Exception:
+        # fallback su Close
+        date_i = 0
+        adj_i = 4
 
-    out: List[Tuple[date, float]] = []
-    for t, c in zip(ts, closes):
-        if c is None:
+    out_rows = [["date", "value"]]
+    for ln in lines[1:]:
+        parts = ln.split(",")
+        if len(parts) <= max(date_i, adj_i):
             continue
-        d = datetime.fromtimestamp(int(t), tz=timezone.utc).date()
-        out.append((d, float(c)))
-    return out
+        ds = parts[date_i].strip()
+        vs = parts[adj_i].strip()
+        if vs in ("null", "", "NaN"):
+            continue
+        out_rows.append([ds, vs])
+
+    out_path.write_text("\n".join([",".join(r) for r in out_rows]) + "\n", encoding="utf-8")
+    return {"ticker": ticker, "rows": str(len(out_rows) - 1)}
 
 
-def _resolve_tickers(user_ticker: str, asset_key: str) -> List[str]:
-    """
-    Se l’utente passa "SGLD" senza suffisso, proviamo alcune piazze.
-    Per VNGA80, se arriva senza .MI, proviamo .MI.
-    """
-    t = (user_ticker or "").strip()
-    if not t:
-        return []
+def _maybe_update_one(asset_key: str, ticker: str) -> Dict[str, object]:
+    filename = ASSET_FILES[asset_key]
+    path = DATA_DIR / filename
 
-    if "." in t:
-        return [t]
+    # se file esiste, guardiamo l’ultima data
+    last_date = None
+    try:
+        d, _v = _detect_and_read_csv(path)
+        last_date = d[-1]
+    except Exception:
+        last_date = None
 
-    if asset_key == "ls80":
-        # tipicamente Borsa Italiana
-        return [f"{t}.MI", t]
+    tickers_to_try = [ticker]
     if asset_key == "gold":
-        # oro: prova Milano e Londra
-        return [f"{t}.MI", f"{t}.L", t]
+        # euristica: se metti "SGLD" proviamo anche "SGLD.MI" e "SGLD.L"
+        if "." not in ticker:
+            tickers_to_try += [f"{ticker}.MI", f"{ticker}.L"]
 
-    return [t]
-
-
-def _maybe_update_one(asset_key: str, user_ticker: str) -> Dict[str, object]:
-    path = DATA_DIR / ASSET_FILES[asset_key]
-    d_old, v_old = _detect_and_read_csv(path)
-    old_map = {d: v for d, v in zip(d_old, v_old)}
-    latest_old = max(old_map.keys())
-
-    tickers_to_try = _resolve_tickers(user_ticker, asset_key)
     last_err = None
-    downloaded: List[Tuple[date, float]] = []
-
-    for tk in tickers_to_try:
+    for t in tickers_to_try:
         try:
-            downloaded = _yahoo_chart_daily_closes(tk, range_days=30)
-            if downloaded:
-                used = tk
-                break
+            info = _fetch_yahoo_csv(t, path)
+            # rilegge e verifica aggiornamento
+            d2, _v2 = _detect_and_read_csv(path)
+            updated = (last_date is None) or (d2[-1] != last_date)
+            return {
+                "asset": asset_key,
+                "ticker_used": t,
+                "updated": bool(updated),
+                "reason": "ok" if updated else "already_up_to_date",
+                "rows": info.get("rows"),
+            }
         except Exception as e:
             last_err = e
-            downloaded = []
-            continue
-    else:
-        raise RuntimeError(f"Impossibile scaricare dati per {asset_key}. Ultimo errore: {last_err}")
-
-    # aggiungi solo nuove date
-    new_items = [(d, v) for d, v in downloaded if d > latest_old]
-    if not new_items:
-        return {"asset": asset_key, "updated": False, "reason": "already_up_to_date", "ticker_used": used}
-
-    for d, v in new_items:
-        old_map[d] = v
-
-    rows_desc = sorted(old_map.items(), key=lambda x: x[0], reverse=True)
-    _write_csv_same_style(path, rows_desc)
 
     return {
         "asset": asset_key,
-        "updated": True,
-        "added_rows": len(new_items),
-        "latest_date": rows_desc[0][0].isoformat(),
-        "ticker_used": used,
+        "ticker_used": tickers_to_try[-1],
+        "updated": False,
+        "reason": f"failed: {last_err}",
     }
 
 
 def update_assets_if_due(force: bool = False) -> Dict[str, object]:
     now = time.time()
-    min_interval = UPDATE_MIN_INTERVAL_HOURS * 3600.0
-    if not force and (now - float(_update_state["last_try_ts"])) < min_interval:
-        return {"skipped": True, "reason": "too_soon"}
+    last = _read_last_update_ts()
+    min_seconds = UPDATE_MIN_INTERVAL_HOURS * 3600.0
 
-    _update_state["last_try_ts"] = now
+    if (not force) and last > 0 and (now - last) < min_seconds:
+        return {"skipped": True, "reason": "too_soon", "seconds_since": now - last}
 
-    res: Dict[str, object] = {"skipped": False, "ls80": None, "gold": None, "warnings": []}
-
+    res: Dict[str, object] = {"skipped": False, "warnings": []}
     try:
         res["ls80"] = _maybe_update_one("ls80", LS80_TICKER)
     except Exception as e:
@@ -230,6 +225,7 @@ def update_assets_if_due(force: bool = False) -> Dict[str, object]:
     except Exception as e:
         res["warnings"].append(f"Update gold fallito: {e}")
 
+    _write_last_update_ts(now)
     return res
 
 
@@ -276,7 +272,14 @@ def _max_drawdown(values: List[float]) -> float:
     return mdd
 
 
-def _build_portfolio(dates: List[date], ls_vals: List[float], g_vals: List[float], w_ls80: float, w_gold: float, capital: float):
+def _build_portfolio(
+    dates: List[date],
+    ls_vals: List[float],
+    g_vals: List[float],
+    w_ls80: float,
+    w_gold: float,
+    capital: float,
+):
     w_ls80 = float(w_ls80)
     w_gold = float(w_gold)
     s = w_ls80 + w_gold
@@ -289,10 +292,8 @@ def _build_portfolio(dates: List[date], ls_vals: List[float], g_vals: List[float
     # ribilanciamento annuale semplice
     ls_shares = (capital * w_ls) / ls_vals[0]
     g_shares = (capital * w_g) / g_vals[0]
-    solo_shares = capital / ls_vals[0]
 
     port: List[float] = []
-    solo: List[float] = []
 
     prev_year = dates[0].year
     for d, ls, g in zip(dates, ls_vals, g_vals):
@@ -303,9 +304,8 @@ def _build_portfolio(dates: List[date], ls_vals: List[float], g_vals: List[float
             prev_year = d.year
 
         port.append(ls_shares * ls + g_shares * g)
-        solo.append(solo_shares * ls)
 
-    return port, solo
+    return port
 
 
 @app.get("/")
@@ -338,7 +338,7 @@ def api_compute():
         d_g, v_g = _detect_and_read_csv(DATA_DIR / ASSET_FILES["gold"])
         dates, ls, g = _align_series(d_ls, v_ls, d_g, v_g)
 
-        port_vals, solo_vals = _build_portfolio(dates, ls, g, w_ls80, w_gold, capital)
+        port_vals = _build_portfolio(dates, ls, g, w_ls80, w_gold, capital)
 
         years = _years_between(dates[0], dates[-1])
         cagr_port = _compute_cagr(port_vals[0], port_vals[-1], years)
@@ -351,7 +351,6 @@ def api_compute():
         payload = {
             "dates": [d.isoformat() for d in dates],
             "portfolio": port_vals,
-            "solo_ls80": solo_vals,
             "metrics": {
                 "cagr_portfolio": cagr_port,
                 "max_dd_portfolio": mdd_port,
@@ -359,6 +358,7 @@ def api_compute():
                 "start": dates[0].isoformat(),
                 "end": dates[-1].isoformat(),
                 "final_portfolio": port_vals[-1],
+                "years_total": years,
             },
         }
 
@@ -369,6 +369,155 @@ def api_compute():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+# =========================
+# ASSISTENTE /api/ask (nuovo)
+# =========================
+def _client_ip() -> str:
+    xf = request.headers.get("X-Forwarded-For", "")
+    if xf:
+        # prima IP della lista
+        return xf.split(",")[0].strip()
+    return (request.remote_addr or "unknown").strip()
+
+
+def _client_id_hash() -> str:
+    raw = (_client_ip() + "|" + ASK_SALT).encode("utf-8", errors="ignore")
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+def _today_key_utc() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _load_ask_store() -> Dict[str, Dict[str, int]]:
+    try:
+        if ASK_STORE_PATH.exists():
+            obj = json.loads(ASK_STORE_PATH.read_text(encoding="utf-8"))
+            if isinstance(obj, dict):
+                return obj  # type: ignore
+    except Exception:
+        pass
+    return {}
+
+
+def _save_ask_store(store: Dict[str, Dict[str, int]]) -> None:
+    try:
+        ASK_STORE_PATH.write_text(json.dumps(store), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _ask_check_and_increment() -> Tuple[bool, int, int]:
+    """
+    Ritorna: (allowed, remaining, limit)
+    """
+    day = _today_key_utc()
+    cid = _client_id_hash()
+    store = _load_ask_store()
+
+    if day not in store:
+        store = {day: {}}  # reset giornaliero (semplice)
+
+    used = int(store[day].get(cid, 0))
+    limit = ASK_DAILY_LIMIT
+
+    if used >= limit:
+        remaining = 0
+        return False, remaining, limit
+
+    used += 1
+    store[day][cid] = used
+    _save_ask_store(store)
+
+    remaining = max(0, limit - used)
+    return True, remaining, limit
+
+
+@app.post("/api/ask")
+def api_ask():
+    # Risposta SEMPRE JSON (evita “Unexpected token <”)
+    try:
+        payload = request.get_json(silent=True) or {}
+        q = (payload.get("question") or payload.get("q") or "").strip()
+        context = payload.get("context") or {}
+
+        if not q:
+            return jsonify({"error": "Scrivi una domanda prima di inviare.", "remaining": None, "limit": ASK_DAILY_LIMIT}), 400
+
+        # micro-protezione base
+        if len(q) > 600:
+            q = q[:600].strip()
+
+        allowed, remaining, limit = _ask_check_and_increment()
+        if not allowed:
+            return jsonify(
+                {
+                    "error": f"Hai raggiunto il limite di {limit} domande per oggi. Riprova domani.",
+                    "remaining": 0,
+                    "limit": limit,
+                }
+            ), 429
+
+        if not OPENAI_API_KEY:
+            return jsonify(
+                {
+                    "error": "Assistente non configurato: manca OPENAI_API_KEY su Render.",
+                    "remaining": remaining,
+                    "limit": limit,
+                }
+            ), 500
+
+        # chiamata OpenAI
+        try:
+            from openai import OpenAI  # type: ignore
+        except Exception:
+            return jsonify(
+                {
+                    "error": "Server: libreria OpenAI non disponibile (requirements).",
+                    "remaining": remaining,
+                    "limit": limit,
+                }
+            ), 500
+
+        client = OpenAI(api_key=OPENAI_API_KEY)
+
+        # contesto “soft” (niente dati sensibili)
+        ctx_str = ""
+        if isinstance(context, dict) and context:
+            parts = []
+            for k, v in context.items():
+                parts.append(f"{k}: {v}")
+            ctx_str = "\nContesto:\n" + "\n".join(parts)
+
+        system = (
+            "Sei un assistente che spiega la finanza in modo semplice e prudente.\n"
+            "Rispondi in italiano, in modo chiaro e sintetico.\n"
+            "Niente consulenza personalizzata: solo informazioni generali.\n"
+            "Se la domanda è ambigua, fai 1 domanda di chiarimento.\n"
+        )
+
+        user_msg = f"Domanda:\n{q}\n{ctx_str}".strip()
+
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.4,
+            max_tokens=350,
+        )
+
+        answer = (resp.choices[0].message.content or "").strip()
+        if not answer:
+            answer = "(nessuna risposta)"
+
+        return jsonify({"answer": answer, "remaining": remaining, "limit": limit})
+
+    except Exception as e:
+        return jsonify({"error": f"Errore assistente: {e}"}), 500
 
 
 if __name__ == "__main__":
