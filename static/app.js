@@ -1,5 +1,4 @@
 let chart = null;
-let _lastCompute = null; // { data, comp, capital }
 
 function euro(x) {
   return new Intl.NumberFormat("it-IT", {
@@ -9,148 +8,135 @@ function euro(x) {
   }).format(Number(x));
 }
 
+function num0(x) {
+  return new Intl.NumberFormat("it-IT", {
+    maximumFractionDigits: 0,
+  }).format(Number(x));
+}
+
 function pct(x) {
-  const n = Number(x);
-  if (!Number.isFinite(n)) return "—";
-  return (n * 100).toFixed(1) + "%";
+  if (x === null || x === undefined || isNaN(x)) return "—";
+  return (x * 100).toFixed(1) + "%";
 }
 
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
+function years1(x) {
+  if (x === null || x === undefined || isNaN(x)) return "—";
+  return Number(x).toFixed(1).replace(".", ",");
 }
 
-function parseCapitalEuro() {
-  const el = document.getElementById("initial");
-  if (!el) return 10000;
-  const raw = String(el.value || "").replace(/\./g, "").replace(/,/g, ".");
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : 10000;
+function clamp(n, a, b) {
+  return Math.min(Math.max(n, a), b);
 }
 
-function formatCapitalInput() {
-  const el = document.getElementById("initial");
-  if (!el) return;
-  const n = parseCapitalEuro();
-  el.value = new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(n);
-}
+function computeComposition(goldPct) {
+  const w_gold = goldPct;
+  const w_ls80 = 100 - w_gold;
 
-// Oro slider 0–50 step 5; LS80 = 100 - oro; dentro LS80: 80/20
-function computeCompositionFromGoldInput() {
-  const goldEl = document.getElementById("w_gold");
-  const gold = goldEl ? Number(goldEl.value) : 0;
-  const g = clamp(Math.round(gold / 5) * 5, 0, 50);
+  // LS80 = 80% equity + 20% bond
+  const equity = 0.8 * w_ls80;
+  const bond = 0.2 * w_ls80;
 
-  const ls80 = 100 - g;
-  const equity = Math.round(ls80 * 0.8);
-  const bonds = 100 - g - equity; // per arrivare a 100
-
-  return { gold: g, ls80, equity, bonds };
-}
-
-function updateGoldBadgeAndHideInlineComposition(comp) {
-  const badge = document.getElementById("gold_value");
-  if (badge) badge.textContent = `${comp.gold}%`;
-}
-
-function yearsToDoubleFromCagr(cagr) {
-  const r = Number(cagr);
-  if (!Number.isFinite(r) || r <= 0) return "—";
-  const y = Math.log(2) / Math.log(1 + r);
-  if (!Number.isFinite(y)) return "—";
-  return y.toFixed(1).replace(".", ",");
-}
-
-// labels: mostra solo 1 per anno (e griglia “leggera”, poi la griglia la gestiamo via ticks)
-function buildYearTicks(datesISO) {
-  const years = new Set();
-  const tickIdx = [];
-  for (let i = 0; i < datesISO.length; i++) {
-    const y = String(datesISO[i]).slice(0, 4);
-    if (!years.has(y)) {
-      years.add(y);
-      tickIdx.push(i);
-    }
-  }
-  const allow = new Set(tickIdx);
-  return (value, index) => {
-    if (allow.has(index)) return String(datesISO[index]).slice(0, 4);
-    return "";
+  return {
+    w_gold,
+    w_ls80,
+    equity: Math.round(equity),
+    bond: Math.round(bond),
   };
 }
 
+function setAskStatus(msg, kind = "info") {
+  const box = document.getElementById("ask_status");
+  if (!box) return;
+
+  box.classList.remove("ok", "err", "info");
+  box.classList.add(kind);
+  box.textContent = msg || "";
+  box.style.display = msg ? "block" : "none";
+}
+
+function setRemaining(remaining, limit) {
+  const el = document.getElementById("ask_remaining");
+  if (!el) return;
+  if (remaining === null || remaining === undefined || limit === null || limit === undefined) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = `Domande rimanenti oggi: ${remaining}/${limit}`;
+}
+
 async function loadData() {
-  const comp = computeCompositionFromGoldInput();
-  const capital = parseCapitalEuro();
+  const goldPct = Number(document.getElementById("w_gold").value || 0);
+  const capitalRaw = (document.getElementById("initial").value || "").toString().replace(/\./g, "");
+  const capital = Number(capitalRaw) || 10000;
 
-  updateGoldBadgeAndHideInlineComposition(comp);
+  const comp = computeComposition(goldPct);
 
-  // query verso backend: w_ls80 + w_gold in percento
+  // aggiorna label valore slider
+  const goldVal = document.getElementById("w_gold_val");
+  if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
+
   const url =
-    `/api/compute?w_ls80=${encodeURIComponent(comp.ls80)}` +
-    `&w_gold=${encodeURIComponent(comp.gold)}` +
+    `/api/compute?w_ls80=${encodeURIComponent(comp.w_ls80)}` +
+    `&w_gold=${encodeURIComponent(comp.w_gold)}` +
     `&capital=${encodeURIComponent(capital)}` +
     `&t=${Date.now()}`;
 
   const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json();
+
+  // se il server risponde HTML (errore), evitiamo crash “Unexpected token <”
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  const data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
 
   if (!res.ok || data.error) {
-    console.error(data.error || "Errore compute");
+    console.error(data.error || res.statusText);
+    // non facciamo alert: scriviamo nel box dell’assistente (più “premium”)
+    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 160)}`, "err");
     return;
   }
 
-  _lastCompute = { data, comp, capital };
+  // Metrics lines
+  const m = data.metrics || {};
+  const line1 = document.getElementById("metrics_line1");
+  const line2 = document.getElementById("metrics_line2");
+  const line3 = document.getElementById("metrics_line3");
 
-  // Aggiorna box metriche
-  const metrics = data.metrics || {};
-  const cagr = metrics.cagr_portfolio;
-  const mdd = metrics.max_dd_portfolio;
-  const yd = metrics.years_to_double;
-  const finalCap = metrics.final_portfolio;
-
-  const line1 =
-    `Portafoglio (ETF Azion-Obblig + ETC Oro): ` +
-    `Rendimento annualizzato ${pct(cagr)} | ` +
-    `Max Ribasso nel periodo ${pct(mdd)}`;
-
-  const line2 =
-    `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bonds}% | Oro ${comp.gold}%`;
-
-  const line3 = `Raddoppio del portafoglio in anni: ${yearsToDoubleFromCagr(cagr)}`;
-
-  const box = document.getElementById("metrics_box");
-  if (box) {
-    box.innerHTML = `
-      <div><b>${line1}</b></div>
-      <div><b>${line2}</b></div>
-      <div>${line3}</div>
-    `;
+  if (line1) {
+    line1.textContent =
+      `Portafoglio (ETF Azion-Obblig + ETC Oro): ` +
+      `Rendimento annualizzato ${pct(m.cagr_portfolio)} | ` +
+      `Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
   }
 
-  // Riga “Capitale finale” vicino al bottone (se presente)
-  const finalEl = document.getElementById("final_capital");
-  const yearsEl = document.getElementById("final_years");
-  if (finalEl) finalEl.textContent = euro(finalCap);
-  if (yearsEl) {
-    const yTot = Number(metrics.years_total);
-    yearsEl.textContent = Number.isFinite(yTot) ? yTot.toFixed(1).replace(".", ",") : "—";
+  if (line2) {
+    line2.textContent =
+      `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
   }
+
+  if (line3) {
+    const dbl = m.doubling_years_portfolio;
+    line3.textContent = `Raddoppio del portafoglio in anni: ${years1(dbl)}`;
+  }
+
+  // Finale a fianco del capitale
+  const finalValue = document.getElementById("final_value");
+  const finalYears = document.getElementById("final_years");
+  if (finalValue) finalValue.textContent = euro(m.final_portfolio);
+  if (finalYears) finalYears.textContent = years1(m.final_years);
 
   // Chart
   const ctx = document.getElementById("chart").getContext("2d");
   if (chart) chart.destroy();
 
-  const dates = data.dates || [];
-  const yearTickCb = buildYearTicks(dates);
+  // time scale: dataset con {x, y}
+  const seriesPortfolio = data.dates.map((d, i) => ({ x: d, y: data.portfolio[i] }));
 
   chart = new Chart(ctx, {
     type: "line",
     data: {
-      labels: dates,
       datasets: [
         {
-          label: "Portafoglio (ETF+Oro)",
-          data: data.portfolio,
+          label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
+          data: seriesPortfolio,
           borderWidth: 2,
           tension: 0.15,
           pointRadius: 0,
@@ -171,15 +157,14 @@ async function loadData() {
       },
       scales: {
         x: {
-          ticks: {
-            callback: yearTickCb,
-            maxRotation: 0,
-            minRotation: 0,
-            autoSkip: false,
+          type: "time",
+          time: {
+            unit: "month",
+            stepSize: 6, // ~ 2 linee/anno
           },
-          grid: {
-            // griglia meno “fitta”
-            drawTicks: true,
+          ticks: {
+            maxRotation: 0,
+            autoSkip: true,
           },
         },
         y: {
@@ -188,140 +173,115 @@ async function loadData() {
       },
     },
   });
+
+  // pulisci eventuale errore “premium” precedente
+  setAskStatus("", "info");
 }
 
-/* =========================
-   ASSISTENTE
-   ========================= */
-function setAskStatus(text, show = true) {
-  const status = document.getElementById("ask_status");
-  if (!status) return;
-  status.style.display = show ? "inline" : "none";
-  status.textContent = text || "";
-}
+function formatCapitalField() {
+  const el = document.getElementById("initial");
+  if (!el) return;
 
-function setAskAnswer(text, isError = false) {
-  const out = document.getElementById("ask_answer");
-  if (!out) return;
-  out.style.display = "block";
-  out.style.whiteSpace = "pre-wrap";
-  out.style.borderColor = isError ? "#e0a3a3" : "";
-  out.style.background = isError ? "#fff6f6" : "";
-  out.textContent = text || "";
-}
-
-async function askAssistant() {
-  const ta = document.getElementById("ask_text");
-  const btn = document.getElementById("ask_btn");
-  if (!ta || !btn) return;
-
-  const q = String(ta.value || "").trim();
-  if (!q) {
-    setAskAnswer("Scrivi una domanda prima di inviare.", true);
-    return;
-  }
-
-  btn.disabled = true;
-  setAskStatus("Sto pensando…", true);
-  setAskAnswer("");
-
-  const comp = computeCompositionFromGoldInput();
-  const capital = parseCapitalEuro();
-
-  try {
-    const res = await fetch("/api/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({
-        question: q,
-        context: {
-          oro_pct: comp.gold,
-          azionario_pct: comp.equity,
-          obbligazionario_pct: comp.bonds,
-          capitale_eur: new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(capital),
-        },
-      }),
-    });
-
-    let data = null;
-    try {
-      data = await res.json();
-    } catch (e) {
-      // se il server manda HTML (es. errore), evitiamo crash
-      throw new Error("Risposta server non valida (atteso JSON).");
-    }
-
-    if (!res.ok || (data && data.error)) {
-      const msg = (data && data.error) ? data.error : "Errore assistente.";
-      setAskAnswer(msg, true);
-
-      if (data && data.remaining !== undefined && data.limit !== undefined) {
-        setAskStatus(`Domande rimanenti oggi: ${data.remaining}/${data.limit}`, true);
-      } else {
-        setAskStatus("", false);
-      }
+  // lascia digitare, ma formatta on blur
+  el.addEventListener("blur", () => {
+    const raw = (el.value || "").toString().replace(/\./g, "").replace(/[^\d]/g, "");
+    const n = Number(raw || "0");
+    if (!n) {
+      el.value = "10.000";
       return;
     }
-
-    setAskAnswer(data.answer || "(risposta vuota)", false);
-
-    if (data.remaining !== undefined && data.limit !== undefined) {
-      setAskStatus(`Domande rimanenti oggi: ${data.remaining}/${data.limit}`, true);
-    } else {
-      setAskStatus("", false);
-    }
-  } catch (e) {
-    console.error(e);
-    setAskAnswer(String(e.message || e), true);
-    setAskStatus("", false);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function setupAssistant() {
-  const btn = document.getElementById("ask_btn");
-  const ta = document.getElementById("ask_text");
-  if (!btn || !ta) return;
-
-  btn.addEventListener("click", askAssistant);
-  ta.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) askAssistant();
+    el.value = num0(n);
   });
-
-  // stato iniziale
-  setAskStatus(`Domande rimanenti oggi: ${10}/${10}`, true);
 }
 
-function init() {
-  // format input capitale
-  const cap = document.getElementById("initial");
-  if (cap) {
-    cap.addEventListener("blur", formatCapitalInput);
-    formatCapitalInput();
-  }
-
-  // aggiorna (primo button della pagina)
-  const updateBtn = document.querySelector("button");
-  if (updateBtn) {
-    updateBtn.addEventListener("click", (e) => {
+function wireControls() {
+  const btn = document.getElementById("btn_update");
+  if (btn) {
+    btn.addEventListener("click", (e) => {
       e.preventDefault();
       loadData();
     });
   }
 
-  const goldEl = document.getElementById("w_gold");
-  if (goldEl) {
-    goldEl.addEventListener("input", () => {
-      const comp = computeCompositionFromGoldInput();
-      updateGoldBadgeAndHideInlineComposition(comp);
+  const slider = document.getElementById("w_gold");
+  if (slider) {
+    slider.addEventListener("input", () => {
+      const goldPct = Number(slider.value || 0);
+      const comp = computeComposition(goldPct);
+      const goldVal = document.getElementById("w_gold_val");
+      if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
     });
-    goldEl.addEventListener("change", () => loadData());
+  }
+}
+
+async function askAssistant() {
+  const q = (document.getElementById("ask_question").value || "").trim();
+  const btn = document.getElementById("ask_btn");
+  const ans = document.getElementById("ask_answer");
+
+  if (!q) {
+    setAskStatus("Scrivi una domanda.", "err");
+    return;
   }
 
+  if (btn) btn.disabled = true;
+  setAskStatus("Sto pensando…", "info");
+
+  try {
+    const res = await fetch(`/api/ask?t=${Date.now()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ question: q }),
+    });
+
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    const data = ct.includes("application/json") ? await res.json() : { ok: false, error: await res.text() };
+
+    if (!res.ok || !data.ok) {
+      const msg = (data.error || `Errore server (${res.status})`).toString();
+      setAskStatus(msg.slice(0, 240), "err");
+      if (ans) ans.textContent = "";
+      // se arrivano comunque remaining/limit, li mostriamo
+      if ("remaining" in data && "limit" in data) setRemaining(data.remaining, data.limit);
+      return;
+    }
+
+    if (ans) ans.textContent = data.answer || "";
+    setAskStatus("", "ok");
+    setRemaining(data.remaining, data.limit);
+  } catch (e) {
+    setAskStatus(`Errore rete: ${e}`, "err");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function wireAssistant() {
+  const btn = document.getElementById("ask_btn");
+  if (!btn) return;
+
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    askAssistant();
+  });
+
+  const ta = document.getElementById("ask_question");
+  if (ta) {
+    ta.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        askAssistant();
+      }
+    });
+  }
+}
+
+function init() {
+  formatCapitalField();
+  wireControls();
+  wireAssistant();
   loadData();
-  setupAssistant();
 }
 
 window.addEventListener("DOMContentLoaded", init);
