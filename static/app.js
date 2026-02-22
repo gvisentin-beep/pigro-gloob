@@ -1,5 +1,9 @@
+// static/app.js
 let chart = null;
 
+/* -----------------------------
+   Format helpers
+----------------------------- */
 function euro(x) {
   return new Intl.NumberFormat("it-IT", {
     style: "currency",
@@ -22,10 +26,13 @@ function years1(x) {
   return Number(x).toFixed(1).replace(".", ",");
 }
 
+/* -----------------------------
+   Composition: slider is GOLD %
+   LS80 split: 80% equity, 20% bond
+----------------------------- */
 function computeComposition(goldPct) {
   const w_gold = Number(goldPct);
   const w_ls80 = 100 - w_gold;
-  // LS80 = 80% equity + 20% bond
   const equity = 0.8 * w_ls80;
   const bond = 0.2 * w_ls80;
 
@@ -37,6 +44,9 @@ function computeComposition(goldPct) {
   };
 }
 
+/* -----------------------------
+   UI helpers
+----------------------------- */
 function setAskStatus(msg, kind = "info") {
   const box = document.getElementById("ask_status");
   if (!box) return;
@@ -58,35 +68,25 @@ function setRemaining(remaining, limit) {
 }
 
 /**
- * Normalizza una data in formato ISO "YYYY-MM-DD" per Chart.js time scale.
- * Gestisce:
+ * Normalizza date per Chart.js time scale.
+ * Supporta:
  * - "YYYY-MM-DD"
  * - "DD/MM/YYYY"
- * - casi sporchi tipo "21/01/2026,39.37" (taglia dopo virgola/spazio)
+ * - casi sporchi tipo "21/01/2026,39.37"
  */
 function normalizeDateToISO(s) {
   if (!s) return null;
   let x = String(s).trim();
 
-  // taglia eventuali " ,valore" oppure " valore" ecc.
-  // es: "21/01/2026,39.37" -> "21/01/2026"
   x = x.split(",")[0].trim();
   x = x.split(";")[0].trim();
   x = x.split(" ")[0].trim();
 
-  // già ISO
   if (/^\d{4}-\d{2}-\d{2}$/.test(x)) return x;
 
-  // italiano DD/MM/YYYY
   const m = x.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) {
-    const dd = m[1];
-    const mm = m[2];
-    const yyyy = m[3];
-    return `${yyyy}-${mm}-${dd}`;
-  }
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
 
-  // prova a prendere i primi 10 caratteri e riprova
   const first10 = x.slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(first10)) return first10;
 
@@ -96,20 +96,42 @@ function normalizeDateToISO(s) {
   return null;
 }
 
-async function loadData() {
-  const goldPct = Number(document.getElementById("w_gold").value || 0);
+function getCapitalValue() {
+  const el = document.getElementById("initial");
+  if (!el) return 10000;
 
-  const capitalRaw = (document.getElementById("initial").value || "")
+  const raw = (el.value || "")
     .toString()
     .replace(/\./g, "")
     .replace(/[^\d]/g, "");
-  const capital = Number(capitalRaw) || 10000;
+  const n = Number(raw) || 10000;
+  return n > 0 ? n : 10000;
+}
 
+function updateSliderLabelAndComposition(goldPct) {
   const comp = computeComposition(goldPct);
 
-  // aggiorna label slider
   const goldVal = document.getElementById("w_gold_val");
   if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
+
+  const line2 = document.getElementById("metrics_line2");
+  if (line2) {
+    line2.textContent =
+      `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
+  }
+
+  return comp;
+}
+
+/* -----------------------------
+   Data load + chart
+----------------------------- */
+async function loadData() {
+  const slider = document.getElementById("w_gold");
+  const goldPct = Number(slider ? slider.value : 0);
+
+  const capital = getCapitalValue();
+  const comp = updateSliderLabelAndComposition(goldPct);
 
   const url =
     `/api/compute?w_ls80=${encodeURIComponent(comp.w_ls80)}` +
@@ -117,20 +139,29 @@ async function loadData() {
     `&capital=${encodeURIComponent(capital)}` +
     `&t=${Date.now()}`;
 
-  const res = await fetch(url, { cache: "no-store" });
-  const ct = (res.headers.get("content-type") || "").toLowerCase();
-  const data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
+  let res;
+  let data;
 
-  if (!res.ok || data.error) {
-    console.error(data.error || res.statusText);
-    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 200)}`, "err");
+  try {
+    res = await fetch(url, { cache: "no-store" });
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
+  } catch (e) {
+    console.error(e);
+    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
     return;
   }
 
-  // Metriche
+  if (!res.ok || data.error) {
+    console.error(data.error || res.statusText);
+    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 240)}`, "err");
+    return;
+  }
+
   const m = data.metrics || {};
+
+  // Linea 1 e 3 (linea 2 è già aggiornata in updateSliderLabelAndComposition)
   const line1 = document.getElementById("metrics_line1");
-  const line2 = document.getElementById("metrics_line2");
   const line3 = document.getElementById("metrics_line3");
 
   if (line1) {
@@ -139,43 +170,42 @@ async function loadData() {
       `Rendimento annualizzato ${pct(m.cagr_portfolio)} | ` +
       `Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
   }
-  if (line2) {
-    line2.textContent =
-      `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
-  }
   if (line3) {
     line3.textContent = `Raddoppio del portafoglio in anni: ${years1(m.doubling_years_portfolio)}`;
   }
 
-  // Finale a fianco del capitale
+  // Finali (sulla riga in alto)
   const finalValue = document.getElementById("final_value");
   const finalYears = document.getElementById("final_years");
   if (finalValue) finalValue.textContent = euro(m.final_portfolio);
   if (finalYears) finalYears.textContent = years1(m.final_years);
 
-  // Costruisci serie per chart (normalizzando le date)
+  // Serie per chart
   const dates = Array.isArray(data.dates) ? data.dates : [];
   const values = Array.isArray(data.portfolio) ? data.portfolio : [];
 
   const points = [];
-  for (let i = 0; i < Math.min(dates.length, values.length); i++) {
+  const n = Math.min(dates.length, values.length);
+  for (let i = 0; i < n; i++) {
     const iso = normalizeDateToISO(dates[i]);
     if (!iso) continue;
-    points.push({ x: iso, y: values[i] });
+    points.push({ x: iso, y: Number(values[i]) });
   }
 
-  // se punti vuoti -> segnala e non crashare
   if (points.length < 2) {
     setAskStatus(
-      "Errore dati: non riesco a leggere le date (formato non valido). Controlla i CSV: colonna Date deve essere YYYY-MM-DD o DD/MM/YYYY.",
+      "Errore dati: non riesco a leggere le date. Controlla i CSV (Date: YYYY-MM-DD o DD/MM/YYYY).",
       "err"
     );
     return;
   }
 
-  // Chart
+  // Chart render
   try {
-    const ctx = document.getElementById("chart").getContext("2d");
+    const canvas = document.getElementById("chart");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
     if (chart) chart.destroy();
 
     chart = new Chart(ctx, {
@@ -208,32 +238,30 @@ async function loadData() {
             type: "time",
             time: {
               unit: "month",
-              stepSize: 6, // ~2 linee verticali/anno
+              stepSize: 6,
               tooltipFormat: "dd/MM/yyyy",
               displayFormats: { month: "MM/yyyy" },
             },
-            ticks: {
-              maxRotation: 0,
-              autoSkip: true,
-            },
+            ticks: { maxRotation: 0, autoSkip: true },
           },
           y: {
-            ticks: {
-              callback: (value) => euro(value),
-            },
+            ticks: { callback: (value) => euro(value) },
           },
         },
       },
     });
 
-    // se tutto ok, pulisci errori “premium”
+    // se tutto ok, togli eventuali errori a schermo
     setAskStatus("", "info");
   } catch (e) {
     console.error(e);
-    setAskStatus(`Errore grafico: ${String(e).slice(0, 220)}`, "err");
+    setAskStatus(`Errore grafico: ${String(e).slice(0, 240)}`, "err");
   }
 }
 
+/* -----------------------------
+   Capital field formatting
+----------------------------- */
 function formatCapitalField() {
   const el = document.getElementById("initial");
   if (!el) return;
@@ -243,8 +271,19 @@ function formatCapitalField() {
     const n = Number(raw || "0");
     el.value = n ? num0(n) : "10.000";
   });
+
+  // INVIO nel campo capitale -> aggiorna
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadData();
+    }
+  });
 }
 
+/* -----------------------------
+   Controls wiring
+----------------------------- */
 function wireControls() {
   const btn = document.getElementById("btn_update");
   if (btn) {
@@ -256,15 +295,27 @@ function wireControls() {
 
   const slider = document.getElementById("w_gold");
   if (slider) {
+    let t = null;
+
+    // mentre trascini: aggiorna label + composizione; dopo 250ms ricalcola
     slider.addEventListener("input", () => {
       const goldPct = Number(slider.value || 0);
-      const comp = computeComposition(goldPct);
-      const goldVal = document.getElementById("w_gold_val");
-      if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
+      updateSliderLabelAndComposition(goldPct);
+
+      if (t) clearTimeout(t);
+      t = setTimeout(() => loadData(), 250);
+    });
+
+    // quando rilasci: ricalcola subito (così non “rimane indietro”)
+    slider.addEventListener("change", () => {
+      loadData();
     });
   }
 }
 
+/* -----------------------------
+   Assistant
+----------------------------- */
 async function askAssistant() {
   const q = (document.getElementById("ask_question").value || "").trim();
   const btn = document.getElementById("ask_btn");
@@ -287,7 +338,9 @@ async function askAssistant() {
     });
 
     const ct = (res.headers.get("content-type") || "").toLowerCase();
-    const data = ct.includes("application/json") ? await res.json() : { ok: false, error: await res.text() };
+    const data = ct.includes("application/json")
+      ? await res.json()
+      : { ok: false, error: await res.text() };
 
     if (!res.ok || !data.ok) {
       const msg = (data.error || `Errore server (${res.status})`).toString();
@@ -301,7 +354,7 @@ async function askAssistant() {
     setAskStatus("", "ok");
     setRemaining(data.remaining, data.limit);
   } catch (e) {
-    setAskStatus(`Errore rete: ${e}`, "err");
+    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -327,10 +380,15 @@ function wireAssistant() {
   }
 }
 
+/* -----------------------------
+   Init
+----------------------------- */
 function init() {
   formatCapitalField();
   wireControls();
   wireAssistant();
+
+  // primo render
   loadData();
 }
 
