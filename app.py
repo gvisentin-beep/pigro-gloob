@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, request, render_template
 
-# OpenAI (SDK 1.x)
+# OpenAI SDK 1.x
 try:
     from openai import OpenAI
 except Exception:
@@ -58,8 +58,9 @@ def _safe_float(x) -> Optional[float]:
 
 def _detect_sep(file_path: Path) -> str:
     """
-    I tuoi CSV spesso sono: Date;Close
-    Se cambia in futuro, prova ad adattarsi.
+    Supporta CSV con:
+      - Date;Close
+      - Date,Close
     """
     try:
         with file_path.open("r", encoding="utf-8", errors="ignore") as f:
@@ -75,10 +76,14 @@ def _detect_sep(file_path: Path) -> str:
 
 def _read_price_csv(file_path: Path) -> pd.DataFrame:
     """
-    Ritorna DataFrame con colonne: date (datetime, naive), close (float)
-    Supporta:
+    Ritorna DataFrame con colonne:
+      - date (datetime naive)
+      - close (float)
+
+    Gestisce:
       - separatore ; o ,
       - date gg/mm/aaaa (dayfirst=True) oppure yyyy-mm-dd
+      - eventuali spazi/righe sporche
     """
     if not file_path.exists():
         raise FileNotFoundError(f"File non trovato: {file_path}")
@@ -104,10 +109,16 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
 
     if len(out) < 10:
-        raise ValueError(f"CSV {file_path.name}: troppo poche righe valide dopo parsing ({len(out)}).")
+        raise ValueError(
+            f"CSV {file_path.name}: troppo poche righe valide dopo parsing ({len(out)})."
+        )
 
     # forza naive (senza timezone)
-    out["date"] = out["date"].dt.tz_localize(None) if hasattr(out["date"].dt, "tz") else out["date"]
+    try:
+        out["date"] = out["date"].dt.tz_localize(None)
+    except Exception:
+        pass
+
     return out
 
 
@@ -150,6 +161,10 @@ def _annual_rebalance_portfolio(
     w_gold: float,
     capital: float,
 ) -> pd.Series:
+    """
+    Portafoglio 2 strumenti ribilanciato 1 volta l'anno
+    (sul primo giorno di borsa dell'anno).
+    """
     w_gold = float(np.clip(w_gold, 0.0, 1.0))
     w_ls80 = 1.0 - w_gold
 
@@ -164,7 +179,6 @@ def _annual_rebalance_portfolio(
         v = ls80_shares * float(ls80_close.iloc[i]) + gold_shares * float(gold_close.iloc[i])
         values.append(v)
 
-        # ribilanciamento sul primo giorno di borsa dell'anno (escluso i=0)
         if i != 0 and bool(rebalance_flags.iloc[i]):
             v_now = v
             ls80_shares = (v_now * w_ls80) / float(ls80_close.iloc[i])
@@ -190,11 +204,13 @@ def _load_ask_store() -> Dict[str, Any]:
 
 
 def _save_ask_store(store: Dict[str, Any]) -> None:
+    """
+    Su Render free il filesystem può essere effimero: non bloccare se non si riesce.
+    """
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         ASK_STORE_FILE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
-        # su Render free può essere effimero: non bloccare
         pass
 
 
@@ -218,8 +234,13 @@ def _check_and_consume_quota(ip: str) -> Tuple[int, int]:
 
 
 def _openai_client() -> Optional[Any]:
+    """
+    Ritorna client OpenAI oppure None se non configurato.
+    """
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key or OpenAI is None:
+    if not api_key:
+        return None
+    if OpenAI is None:
         return None
     try:
         return OpenAI(api_key=api_key)
@@ -293,6 +314,7 @@ def api_diag():
             "numpy": _pkg_version("numpy"),
             "openai": _pkg_version("openai"),
             "yfinance": _pkg_version("yfinance"),
+            "requests": _pkg_version("requests"),
             "reportlab": _pkg_version("reportlab"),
         },
         "files": {},
@@ -342,6 +364,10 @@ def api_diag():
 
 @app.get("/api/diag/compute_smoke")
 def api_diag_compute_smoke():
+    """
+    Test rapido: calcola con w_gold=20% e capitale=10k.
+    Serve per capire se parsing CSV + merge + calcoli funzionano.
+    """
     try:
         w_gold = 0.20
         capital = 10000.0
@@ -429,15 +455,13 @@ def api_compute():
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         final_value = float(port.iloc[-1])
 
-        # IMPORTANTISSIMO: questi nomi sono quelli attesi dal tuo app.js
+        # NOMI ATTESI DAL TUO app.js
         metrics = {
             "cagr_portfolio": cagr,
             "max_dd_portfolio": max_dd,
             "doubling_years_portfolio": dbl,
             "final_portfolio": final_value,
             "final_years": years_period,
-
-            # extra utili
             "weights": {
                 "gold": w_gold,
                 "ls80": w_ls80,
@@ -448,11 +472,9 @@ def api_compute():
 
         payload: Dict[str, Any] = {
             "ok": True,
-            "dates": [d.strftime("%Y-%m-%d") for d in dates],
+            "dates": [d.strftime("%Y-%m-%d") for d in dates],  # ISO
             "portfolio": [float(x) for x in port],
             "metrics": metrics,
-
-            # compatibilità extra (se in futuro ti serve)
             "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
         }
 
@@ -481,7 +503,7 @@ def api_ask():
 
         client = _openai_client()
         if client is None:
-            # sempre JSON, sempre ok=true ma con messaggio informativo
+            # sempre JSON, sempre ok=True, così il frontend lo mostra nel box (no popup)
             return jsonify(
                 {
                     "ok": True,
@@ -507,7 +529,7 @@ def api_ask():
         return jsonify({"ok": True, "answer": answer.strip(), "remaining": remaining, "limit": limit})
 
     except Exception as e:
-        # sempre JSON (mai HTML)
+        # sempre JSON (mai HTML), così non compare "<!doctype ... is not valid JSON"
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
 
@@ -526,7 +548,13 @@ def api_update_data():
         return _json_error(f"yfinance non disponibile (requirements). {type(e).__name__}: {e}", 500)
 
     def update_one(ticker: str, file_path: Path) -> Dict[str, Any]:
-        info: Dict[str, Any] = {"asset": file_path.stem, "ticker_used": ticker, "file": str(file_path), "updated": False}
+        info: Dict[str, Any] = {
+            "asset": file_path.stem,
+            "ticker_used": ticker,
+            "file": str(file_path),
+            "updated": False,
+        }
+
         df = _read_price_csv(file_path)
         last_date = df["date"].iloc[-1].date()
 
