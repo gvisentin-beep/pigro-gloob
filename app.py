@@ -98,7 +98,6 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
 
     # dayfirst=True è fondamentale per 21/01/2026
     dates = pd.to_datetime(df[dcol], errors="coerce", dayfirst=True)
-
     close = pd.to_numeric(df[ccol], errors="coerce")
 
     out = pd.DataFrame({"date": dates, "close": close}).dropna()
@@ -107,9 +106,8 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
     if len(out) < 10:
         raise ValueError(f"CSV {file_path.name}: troppo poche righe valide dopo parsing ({len(out)}).")
 
-    # forza naive (senza timezone) per evitare problemi Chart.js / merge
+    # forza naive (senza timezone)
     out["date"] = out["date"].dt.tz_localize(None) if hasattr(out["date"].dt, "tz") else out["date"]
-
     return out
 
 
@@ -166,6 +164,7 @@ def _annual_rebalance_portfolio(
         v = ls80_shares * float(ls80_close.iloc[i]) + gold_shares * float(gold_close.iloc[i])
         values.append(v)
 
+        # ribilanciamento sul primo giorno di borsa dell'anno (escluso i=0)
         if i != 0 and bool(rebalance_flags.iloc[i]):
             v_now = v
             ls80_shares = (v_now * w_ls80) / float(ls80_close.iloc[i])
@@ -193,11 +192,9 @@ def _load_ask_store() -> Dict[str, Any]:
 def _save_ask_store(store: Dict[str, Any]) -> None:
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        ASK_STORE_FILE.write_text(
-            json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        ASK_STORE_FILE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
-        # filesystem su Render free può essere effimero/read-only: non bloccare
+        # su Render free può essere effimero: non bloccare
         pass
 
 
@@ -248,7 +245,7 @@ def _routes_list() -> list[dict[str, str]]:
 
 
 def _json_error(message: str, status: int = 500, **extra: Any):
-    payload = {"error": message, **extra}
+    payload = {"ok": False, "error": message, **extra}
     return jsonify(payload), status
 
 
@@ -270,12 +267,13 @@ def health():
 # ----------------------------
 @app.get("/api/diag/routes")
 def api_diag_routes():
-    return jsonify({"routes": _routes_list(), "time_utc": _now_iso()})
+    return jsonify({"ok": True, "routes": _routes_list(), "time_utc": _now_iso()})
 
 
 @app.get("/api/diag")
 def api_diag():
     diag: Dict[str, Any] = {
+        "ok": True,
         "time_utc": _now_iso(),
         "base_dir": str(BASE_DIR),
         "data_dir": str(DATA_DIR),
@@ -344,10 +342,6 @@ def api_diag():
 
 @app.get("/api/diag/compute_smoke")
 def api_diag_compute_smoke():
-    """
-    Smoke test: prova a fare un compute con valori standard, così capisci subito
-    se il problema è CSV/merge/parse oppure frontend.
-    """
     try:
         w_gold = 0.20
         capital = 10000.0
@@ -388,27 +382,23 @@ def api_diag_compute_smoke():
 @app.get("/api/compute")
 def api_compute():
     try:
+        # supporta sia w_gold (0..50 o 0..0.5), sia w_ls80 (vecchi frontend)
         w_gold = _safe_float(request.args.get("w_gold"))
         if w_gold is None:
-            # fallback: alcuni frontend vecchi mandavano w_ls80
             w_ls80 = _safe_float(request.args.get("w_ls80"))
             if w_ls80 is None:
                 w_gold = 0.20
             else:
                 w_gold = 1.0 - float(w_ls80)
 
-        # accetta sia "20" che "0.20"
+        # accetta "20" come 20%
         if w_gold > 1.0:
             w_gold = w_gold / 100.0
 
-        # slider attuale 0..50%
+        # slider attuale: 0..50%
         w_gold = float(np.clip(w_gold, 0.0, 0.50))
 
-        capital = (
-            _safe_float(request.args.get("capital"))
-            or _safe_float(request.args.get("initial"))
-            or 10000.0
-        )
+        capital = _safe_float(request.args.get("capital")) or _safe_float(request.args.get("initial")) or 10000.0
         if capital <= 0:
             capital = 10000.0
 
@@ -439,30 +429,32 @@ def api_compute():
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         final_value = float(port.iloc[-1])
 
-        payload: Dict[str, Any] = {
-            "dates": [d.strftime("%Y-%m-%d") for d in dates],
-            "portfolio": [float(x) for x in port],
-            "metrics": {
-                "annualized_return": cagr,
-                "max_drawdown": max_dd,
-                "years_period": years_period,
-                "final_value": final_value,
-                "doubling_years": dbl,
-                "weights": {
-                    "gold": w_gold,
-                    "ls80": w_ls80,
-                    "equity": az,
-                    "bond": ob,
-                },
+        # IMPORTANTISSIMO: questi nomi sono quelli attesi dal tuo app.js
+        metrics = {
+            "cagr_portfolio": cagr,
+            "max_dd_portfolio": max_dd,
+            "doubling_years_portfolio": dbl,
+            "final_portfolio": final_value,
+            "final_years": years_period,
+
+            # extra utili
+            "weights": {
+                "gold": w_gold,
+                "ls80": w_ls80,
+                "equity": az,
+                "bond": ob,
             },
         }
 
-        # compatibilità con frontend vecchi
-        payload["cagr_portfolio"] = cagr
-        payload["max_dd_portfolio"] = max_dd
-        payload["final_value"] = final_value
-        payload["final_years"] = years_period
-        payload["composition"] = {"azionario": az, "obbligazionario": ob, "oro": w_gold}
+        payload: Dict[str, Any] = {
+            "ok": True,
+            "dates": [d.strftime("%Y-%m-%d") for d in dates],
+            "portfolio": [float(x) for x in port],
+            "metrics": metrics,
+
+            # compatibilità extra (se in futuro ti serve)
+            "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
+        }
 
         return jsonify(payload)
 
@@ -478,7 +470,6 @@ def api_ask():
     try:
         data = request.get_json(silent=True) or {}
         question = (data.get("question") or data.get("q") or "").strip()
-
         if not question:
             return _json_error("Scrivi una domanda.", 400)
 
@@ -486,12 +477,14 @@ def api_ask():
         ip = _client_ip()
         remaining, limit = _check_and_consume_quota(ip)
         if remaining == 0 and limit > 0:
-            return jsonify({"error": "Limite giornaliero raggiunto.", "remaining": 0, "limit": limit}), 429
+            return jsonify({"ok": False, "error": "Limite giornaliero raggiunto.", "remaining": 0, "limit": limit}), 429
 
         client = _openai_client()
         if client is None:
+            # sempre JSON, sempre ok=true ma con messaggio informativo
             return jsonify(
                 {
+                    "ok": True,
                     "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render (Environment).",
                     "remaining": remaining,
                     "limit": limit,
@@ -500,25 +493,21 @@ def api_ask():
 
         prompt = (
             "Rispondi in italiano, in modo semplice e pratico.\n"
-            "Contesto: sito 'Metodo Pigro' (ETF azion-obblig + oro), informazione generale, "
-            "nessuna consulenza personalizzata.\n\n"
+            "Contesto: sito 'Metodo Pigro' (ETF azion-obblig + oro). Informazione generale.\n"
+            "Non è consulenza finanziaria personalizzata.\n\n"
             f"Domanda utente:\n{question}"
         )
 
-        resp = client.responses.create(
-            model=OPENAI_MODEL,
-            input=prompt,
-        )
+        resp = client.responses.create(model=OPENAI_MODEL, input=prompt)
 
-        # SDK 1.x: output_text è comodo
         answer = getattr(resp, "output_text", None)
         if not answer:
             answer = str(resp)
 
-        return jsonify({"answer": answer.strip(), "remaining": remaining, "limit": limit})
+        return jsonify({"ok": True, "answer": answer.strip(), "remaining": remaining, "limit": limit})
 
     except Exception as e:
-        # IMPORTANTISSIMO: rispondiamo SEMPRE JSON, non HTML, così il frontend non “esplode”
+        # sempre JSON (mai HTML)
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
 
@@ -534,13 +523,10 @@ def api_update_data():
     try:
         import yfinance as yf
     except Exception as e:
-        return _json_error(
-            f"yfinance non disponibile (requirements). {type(e).__name__}: {e}",
-            500,
-        )
+        return _json_error(f"yfinance non disponibile (requirements). {type(e).__name__}: {e}", 500)
 
     def update_one(ticker: str, file_path: Path) -> Dict[str, Any]:
-        info: Dict[str, Any] = {"ticker": ticker, "file": str(file_path), "updated": False}
+        info: Dict[str, Any] = {"asset": file_path.stem, "ticker_used": ticker, "file": str(file_path), "updated": False}
         df = _read_price_csv(file_path)
         last_date = df["date"].iloc[-1].date()
 
