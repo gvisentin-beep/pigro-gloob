@@ -37,7 +37,11 @@ UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI")
 GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD")
 
+# Modello OpenAI (default ok)
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
+# Firma build: la vedi in /api/diag per sapere se Render sta girando QUESTO file
+BUILD_ID = os.getenv("BUILD_ID", "2026-02-22_assistente_chatcompletions_v1")
 
 
 # ----------------------------
@@ -101,7 +105,6 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
     dcol = cols["date"]
     ccol = cols["close"]
 
-    # dayfirst=True è fondamentale per 21/01/2026
     dates = pd.to_datetime(df[dcol], errors="coerce", dayfirst=True)
     close = pd.to_numeric(df[ccol], errors="coerce")
 
@@ -296,6 +299,7 @@ def api_diag():
     diag: Dict[str, Any] = {
         "ok": True,
         "time_utc": _now_iso(),
+        "build_id": BUILD_ID,
         "base_dir": str(BASE_DIR),
         "data_dir": str(DATA_DIR),
         "env": {
@@ -366,7 +370,6 @@ def api_diag():
 def api_diag_compute_smoke():
     """
     Test rapido: calcola con w_gold=20% e capitale=10k.
-    Serve per capire se parsing CSV + merge + calcoli funzionano.
     """
     try:
         w_gold = 0.20
@@ -408,7 +411,6 @@ def api_diag_compute_smoke():
 @app.get("/api/compute")
 def api_compute():
     try:
-        # supporta sia w_gold (0..50 o 0..0.5), sia w_ls80 (vecchi frontend)
         w_gold = _safe_float(request.args.get("w_gold"))
         if w_gold is None:
             w_ls80 = _safe_float(request.args.get("w_ls80"))
@@ -417,11 +419,9 @@ def api_compute():
             else:
                 w_gold = 1.0 - float(w_ls80)
 
-        # accetta "20" come 20%
         if w_gold > 1.0:
             w_gold = w_gold / 100.0
 
-        # slider attuale: 0..50%
         w_gold = float(np.clip(w_gold, 0.0, 0.50))
 
         capital = _safe_float(request.args.get("capital")) or _safe_float(request.args.get("initial")) or 10000.0
@@ -455,7 +455,6 @@ def api_compute():
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         final_value = float(port.iloc[-1])
 
-        # NOMI ATTESI DAL TUO app.js
         metrics = {
             "cagr_portfolio": cagr,
             "max_dd_portfolio": max_dd,
@@ -472,7 +471,7 @@ def api_compute():
 
         payload: Dict[str, Any] = {
             "ok": True,
-            "dates": [d.strftime("%Y-%m-%d") for d in dates],  # ISO
+            "dates": [d.strftime("%Y-%m-%d") for d in dates],
             "portfolio": [float(x) for x in port],
             "metrics": metrics,
             "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
@@ -485,7 +484,7 @@ def api_compute():
 
 
 # ----------------------------
-# API: ask (assistente)
+# API: ask (assistente)  ✅ FIX QUI
 # ----------------------------
 @app.post("/api/ask")
 def api_ask():
@@ -503,7 +502,6 @@ def api_ask():
 
         client = _openai_client()
         if client is None:
-            # sempre JSON, sempre ok=True, così il frontend lo mostra nel box (no popup)
             return jsonify(
                 {
                     "ok": True,
@@ -513,23 +511,35 @@ def api_ask():
                 }
             )
 
-        prompt = (
+        system_msg = (
             "Rispondi in italiano, in modo semplice e pratico.\n"
             "Contesto: sito 'Metodo Pigro' (ETF azion-obblig + oro). Informazione generale.\n"
-            "Non è consulenza finanziaria personalizzata.\n\n"
-            f"Domanda utente:\n{question}"
+            "Non è consulenza finanziaria personalizzata.\n"
+            "Stile: breve, chiaro, con esempi pratici quando utile."
         )
 
-        resp = client.responses.create(model=OPENAI_MODEL, input=prompt)
+        # Qui usiamo chat.completions: è la via più stabile in produzione
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": question},
+            ],
+        )
 
-        answer = getattr(resp, "output_text", None)
+        answer = ""
+        try:
+            if resp and resp.choices and resp.choices[0].message and resp.choices[0].message.content:
+                answer = resp.choices[0].message.content
+        except Exception:
+            answer = ""
+
         if not answer:
-            answer = str(resp)
+            answer = "Nessuna risposta (vuoto). Riprova tra poco."
 
         return jsonify({"ok": True, "answer": answer.strip(), "remaining": remaining, "limit": limit})
 
     except Exception as e:
-        # sempre JSON (mai HTML), così non compare "<!doctype ... is not valid JSON"
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
 
