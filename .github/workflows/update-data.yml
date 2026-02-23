@@ -1,13 +1,11 @@
 name: Aggiornamento automatico dati Gloob
 
 on:
-permissions:
-  contents: write
   schedule:
-    - cron: "10 18 * * 1-5"  # 19:10 ora italiana
+    - cron: "10 18 * * 1-5"  # 19:10 ora italiana (lun-ven)
   workflow_dispatch:
 
-# ✅ fondamentale: permette al GITHUB_TOKEN di fare push
+# Permette al GITHUB_TOKEN di fare commit/push nel repo
 permissions:
   contents: write
 
@@ -28,7 +26,9 @@ jobs:
           python-version: "3.11"
 
       - name: Installa librerie
-        run: pip install pandas yfinance
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas yfinance
 
       - name: Aggiorna CSV LS80 e Oro
         run: |
@@ -41,46 +41,51 @@ jobs:
           data_dir.mkdir(exist_ok=True)
 
           assets = {
-              "ls80.csv": "VNGA80.MI",
-              "gold.csv": "SGLD"
+              "ls80.csv": "VNGA80.MI",  # Vanguard LifeStrategy 80 (Borsa Italiana)
+              "gold.csv": "SGLD",       # WisdomTree Physical Gold (ticker Yahoo)
           }
 
-          def update_csv(filename, ticker):
+          def update_csv(filename: str, ticker: str) -> None:
               path = data_dir / filename
-              df_new = yf.download(ticker, period="7d", interval="1d", progress=False)
 
-              if df_new.empty:
-                  print(f"Nessun dato per {ticker}")
+              df_new = yf.download(ticker, period="10d", interval="1d", progress=False)
+              if df_new is None or df_new.empty:
+                  print(f"Nessun dato scaricato per {ticker}")
                   return
 
               df_new = df_new.reset_index()[["Date", "Close"]]
               df_new["Date"] = pd.to_datetime(df_new["Date"]).dt.strftime("%d/%m/%Y")
-              df_new["Close"] = df_new["Close"].round(2)
+              df_new["Close"] = pd.to_numeric(df_new["Close"], errors="coerce").round(2)
 
               if path.exists():
-                  df_old = pd.read_csv(path, sep=";")
-                  df = pd.concat([df_old, df_new])
+                  try:
+                      df_old = pd.read_csv(path, sep=";")
+                  except Exception:
+                      # fallback se il separatore fosse diverso
+                      df_old = pd.read_csv(path)
+                  df = pd.concat([df_old, df_new], ignore_index=True)
                   df = df.drop_duplicates(subset=["Date"], keep="last")
               else:
                   df = df_new
 
-              df = df.sort_values("Date")
+              df = df.dropna(subset=["Close"]).sort_values("Date")
               df.to_csv(path, sep=";", index=False)
               print(f"Aggiornato {filename} (righe: {len(df)})")
 
-          for f, t in assets.items():
-              update_csv(f, t)
+          for file, ticker in assets.items():
+              update_csv(file, ticker)
 
           print("Aggiornamento completato.")
           EOF
 
-      - name: Commit automatico se aggiornato
+      - name: Commit e push se ci sono modifiche
         run: |
           git config user.name "gloob-bot"
           git config user.email "bot@gloob.local"
-          git add data/*.csv
 
-          # Se non c'è nulla da committare, esci senza errore
+          git add data/*.csv || true
+
+          # Se non ci sono modifiche, esci senza errore
           if git diff --staged --quiet; then
             echo "Nessuna modifica nei CSV. Fine."
             exit 0
