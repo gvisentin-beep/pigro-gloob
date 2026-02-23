@@ -455,6 +455,9 @@ def api_compute():
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         final_value = float(port.iloc[-1])
 
+        # ✅ NEW: ultima data disponibile nei dati (per scritta sotto grafico)
+        data_last_date = str(dates.iloc[-1].date())
+
         metrics = {
             "cagr_portfolio": cagr,
             "max_dd_portfolio": max_dd,
@@ -475,6 +478,7 @@ def api_compute():
             "portfolio": [float(x) for x in port],
             "metrics": metrics,
             "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
+            "data_last_date": data_last_date,  # ✅ NEW
         }
 
         return jsonify(payload)
@@ -484,7 +488,7 @@ def api_compute():
 
 
 # ----------------------------
-# API: ask (assistente)  ✅ FIX QUI
+# API: ask (assistente)
 # ----------------------------
 @app.post("/api/ask")
 def api_ask():
