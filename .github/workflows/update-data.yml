@@ -1,6 +1,8 @@
 name: Aggiornamento automatico dati Gloob
 
 on:
+permissions:
+  contents: write
   schedule:
     - cron: "10 18 * * 1-5"  # 19:10 ora italiana
   workflow_dispatch:
