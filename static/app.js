@@ -237,12 +237,17 @@ async function loadData() {
           x: {
             type: "time",
             time: {
-              unit: "month",
-              stepSize: 6,
+              // ✅ UNA SOLA ETICHETTA PER ANNO
+              unit: "year",
               tooltipFormat: "dd/MM/yyyy",
-              displayFormats: { month: "MM/yyyy" },
+              displayFormats: { year: "yyyy" },
             },
-            ticks: { maxRotation: 0, autoSkip: true },
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              // facoltativo: se hai 50+ anni di storico, evita affollamento
+              maxTicksLimit: 40,
+            },
           },
           y: {
             ticks: { callback: (value) => euro(value) },
@@ -306,7 +311,7 @@ function wireControls() {
       t = setTimeout(() => loadData(), 250);
     });
 
-    // quando rilasci: ricalcola subito (così non “rimane indietro”)
+    // quando rilasci: ricalcola subito
     slider.addEventListener("change", () => {
       loadData();
     });
