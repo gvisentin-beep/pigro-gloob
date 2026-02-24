@@ -160,16 +160,6 @@ async function loadData() {
 
   const m = data.metrics || {};
 
-  // ✅ NEW: Mostra data ultimo aggiornamento reale sotto al grafico
-  const dataUpdatedEl = document.getElementById("data_updated");
-  if (dataUpdatedEl) {
-    if (data.data_last_date) {
-      dataUpdatedEl.textContent = "Dati aggiornati al: " + String(data.data_last_date);
-    } else {
-      dataUpdatedEl.textContent = "";
-    }
-  }
-
   // Linea 1 e 3 (linea 2 è già aggiornata in updateSliderLabelAndComposition)
   const line1 = document.getElementById("metrics_line1");
   const line3 = document.getElementById("metrics_line3");
@@ -255,6 +245,7 @@ async function loadData() {
             ticks: {
               maxRotation: 0,
               autoSkip: true,
+              // facoltativo: se hai 50+ anni di storico, evita affollamento
               maxTicksLimit: 40,
             },
           },
