@@ -2,6 +2,17 @@
 let chart = null;
 
 /* -----------------------------
+   Config (da index.html)
+----------------------------- */
+function getUpdateToken() {
+  return (window.__UPDATE_TOKEN || "").toString().trim();
+}
+function getUpdateMinHours() {
+  const n = Number(window.__UPDATE_MIN_INTERVAL_HOURS);
+  return Number.isFinite(n) && n > 0 ? n : 6;
+}
+
+/* -----------------------------
    Format helpers
 ----------------------------- */
 function euro(x) {
@@ -124,6 +135,51 @@ function updateSliderLabelAndComposition(goldPct) {
 }
 
 /* -----------------------------
+   ✅ Auto-update dati (CSV) prima del compute
+   - chiamata a /api/update_data?token=...
+   - throttling client-side con localStorage (N ore)
+----------------------------- */
+function _lsKeyForUpdate() {
+  return "pigro:last_update_attempt_ms";
+}
+
+function shouldAttemptUpdateNow() {
+  const token = getUpdateToken();
+  if (!token) return false;
+
+  const hours = getUpdateMinHours();
+  const last = Number(localStorage.getItem(_lsKeyForUpdate()) || "0");
+  const now = Date.now();
+  const deltaHours = (now - last) / (1000 * 60 * 60);
+  return deltaHours >= hours;
+}
+
+function markUpdateAttemptNow() {
+  try {
+    localStorage.setItem(_lsKeyForUpdate(), String(Date.now()));
+  } catch (_) {}
+}
+
+async function tryAutoUpdateData() {
+  const token = getUpdateToken();
+  if (!token) return;
+
+  if (!shouldAttemptUpdateNow()) return;
+
+  // segna subito l'attentativo (così evitiamo loop in caso di errori)
+  markUpdateAttemptNow();
+
+  try {
+    const url = `/api/update_data?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+    const res = await fetch(url, { cache: "no-store" });
+    // non blocchiamo se response non è ok: il grafico deve comunque caricare
+    await res.text().catch(() => {});
+  } catch (e) {
+    console.warn("Auto-update failed:", e);
+  }
+}
+
+/* -----------------------------
    Data load + chart
 ----------------------------- */
 async function loadData() {
@@ -133,6 +189,10 @@ async function loadData() {
   const capital = getCapitalValue();
   const comp = updateSliderLabelAndComposition(goldPct);
 
+  // ✅ 1) prova ad aggiornare i CSV all'ultima chiusura (throttled)
+  await tryAutoUpdateData();
+
+  // ✅ 2) poi calcola e disegna
   const url =
     `/api/compute?w_ls80=${encodeURIComponent(comp.w_ls80)}` +
     `&w_gold=${encodeURIComponent(comp.w_gold)}` +
@@ -245,7 +305,6 @@ async function loadData() {
             ticks: {
               maxRotation: 0,
               autoSkip: true,
-              // facoltativo: se hai 50+ anni di storico, evita affollamento
               maxTicksLimit: 40,
             },
           },
