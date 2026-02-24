@@ -79,6 +79,15 @@
         margin-left: 10px;
         font-weight: 700;
       }
+
+      /* ✅ link con classe btn (così il bottone Faxsimile PDF appare bene) */
+      a.btn {
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
     </style>
   </head>
 
@@ -139,7 +148,7 @@
         <canvas id="chart"></canvas>
       </div>
 
-      <!-- SECONDA PARTE -->
+      <!-- SECONDA PARTE (come foto) -->
       <div class="card">
         <b>Messaggio chiave:</b><br />
         La differenza non è indovinare il mercato.<br />
@@ -150,7 +159,10 @@
         <h2>Come applicarlo concretamente</h2>
         <ol>
           <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
-          <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
+          <li>
+            Investi nei due strumenti attraverso la tua banca con “execution only”.
+            <a class="btn" href="/faxsimile.pdf" target="_blank" rel="noopener">Faxsimile PDF</a>
+          </li>
           <li>Non intervenire durante l’anno.</li>
           <li>A dicembre ribilancia ai pesi originali.</li>
         </ol>
@@ -238,15 +250,6 @@
         </div>
       </div>
     </div>
-
-    <!-- ✅ Config per auto-update dati -->
-    <script>
-      // Inserisci qui lo stesso valore di UPDATE_TOKEN (Render env var)
-      window.__UPDATE_TOKEN = "PigroUpdate2026A9x7k";
-
-      // ogni quante ore tentare l’update automatico dal browser (throttling)
-      window.__UPDATE_MIN_INTERVAL_HOURS = 6;
-    </script>
 
     <script src="/static/app.js"></script>
   </body>
