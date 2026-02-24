@@ -273,6 +273,56 @@ def _json_error(message: str, status: int = 500, **extra: Any):
     return jsonify(payload), status
 
 
+def _yf_to_hist_df(hist: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """
+    Converte l'output di yfinance.download() in DataFrame standard:
+      - date (datetime naive)
+      - close (float)
+
+    Gestisce:
+      - colonne normali
+      - colonne MultiIndex (es. ('Close','VNGA80.MI')) → Close diventa DataFrame
+    """
+    if hist is None or hist.empty:
+        return pd.DataFrame(columns=["date", "close"])
+
+    # Estrai "Close" in modo robusto
+    close_ser = None
+
+    if isinstance(hist.columns, pd.MultiIndex):
+        # livello 0: Open/High/Low/Close/...
+        lvl0 = set(hist.columns.get_level_values(0))
+        if "Close" in lvl0:
+            close_obj = hist["Close"]  # può essere DataFrame con colonne = tickers
+            if hasattr(close_obj, "columns"):
+                # se c'è la colonna ticker, preferiscila
+                if ticker in close_obj.columns:
+                    close_ser = close_obj[ticker]
+                else:
+                    close_ser = close_obj.iloc[:, 0]
+            else:
+                close_ser = close_obj
+    else:
+        if "Close" in hist.columns:
+            close_ser = hist["Close"]
+
+    if close_ser is None:
+        return pd.DataFrame(columns=["date", "close"])
+
+    tmp = close_ser.dropna().to_frame("close")
+    tmp["date"] = tmp.index
+    tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
+
+    try:
+        tmp["date"] = tmp["date"].dt.tz_localize(None)
+    except Exception:
+        pass
+
+    tmp["close"] = pd.to_numeric(tmp["close"], errors="coerce")
+    tmp = tmp.dropna().sort_values("date")
+    return tmp[["date", "close"]]
+
+
 # ----------------------------
 # Pages
 # ----------------------------
@@ -484,7 +534,7 @@ def api_compute():
 
 
 # ----------------------------
-# API: ask (assistente)  ✅ FIX QUI
+# API: ask (assistente)
 # ----------------------------
 @app.post("/api/ask")
 def api_ask():
@@ -518,7 +568,6 @@ def api_ask():
             "Stile: breve, chiaro, con esempi pratici quando utile."
         )
 
-        # Qui usiamo chat.completions: è la via più stabile in produzione
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
@@ -544,7 +593,7 @@ def api_ask():
 
 
 # ----------------------------
-# API: update data (opzionale, richiede yfinance)
+# API: update data (richiede yfinance)
 # ----------------------------
 @app.get("/api/update_data")
 def api_update_data():
@@ -568,22 +617,14 @@ def api_update_data():
         df = _read_price_csv(file_path)
         last_date = df["date"].iloc[-1].date()
 
-        hist = yf.download(ticker, period="10d", interval="1d", auto_adjust=False, progress=False)
-        if hist is None or hist.empty:
+        hist_raw = yf.download(ticker, period="10d", interval="1d", auto_adjust=False, progress=False)
+        hist = _yf_to_hist_df(hist_raw, ticker)
+
+        if hist.empty:
             info["reason"] = "no_data_from_yahoo"
             return info
 
-        hist = hist.reset_index()
-        dcol = "Date" if "Date" in hist.columns else ("Datetime" if "Datetime" in hist.columns else None)
-        if dcol is None or "Close" not in hist.columns:
-            info["reason"] = "unexpected_columns"
-            info["columns"] = list(hist.columns)
-            return info
-
-        hist["date"] = pd.to_datetime(hist[dcol], errors="coerce").dt.tz_localize(None)
-        hist["close"] = pd.to_numeric(hist["Close"], errors="coerce")
-        hist = hist[["date", "close"]].dropna().sort_values("date")
-
+        # ultime righe > last_date
         new_rows = hist[hist["date"].dt.date > last_date]
         if new_rows.empty:
             info["reason"] = "already_up_to_date"
