@@ -4,7 +4,7 @@ import os
 import json
 import math
 import traceback
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
@@ -19,63 +19,60 @@ except Exception:
     OpenAI = None  # gestiamo sotto
 
 
-# ----------------------------
-# App / Paths / Env
-# ----------------------------
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 
+# File dati
 LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
 
-ASK_DAILY_LIMIT = int(os.getenv("ASK_DAILY_LIMIT", "10"))
-ASK_STORE_FILE = DATA_DIR / "ask_limits.json"
-
-UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
+# Ticker (Yahoo)
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI")
 GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD")
 
-# Modello OpenAI (default ok)
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+# Token update manuale (resta disponibile, ma NON è più necessario per l'auto-update)
+UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
 
-# Firma build: la vedi in /api/diag per sapere se Render sta girando QUESTO file
-BUILD_ID = os.getenv("BUILD_ID", "2026-02-22_assistente_chatcompletions_v1")
+# ✅ Auto update: 1 = attivo, 0 = spento
+AUTO_UPDATE = os.getenv("AUTO_UPDATE", "1").strip()
+AUTO_UPDATE_MINUTES = int(os.getenv("AUTO_UPDATE_MINUTES", "60"))
+_LAST_AUTO_UPDATE_UTC: Optional[datetime] = None
 
 
 # ----------------------------
 # Helpers
 # ----------------------------
 def _now_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
-def _safe_float(x) -> Optional[float]:
+def _json_error(message: str, code: int = 400, **extra: Any):
+    payload = {"ok": False, "error": message, "time_utc": _now_iso()}
+    payload.update(extra)
+    return jsonify(payload), code
+
+
+def _safe_float(x: Any) -> Optional[float]:
     try:
         if x is None:
             return None
-        return float(x)
+        s = str(x).strip().replace(",", ".")
+        if s == "":
+            return None
+        return float(s)
     except Exception:
         return None
 
 
 def _detect_sep(file_path: Path) -> str:
-    """
-    Supporta CSV con:
-      - Date;Close
-      - Date,Close
-    """
-    try:
-        with file_path.open("r", encoding="utf-8", errors="ignore") as f:
-            head = f.readline()
-        if ";" in head and "," not in head:
-            return ";"
-        if "," in head and ";" not in head:
-            return ","
-        return ";" if head.count(";") >= head.count(",") else ","
-    except Exception:
+    # euristica semplice: se la prima riga ha più ';' che ',' -> ';'
+    sample = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()[:3]
+    if not sample:
         return ";"
+    line = sample[0]
+    return ";" if line.count(";") >= line.count(",") else ","
 
 
 def _read_price_csv(file_path: Path) -> pd.DataFrame:
@@ -180,101 +177,109 @@ def _annual_rebalance_portfolio(
     values = []
     for i in range(len(dates)):
         v = ls80_shares * float(ls80_close.iloc[i]) + gold_shares * float(gold_close.iloc[i])
-        values.append(v)
+        values.append(float(v))
 
-        if i != 0 and bool(rebalance_flags.iloc[i]):
-            v_now = v
-            ls80_shares = (v_now * w_ls80) / float(ls80_close.iloc[i])
-            gold_shares = (v_now * w_gold) / float(gold_close.iloc[i])
+        if rebalance_flags.iloc[i]:
+            v = float(values[-1])
+            ls80_shares = (v * w_ls80) / float(ls80_close.iloc[i])
+            gold_shares = (v * w_gold) / float(gold_close.iloc[i])
 
-    return pd.Series(values)
-
-
-def _client_ip() -> str:
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.remote_addr or "unknown"
-
-
-def _load_ask_store() -> Dict[str, Any]:
-    try:
-        if ASK_STORE_FILE.exists():
-            return json.loads(ASK_STORE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return {}
-
-
-def _save_ask_store(store: Dict[str, Any]) -> None:
-    """
-    Su Render free il filesystem può essere effimero: non bloccare se non si riesce.
-    """
-    try:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        ASK_STORE_FILE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
-
-def _check_and_consume_quota(ip: str) -> Tuple[int, int]:
-    limit = ASK_DAILY_LIMIT
-    today = date.today().isoformat()
-    store = _load_ask_store()
-
-    key = f"{today}:{ip}"
-    used = int(store.get(key, 0))
-
-    if used >= limit:
-        return 0, limit
-
-    used += 1
-    store[key] = used
-    _save_ask_store(store)
-
-    remaining = max(0, limit - used)
-    return remaining, limit
-
-
-def _openai_client() -> Optional[Any]:
-    """
-    Ritorna client OpenAI oppure None se non configurato.
-    """
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return None
-    if OpenAI is None:
-        return None
-    try:
-        return OpenAI(api_key=api_key)
-    except Exception:
-        return None
-
-
-def _pkg_version(name: str) -> Optional[str]:
-    try:
-        from importlib.metadata import version
-        return version(name)
-    except Exception:
-        return None
-
-
-def _routes_list() -> list[dict[str, str]]:
-    routes = []
-    for r in app.url_map.iter_rules():
-        methods = ",".join(sorted(m for m in r.methods if m not in {"HEAD", "OPTIONS"}))
-        routes.append({"rule": str(r), "methods": methods, "endpoint": r.endpoint})
-    routes.sort(key=lambda x: (x["rule"], x["methods"]))
-    return routes
-
-
-def _json_error(message: str, status: int = 500, **extra: Any):
-    payload = {"ok": False, "error": message, **extra}
-    return jsonify(payload), status
+    return pd.Series(values, index=dates.index, name="portfolio")
 
 
 # ----------------------------
-# Pages
+# ✅ Auto-update dati (automatico su /api/compute)
+# ----------------------------
+def _maybe_auto_update_data() -> Dict[str, Any]:
+    """
+    Aggiorna automaticamente i CSV (ls80/gold) usando yfinance **solo se**:
+      - AUTO_UPDATE == "1"
+      - e non abbiamo già tentato un update negli ultimi AUTO_UPDATE_MINUTES
+    Non solleva eccezioni: in caso di problemi restituisce info diagnostiche.
+    """
+    global _LAST_AUTO_UPDATE_UTC
+
+    info: Dict[str, Any] = {"attempted": False, "updated_any": False, "details": {}, "time_utc": _now_iso()}
+
+    if AUTO_UPDATE != "1":
+        info["skipped_reason"] = "AUTO_UPDATE_disabled"
+        return info
+
+    now = datetime.now(timezone.utc)
+    if _LAST_AUTO_UPDATE_UTC is not None:
+        delta_min = (now - _LAST_AUTO_UPDATE_UTC).total_seconds() / 60.0
+        if delta_min < float(AUTO_UPDATE_MINUTES):
+            info["skipped_reason"] = f"throttled_{AUTO_UPDATE_MINUTES}m"
+            info["last_attempt_utc"] = _LAST_AUTO_UPDATE_UTC.isoformat().replace("+00:00", "Z")
+            return info
+
+    _LAST_AUTO_UPDATE_UTC = now
+    info["attempted"] = True
+
+    try:
+        import yfinance as yf  # type: ignore
+    except Exception as e:
+        info["error"] = f"yfinance_missing: {type(e).__name__}: {e}"
+        return info
+
+    def update_one(ticker: str, file_path: Path) -> Dict[str, Any]:
+        res: Dict[str, Any] = {"ticker": ticker, "file": str(file_path), "updated": False}
+        try:
+            df = _read_price_csv(file_path)
+            last_date = df["date"].iloc[-1].date()
+
+            # prende gli ultimi giorni: se c'è una nuova chiusura, la vede qui
+            hist = yf.download(ticker, period="10d", interval="1d", auto_adjust=False, progress=False)
+            if hist is None or hist.empty:
+                res["reason"] = "no_data_from_yahoo"
+                return res
+
+            hist = hist.reset_index()
+            dcol = "Date" if "Date" in hist.columns else ("Datetime" if "Datetime" in hist.columns else None)
+            if dcol is None or "Close" not in hist.columns:
+                res["reason"] = "unexpected_columns"
+                res["columns"] = list(hist.columns)
+                return res
+
+            hist["date"] = pd.to_datetime(hist[dcol], errors="coerce").dt.tz_localize(None)
+            hist["close"] = pd.to_numeric(hist["Close"], errors="coerce")
+            hist = hist[["date", "close"]].dropna().sort_values("date")
+
+            new_rows = hist[hist["date"].dt.date > last_date]
+            if new_rows.empty:
+                res["reason"] = "already_up_to_date"
+                return res
+
+            out = pd.concat([df, new_rows], ignore_index=True)
+            out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            save = pd.DataFrame(
+                {
+                    "Date": out["date"].dt.strftime("%d/%m/%Y"),
+                    "Close": out["close"].map(lambda x: f"{float(x):.2f}"),
+                }
+            )
+            save.to_csv(file_path, sep=";", index=False)
+
+            res["updated"] = True
+            res["added_rows"] = int(len(new_rows))
+            res["last_date"] = str(out["date"].iloc[-1].date())
+            res["last_value"] = float(out["close"].iloc[-1])
+            return res
+        except Exception as e:
+            res["error"] = f"{type(e).__name__}: {e}"
+            return res
+
+    res_ls = update_one(LS80_TICKER, LS80_FILE)
+    res_gd = update_one(GOLD_TICKER, GOLD_FILE)
+    info["details"] = {"ls80": res_ls, "gold": res_gd}
+    info["updated_any"] = bool(res_ls.get("updated")) or bool(res_gd.get("updated"))
+    return info
+
+
+# ----------------------------
+# Routes base
 # ----------------------------
 @app.get("/")
 def home():
@@ -286,9 +291,15 @@ def health():
     return jsonify({"ok": True, "time_utc": _now_iso()})
 
 
-# ----------------------------
-# Diagnostics
-# ----------------------------
+def _routes_list() -> list[dict[str, str]]:
+    routes = []
+    for r in app.url_map.iter_rules():
+        methods = ",".join(sorted([m for m in r.methods if m not in ("HEAD", "OPTIONS")]))
+        routes.append({"rule": str(r), "methods": methods, "endpoint": r.endpoint})
+    routes.sort(key=lambda x: (x["rule"], x["methods"]))
+    return routes
+
+
 @app.get("/api/diag/routes")
 def api_diag_routes():
     return jsonify({"ok": True, "routes": _routes_list(), "time_utc": _now_iso()})
@@ -296,109 +307,47 @@ def api_diag_routes():
 
 @app.get("/api/diag")
 def api_diag():
-    diag: Dict[str, Any] = {
-        "ok": True,
-        "time_utc": _now_iso(),
-        "build_id": BUILD_ID,
-        "base_dir": str(BASE_DIR),
-        "data_dir": str(DATA_DIR),
-        "env": {
-            "LS80_TICKER": LS80_TICKER,
-            "GOLD_TICKER": GOLD_TICKER,
-            "OPENAI_API_KEY_present": bool(os.getenv("OPENAI_API_KEY", "").strip()),
-            "OPENAI_MODEL": OPENAI_MODEL,
-            "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
-            "ASK_DAILY_LIMIT": ASK_DAILY_LIMIT,
-        },
-        "versions": {
-            "python": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
-            "flask": _pkg_version("flask"),
-            "gunicorn": _pkg_version("gunicorn"),
-            "pandas": _pkg_version("pandas"),
-            "numpy": _pkg_version("numpy"),
-            "openai": _pkg_version("openai"),
-            "yfinance": _pkg_version("yfinance"),
-            "requests": _pkg_version("requests"),
-            "reportlab": _pkg_version("reportlab"),
-        },
-        "files": {},
-        "merge": {},
-        "routes_count": len(_routes_list()),
-    }
-
-    def file_info(fp: Path) -> Dict[str, Any]:
-        info: Dict[str, Any] = {"exists": fp.exists(), "file": str(fp)}
-        if not fp.exists():
-            return info
-        try:
-            df = _read_price_csv(fp)
-            info.update(
-                {
-                    "rows": int(len(df)),
-                    "sep_detected": _detect_sep(fp),
-                    "first_date": str(df["date"].iloc[0].date()),
-                    "last_date": str(df["date"].iloc[-1].date()),
-                    "first_value": float(df["close"].iloc[0]),
-                    "last_value": float(df["close"].iloc[-1]),
-                    "date_sample": [str(x.date()) for x in df["date"].tail(3)],
-                    "close_sample": [float(x) for x in df["close"].tail(3)],
-                }
-            )
-        except Exception as e:
-            info["error"] = f"{type(e).__name__}: {e}"
-        return info
-
-    diag["files"]["ls80"] = file_info(LS80_FILE)
-    diag["files"]["gold"] = file_info(GOLD_FILE)
-
+    # diagnostica rapida: presenza file e ultime date
+    info: Dict[str, Any] = {"ok": True, "time_utc": _now_iso(), "data_dir": str(DATA_DIR)}
     try:
-        ls = _read_price_csv(LS80_FILE)
-        gd = _read_price_csv(GOLD_FILE)
-        merged = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
-        diag["merge"] = {
-            "rows_inner": int(len(merged)),
-            "first_date": str(merged["date"].iloc[0].date()) if len(merged) else None,
-            "last_date": str(merged["date"].iloc[-1].date()) if len(merged) else None,
-        }
+        df_ls = _read_price_csv(LS80_FILE)
+        df_gd = _read_price_csv(GOLD_FILE)
+        info["ls80_last_date"] = str(df_ls["date"].iloc[-1].date())
+        info["gold_last_date"] = str(df_gd["date"].iloc[-1].date())
+        info["routes_count"] = len(_routes_list())
     except Exception as e:
-        diag["merge"] = {"error": f"{type(e).__name__}: {e}"}
-
-    return jsonify(diag)
+        info["ok"] = False
+        info["error"] = f"{type(e).__name__}: {e}"
+    return jsonify(info)
 
 
 @app.get("/api/diag/compute_smoke")
 def api_diag_compute_smoke():
-    """
-    Test rapido: calcola con w_gold=20% e capitale=10k.
-    """
+    # esegue compute con parametri default e restituisce solo metriche
     try:
         w_gold = 0.20
         capital = 10000.0
 
-        ls = _read_price_csv(LS80_FILE)
-        gd = _read_price_csv(GOLD_FILE)
-        df = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
-        df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
-        if len(df) < 20:
-            return _json_error("Poche date in comune (merge troppo corto).", 400, rows_inner=int(len(df)))
-
+        df_ls = _read_price_csv(LS80_FILE)
+        df_gd = _read_price_csv(GOLD_FILE)
+        df = pd.merge(df_ls, df_gd, on="date", how="inner", suffixes=("_ls80", "_gold")).sort_values("date")
         dates = df["date"]
-        port = _annual_rebalance_portfolio(df["ls80"], df["gold"], dates, w_gold=w_gold, capital=capital)
+        port = _annual_rebalance_portfolio(df["close_ls80"], df["close_gold"], dates, w_gold=w_gold, capital=capital)
+
         cagr = _compute_cagr(port, dates)
-        max_dd = _compute_drawdown(port)
-        years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
+        dd = _compute_drawdown(port)
+        dy = _doubling_years(cagr)
 
         return jsonify(
             {
                 "ok": True,
-                "rows": int(len(df)),
-                "first_date": str(dates.iloc[0].date()),
-                "last_date": str(dates.iloc[-1].date()),
-                "final_value": float(port.iloc[-1]),
-                "annualized_return": cagr,
-                "max_drawdown": max_dd,
-                "years_period": years_period,
                 "time_utc": _now_iso(),
+                "len": int(len(df)),
+                "start": str(dates.iloc[0].date()),
+                "end": str(dates.iloc[-1].date()),
+                "cagr": cagr,
+                "max_drawdown": dd,
+                "doubling_years": dy,
             }
         )
     except Exception as e:
@@ -406,70 +355,52 @@ def api_diag_compute_smoke():
 
 
 # ----------------------------
-# API: compute (grafico + metriche)
+# API: compute
 # ----------------------------
 @app.get("/api/compute")
 def api_compute():
     try:
+        # ✅ prima di calcolare: prova ad aggiornare i CSV all’ultima chiusura (throttled)
+        auto_update_info = _maybe_auto_update_data()
+
         w_gold = _safe_float(request.args.get("w_gold"))
         if w_gold is None:
             w_ls80 = _safe_float(request.args.get("w_ls80"))
             if w_ls80 is None:
                 w_gold = 0.20
             else:
-                w_gold = 1.0 - float(w_ls80)
+                w_gold = 1.0 - float(np.clip(w_ls80, 0.0, 1.0))
+        else:
+            w_gold = float(np.clip(w_gold, 0.0, 1.0))
 
-        if w_gold > 1.0:
-            w_gold = w_gold / 100.0
+        capital = _safe_float(request.args.get("capital")) or 10000.0
+        capital = max(1.0, float(capital))
 
-        w_gold = float(np.clip(w_gold, 0.0, 0.50))
+        df_ls = _read_price_csv(LS80_FILE)
+        df_gd = _read_price_csv(GOLD_FILE)
 
-        capital = _safe_float(request.args.get("capital")) or _safe_float(request.args.get("initial")) or 10000.0
-        if capital <= 0:
-            capital = 10000.0
-
-        ls = _read_price_csv(LS80_FILE)
-        gd = _read_price_csv(GOLD_FILE)
-
-        df = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
-        df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
-
-        if len(df) < 20:
-            return _json_error(
-                "Poche date in comune tra LS80 e Oro (merge troppo corto).",
-                400,
-                rows_inner=int(len(df)),
-            )
+        df = pd.merge(df_ls, df_gd, on="date", how="inner", suffixes=("_ls80", "_gold")).sort_values("date")
+        if df.empty:
+            return _json_error("Dati insufficienti dopo merge (nessuna data in comune).", 500)
 
         dates = df["date"]
-        port = _annual_rebalance_portfolio(df["ls80"], df["gold"], dates, w_gold=w_gold, capital=float(capital))
+        port = _annual_rebalance_portfolio(df["close_ls80"], df["close_gold"], dates, w_gold=w_gold, capital=capital)
 
         cagr = _compute_cagr(port, dates)
-        max_dd = _compute_drawdown(port)
-        dbl = _doubling_years(cagr)
+        dd = _compute_drawdown(port)
+        dy = _doubling_years(cagr)
 
-        w_ls80 = 1.0 - w_gold
-        az = 0.80 * w_ls80
-        ob = 0.20 * w_ls80
+        # composizione “azionaria/obbligazionaria” fissa per LS80 (80/20) * (1 - oro)
+        w_ls = 1.0 - w_gold
+        az = round(w_ls * 0.80, 4)
+        ob = round(w_ls * 0.20, 4)
 
-        years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
-        final_value = float(port.iloc[-1])
-
-        # ✅ NEW: ultima data disponibile nei dati (per scritta sotto grafico)
-        data_last_date = str(dates.iloc[-1].date())
-
-        metrics = {
-            "cagr_portfolio": cagr,
-            "max_dd_portfolio": max_dd,
-            "doubling_years_portfolio": dbl,
-            "final_portfolio": final_value,
-            "final_years": years_period,
-            "weights": {
-                "gold": w_gold,
-                "ls80": w_ls80,
-                "equity": az,
-                "bond": ob,
-            },
+        metrics: Dict[str, Any] = {
+            "cagr": cagr,
+            "max_drawdown": dd,
+            "doubling_years": dy,
+            "final_value": float(port.iloc[-1]),
+            "years": (dates.iloc[-1] - dates.iloc[0]).days / 365.25,
         }
 
         payload: Dict[str, Any] = {
@@ -478,7 +409,8 @@ def api_compute():
             "portfolio": [float(x) for x in port],
             "metrics": metrics,
             "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
-            "data_last_date": data_last_date,  # ✅ NEW
+            # ✅ info diagnostica (il frontend la ignora, ma ci serve se qualcosa non aggiorna)
+            "auto_update": auto_update_info,
         }
 
         return jsonify(payload)
@@ -494,61 +426,39 @@ def api_compute():
 def api_ask():
     try:
         data = request.get_json(silent=True) or {}
-        question = (data.get("question") or data.get("q") or "").strip()
+        question = (data.get("question") or "").strip()
         if not question:
-            return _json_error("Scrivi una domanda.", 400)
+            return _json_error("Domanda vuota.", 400)
 
-        # quota per IP
-        ip = _client_ip()
-        remaining, limit = _check_and_consume_quota(ip)
-        if remaining == 0 and limit > 0:
-            return jsonify({"ok": False, "error": "Limite giornaliero raggiunto.", "remaining": 0, "limit": limit}), 429
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key or OpenAI is None:
+            return _json_error("Assistente non configurato (OPENAI_API_KEY mancante).", 500)
 
-        client = _openai_client()
-        if client is None:
-            return jsonify(
-                {
-                    "ok": True,
-                    "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render (Environment).",
-                    "remaining": remaining,
-                    "limit": limit,
-                }
-            )
+        client = OpenAI(api_key=api_key)
 
-        system_msg = (
-            "Rispondi in italiano, in modo semplice e pratico.\n"
-            "Contesto: sito 'Metodo Pigro' (ETF azion-obblig + oro). Informazione generale.\n"
-            "Non è consulenza finanziaria personalizzata.\n"
-            "Stile: breve, chiaro, con esempi pratici quando utile."
+        system = (
+            "Sei un assistente informativo. Non fornire consulenza finanziaria personalizzata. "
+            "Rispondi in italiano, in modo chiaro e concreto."
         )
 
-        # Qui usiamo chat.completions: è la via più stabile in produzione
         resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=[
-                {"role": "system", "content": system_msg},
+                {"role": "system", "content": system},
                 {"role": "user", "content": question},
             ],
+            temperature=0.4,
         )
 
-        answer = ""
-        try:
-            if resp and resp.choices and resp.choices[0].message and resp.choices[0].message.content:
-                answer = resp.choices[0].message.content
-        except Exception:
-            answer = ""
-
-        if not answer:
-            answer = "Nessuna risposta (vuoto). Riprova tra poco."
-
-        return jsonify({"ok": True, "answer": answer.strip(), "remaining": remaining, "limit": limit})
+        answer = resp.choices[0].message.content.strip() if resp.choices else ""
+        return jsonify({"ok": True, "answer": answer, "time_utc": _now_iso()})
 
     except Exception as e:
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
 
 # ----------------------------
-# API: update data (opzionale, richiede yfinance)
+# API: update data (manuale - opzionale)
 # ----------------------------
 @app.get("/api/update_data")
 def api_update_data():
