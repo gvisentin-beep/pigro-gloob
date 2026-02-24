@@ -343,7 +343,7 @@ def _maybe_autocomplete_data() -> Dict[str, Any]:
         df = _read_price_csv(file_path)
         last_date = df["date"].iloc[-1].date()
 
-        hist_raw = yf.download(ticker, period="15d", interval="1d", auto_adjust=False, progress=False)
+        hist_raw = yf.download(ticker, period="3mo", interval="1d", auto_adjust=False, progress=False)
         hist = _yf_to_hist_df(hist_raw, ticker)
 
         if hist.empty:
