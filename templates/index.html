@@ -14,79 +14,32 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 
     <style>
-      /* alza il grafico su mobile */
-      #chartWrap {
-        height: 520px;
-      }
-      @media (max-width: 680px) {
-        #chartWrap {
-          height: 420px;
-        }
-      }
+      #chartWrap { height: 520px; }
+      @media (max-width: 680px) { #chartWrap { height: 420px; } }
 
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin: 18px 0 6px;
-      }
-      .brand img {
-        width: 42px;
-        height: 42px;
-      }
-      .brand h1 {
-        margin: 0;
-        font-size: 40px;
-        line-height: 1;
-      }
-      .brand .sub {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 700;
-        opacity: 0.85;
-      }
+      .brand { display:flex; align-items:center; gap:12px; margin:18px 0 6px; }
+      .brand img { width:42px; height:42px; }
+      .brand h1 { margin:0; font-size:40px; line-height:1; }
+      .brand .sub { margin:0; font-size:18px; font-weight:700; opacity:.85; }
 
-      .controlsRow {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px;
-        align-items: end;
-      }
-      .ctrl {
-        min-width: 220px;
-      }
-      .finalBox {
-        margin-left: auto;
-        font-weight: 700;
-        padding-bottom: 4px;
-      }
-      .muted {
-        opacity: 0.75;
-        font-size: 13px;
-      }
+      .controlsRow { display:flex; flex-wrap:wrap; gap:14px; align-items:end; }
+      .ctrl { min-width:220px; }
+      .finalBox { margin-left:auto; font-weight:700; padding-bottom:4px; }
+      .muted { opacity:.75; font-size:13px; }
 
-      #ask_status {
-        display: none;
-        margin-top: 10px;
-        padding: 10px 12px;
-        border-radius: 10px;
-      }
-      #ask_status.info { background: #eef4ff; }
-      #ask_status.ok { background: #e9f7ef; }
-      #ask_status.err { background: #fdecec; border: 1px solid #f3b5b5; }
+      #ask_status { display:none; margin-top:10px; padding:10px 12px; border-radius:10px; }
+      #ask_status.info { background:#eef4ff; }
+      #ask_status.ok { background:#e9f7ef; }
+      #ask_status.err { background:#fdecec; border:1px solid #f3b5b5; }
 
-      #ask_remaining {
-        margin-left: 10px;
-        font-weight: 700;
-      }
+      #ask_remaining { margin-left:10px; font-weight:700; }
 
-      /* ✅ link con classe btn (così il bottone Faxsimile PDF appare bene) */
-      a.btn {
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
+      /* ✅ stampa/PDF: nascondi elementi inutili */
+      @media print {
+        .noPrint { display:none !important; }
+        body { background: white !important; }
+        .container { max-width: 100% !important; }
+        #chartWrap { height: 520px !important; }
       }
     </style>
   </head>
@@ -111,7 +64,7 @@
       </ul>
 
       <!-- CONTROLLI -->
-      <div class="card">
+      <div class="card noPrint">
         <div class="controlsRow">
           <div class="ctrl" style="flex: 1 1 320px;">
             <label for="w_gold"><b>Oro (%) (0–50, step 5)</b> <span id="w_gold_val">20%</span></label><br />
@@ -125,6 +78,11 @@
 
           <div class="ctrl">
             <button id="btn_update" class="btn">Aggiorna</button>
+          </div>
+
+          <!-- ✅ tasto PDF -->
+          <div class="ctrl">
+            <button id="btn_pdf" class="btn">PDF</button>
           </div>
 
           <div class="finalBox">
@@ -148,7 +106,12 @@
         <canvas id="chart"></canvas>
       </div>
 
-      <!-- SECONDA PARTE (come foto) -->
+      <!-- ✅ scritta richiesta sotto grafico -->
+      <div class="muted" style="margin-top:8px;">
+        <span id="data_updated">Dati aggiornati al —</span>
+      </div>
+
+      <!-- SECONDA PARTE -->
       <div class="card">
         <b>Messaggio chiave:</b><br />
         La differenza non è indovinare il mercato.<br />
@@ -159,10 +122,7 @@
         <h2>Come applicarlo concretamente</h2>
         <ol>
           <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
-          <li>
-            Investi nei due strumenti attraverso la tua banca con “execution only”.
-            <a class="btn" href="/faxsimile.pdf" target="_blank" rel="noopener">Faxsimile PDF</a>
-          </li>
+          <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
           <li>Non intervenire durante l’anno.</li>
           <li>A dicembre ribilancia ai pesi originali.</li>
         </ol>
@@ -170,7 +130,7 @@
 
       <div class="grid2">
         <!-- DOMANDE LIBERE -->
-        <div class="card">
+        <div class="card noPrint">
           <h2>Domande libere</h2>
           <p class="muted">
             Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).<br />
@@ -198,53 +158,43 @@
           <h2>FAQ (passa il mouse)</h2>
           <p class="muted">Su mobile: tocca la domanda per vedere la risposta.</p>
 
-          <details>
-            <summary><b>1) Perché solo due strumenti?</b></summary>
+          <details><summary><b>1) Perché solo due strumenti?</b></summary>
             <p>Per semplicità, costi bassi e disciplina. Due “mattoni” ben scelti spesso battono strategie complesse.</p>
           </details>
 
-          <details>
-            <summary><b>2) Cos’è l’ETF Azion-Obblig?</b></summary>
+          <details><summary><b>2) Cos’è l’ETF Azion-Obblig?</b></summary>
             <p>Un unico ETF globale “bilanciato”. Qui assumiamo 80% azioni e 20% obbligazioni.</p>
           </details>
 
-          <details>
-            <summary><b>3) Perché aggiungere oro?</b></summary>
+          <details><summary><b>3) Perché aggiungere oro?</b></summary>
             <p>Per diversificare e ridurre i ribassi in alcune fasi di mercato.</p>
           </details>
 
-          <details>
-            <summary><b>4) Quando ribilanciare?</b></summary>
+          <details><summary><b>4) Quando ribilanciare?</b></summary>
             <p>Una volta l’anno (es. a dicembre), riportando i pesi a quelli scelti.</p>
           </details>
 
-          <details>
-            <summary><b>5) Devo “indovinare” il momento giusto?</b></summary>
+          <details><summary><b>5) Devo “indovinare” il momento giusto?</b></summary>
             <p>No: la logica è evitare market timing. Conta la disciplina nel tempo.</p>
           </details>
 
-          <details>
-            <summary><b>6) Cosa succede se dopo l’acquisto scende?</b></summary>
+          <details><summary><b>6) Cosa succede se dopo l’acquisto scende?</b></summary>
             <p>È normale. La strategia presuppone volatilità e orizzonte lungo.</p>
           </details>
 
-          <details>
-            <summary><b>7) Perché “execution only”?</b></summary>
+          <details><summary><b>7) Perché “execution only”?</b></summary>
             <p>Per ridurre conflitti di interesse e costi. Decidi tu la struttura.</p>
           </details>
 
-          <details>
-            <summary><b>8) Che importo serve per iniziare?</b></summary>
+          <details><summary><b>8) Che importo serve per iniziare?</b></summary>
             <p>Non esiste una cifra unica: l’importante è iniziare sostenibile e restare coerenti.</p>
           </details>
 
-          <details>
-            <summary><b>9) Ogni quanto guardare il portafoglio?</b></summary>
+          <details><summary><b>9) Ogni quanto guardare il portafoglio?</b></summary>
             <p>Il meno possibile: controlli periodici, non quotidiani.</p>
           </details>
 
-          <details>
-            <summary><b>10) Questo è un consiglio personalizzato?</b></summary>
+          <details><summary><b>10) Questo è un consiglio personalizzato?</b></summary>
             <p>No. È informazione generale, non consulenza finanziaria personalizzata.</p>
           </details>
         </div>
