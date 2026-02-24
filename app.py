@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 import os
-import io
-import re
 import json
 import math
 import traceback
-from html.parser import HTMLParser
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request, render_template, make_response
+from flask import Flask, jsonify, request, render_template
 
 # OpenAI SDK 1.x
 try:
@@ -28,7 +25,7 @@ except Exception:
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 
 LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
@@ -36,22 +33,40 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 ASK_DAILY_LIMIT = int(os.getenv("ASK_DAILY_LIMIT", "10"))
 ASK_STORE_FILE = DATA_DIR / "ask_limits.json"
 
-UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
+# Se vuoi disabilitare completamente l'auto-completamento dati:
+# AUTO_COMPLETE_DATA=0
+AUTO_COMPLETE_DATA = os.getenv("AUTO_COMPLETE_DATA", "1").strip() not in {"0", "false", "False", "no", "NO"}
+
+# Frequenza massima auto-completamento (ore)
+AUTO_COMPLETE_COOLDOWN_HOURS = float(os.getenv("AUTO_COMPLETE_COOLDOWN_HOURS", "6"))
+
+# Tick­er Yahoo
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI")
 GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD")
 
-# Modello OpenAI (default ok)
+# Modello OpenAI
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
-# Firma build: la vedi in /api/diag per sapere se Render sta girando QUESTO file
-BUILD_ID = os.getenv("BUILD_ID", "2026-02-22_assistente_chatcompletions_v1")
+# Build id (diagnostica)
+BUILD_ID = os.getenv("BUILD_ID", "2026-02-24_autocomplete_pdf_v1")
+
+
+# ----------------------------
+# Auto-complete cache (in-memory)
+# ----------------------------
+_LAST_AUTOCOMPLETE_AT_UTC: Optional[datetime] = None
+_LAST_AUTOCOMPLETE_RESULT: Dict[str, Any] = {}
 
 
 # ----------------------------
 # Helpers
 # ----------------------------
+def _now_utc() -> datetime:
+    return datetime.utcnow()
+
+
 def _now_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    return _now_utc().strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _safe_float(x) -> Optional[float]:
@@ -64,11 +79,6 @@ def _safe_float(x) -> Optional[float]:
 
 
 def _detect_sep(file_path: Path) -> str:
-    """
-    Supporta CSV con:
-      - Date;Close
-      - Date,Close
-    """
     try:
         with file_path.open("r", encoding="utf-8", errors="ignore") as f:
             head = f.readline()
@@ -82,16 +92,6 @@ def _detect_sep(file_path: Path) -> str:
 
 
 def _read_price_csv(file_path: Path) -> pd.DataFrame:
-    """
-    Ritorna DataFrame con colonne:
-      - date (datetime naive)
-      - close (float)
-
-    Gestisce:
-      - separatore ; o ,
-      - date gg/mm/aaaa (dayfirst=True) oppure yyyy-mm-dd
-      - eventuali spazi/righe sporche
-    """
     if not file_path.exists():
         raise FileNotFoundError(f"File non trovato: {file_path}")
 
@@ -115,17 +115,28 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
 
     if len(out) < 10:
-        raise ValueError(
-            f"CSV {file_path.name}: troppo poche righe valide dopo parsing ({len(out)})."
-        )
+        raise ValueError(f"CSV {file_path.name}: troppo poche righe valide dopo parsing ({len(out)}).")
 
-    # forza naive (senza timezone)
     try:
         out["date"] = out["date"].dt.tz_localize(None)
     except Exception:
         pass
 
     return out
+
+
+def _write_price_csv(file_path: Path, df: pd.DataFrame) -> None:
+    """
+    Salva sempre nel formato che usi già: Date in dd/mm/YYYY e Close con 2 decimali, separatore ';'
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    save = pd.DataFrame(
+        {
+            "Date": pd.to_datetime(df["date"]).dt.strftime("%d/%m/%Y"),
+            "Close": pd.to_numeric(df["close"]).map(lambda x: f"{float(x):.2f}"),
+        }
+    )
+    save.to_csv(file_path, sep=";", index=False)
 
 
 def _compute_drawdown(series: pd.Series) -> float:
@@ -167,10 +178,6 @@ def _annual_rebalance_portfolio(
     w_gold: float,
     capital: float,
 ) -> pd.Series:
-    """
-    Portafoglio 2 strumenti ribilanciato 1 volta l'anno
-    (sul primo giorno di borsa dell'anno).
-    """
     w_gold = float(np.clip(w_gold, 0.0, 1.0))
     w_ls80 = 1.0 - w_gold
 
@@ -210,13 +217,11 @@ def _load_ask_store() -> Dict[str, Any]:
 
 
 def _save_ask_store(store: Dict[str, Any]) -> None:
-    """
-    Su Render free il filesystem può essere effimero: non bloccare se non si riesce.
-    """
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         ASK_STORE_FILE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
+        # su Render può essere effimero: non bloccare
         pass
 
 
@@ -240,13 +245,8 @@ def _check_and_consume_quota(ip: str) -> Tuple[int, int]:
 
 
 def _openai_client() -> Optional[Any]:
-    """
-    Ritorna client OpenAI oppure None se non configurato.
-    """
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return None
-    if OpenAI is None:
+    if not api_key or OpenAI is None:
         return None
     try:
         return OpenAI(api_key=api_key)
@@ -277,25 +277,14 @@ def _json_error(message: str, status: int = 500, **extra: Any):
 
 
 def _yf_to_hist_df(hist: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    """
-    Converte l'output di yfinance.download() in DataFrame standard:
-      - date (datetime naive)
-      - close (float)
-
-    Gestisce:
-      - colonne normali
-      - colonne MultiIndex (es. ('Close','VNGA80.MI')) → Close diventa DataFrame
-    """
     if hist is None or hist.empty:
         return pd.DataFrame(columns=["date", "close"])
 
-    # Estrai "Close" in modo robusto
     close_ser = None
-
     if isinstance(hist.columns, pd.MultiIndex):
         lvl0 = set(hist.columns.get_level_values(0))
         if "Close" in lvl0:
-            close_obj = hist["Close"]  # può essere DataFrame con colonne = tickers
+            close_obj = hist["Close"]
             if hasattr(close_obj, "columns"):
                 if ticker in close_obj.columns:
                     close_ser = close_obj[ticker]
@@ -324,42 +313,73 @@ def _yf_to_hist_df(hist: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return tmp[["date", "close"]]
 
 
-# ---- PDF: estrazione testo dal template HTML ----
-class _HTMLText(HTMLParser):
-    """Estrae testo da HTML (sufficiente per una lettera PDF stampabile)."""
+def _maybe_autocomplete_data() -> Dict[str, Any]:
+    """
+    Completa i CSV fino all'ultima data disponibile su Yahoo.
+    Protetto da cooldown per non farlo ad ogni richiesta.
+    """
+    global _LAST_AUTOCOMPLETE_AT_UTC, _LAST_AUTOCOMPLETE_RESULT
 
-    def __init__(self):
-        super().__init__()
-        self.parts: list[str] = []
+    if not AUTO_COMPLETE_DATA:
+        return {"enabled": False}
 
-    def handle_data(self, data):
-        t = data or ""
-        if t.strip():
-            self.parts.append(t)
+    now = _now_utc()
+    if _LAST_AUTOCOMPLETE_AT_UTC is not None:
+        delta = now - _LAST_AUTOCOMPLETE_AT_UTC
+        if delta < timedelta(hours=AUTO_COMPLETE_COOLDOWN_HOURS):
+            return {"enabled": True, "skipped": True, "cooldown_hours": AUTO_COMPLETE_COOLDOWN_HOURS, **_LAST_AUTOCOMPLETE_RESULT}
 
-    def handle_starttag(self, tag, attrs):
-        tag = tag.lower()
-        if tag in {"p", "br", "div", "li", "h1", "h2", "h3", "tr"}:
-            self.parts.append("\n")
+    # prova import yfinance solo quando serve
+    try:
+        import yfinance as yf
+    except Exception as e:
+        _LAST_AUTOCOMPLETE_AT_UTC = now
+        _LAST_AUTOCOMPLETE_RESULT = {"ok": False, "reason": f"yfinance_not_available: {type(e).__name__}: {e}"}
+        return {"enabled": True, **_LAST_AUTOCOMPLETE_RESULT}
 
-    def handle_endtag(self, tag):
-        tag = tag.lower()
-        if tag in {"p", "div", "li", "h1", "h2", "h3"}:
-            self.parts.append("\n")
+    def update_one(ticker: str, file_path: Path) -> Dict[str, Any]:
+        info: Dict[str, Any] = {"asset": file_path.stem, "ticker": ticker, "file": str(file_path), "updated": False}
 
+        df = _read_price_csv(file_path)
+        last_date = df["date"].iloc[-1].date()
 
-def _html_to_plaintext(html: str) -> str:
-    parser = _HTMLText()
-    parser.feed(html or "")
-    text = "".join(parser.parts)
+        hist_raw = yf.download(ticker, period="15d", interval="1d", auto_adjust=False, progress=False)
+        hist = _yf_to_hist_df(hist_raw, ticker)
 
-    text = text.replace("\r", "")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+        if hist.empty:
+            info["reason"] = "no_data_from_yahoo"
+            info["last_local_date"] = str(last_date)
+            return info
 
-    lines = [ln.strip() for ln in text.split("\n")]
-    text = "\n".join([ln for ln in lines if ln != ""])
-    return text.strip()
+        new_rows = hist[hist["date"].dt.date > last_date]
+        if new_rows.empty:
+            info["reason"] = "already_up_to_date"
+            info["last_local_date"] = str(last_date)
+            info["last_yahoo_date"] = str(hist["date"].iloc[-1].date())
+            return info
+
+        out = pd.concat([df, new_rows], ignore_index=True)
+        out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+
+        _write_price_csv(file_path, out)
+
+        info["updated"] = True
+        info["added_rows"] = int(len(new_rows))
+        info["last_date"] = str(out["date"].iloc[-1].date())
+        info["last_value"] = float(out["close"].iloc[-1])
+        return info
+
+    try:
+        res_ls = update_one(LS80_TICKER, LS80_FILE)
+        res_gd = update_one(GOLD_TICKER, GOLD_FILE)
+
+        _LAST_AUTOCOMPLETE_AT_UTC = now
+        _LAST_AUTOCOMPLETE_RESULT = {"ok": True, "ls80": res_ls, "gold": res_gd, "time_utc": _now_iso()}
+        return {"enabled": True, **_LAST_AUTOCOMPLETE_RESULT}
+    except Exception as e:
+        _LAST_AUTOCOMPLETE_AT_UTC = now
+        _LAST_AUTOCOMPLETE_RESULT = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+        return {"enabled": True, **_LAST_AUTOCOMPLETE_RESULT}
 
 
 # ----------------------------
@@ -373,67 +393,6 @@ def home():
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "time_utc": _now_iso()})
-
-
-# ----------------------------
-# Faxsimile (HTML + PDF)
-# ----------------------------
-@app.get("/faxsimile")
-def faxsimile_html():
-    # pagina HTML (debug/anteprima)
-    return render_template("lettera_execution_only.html")
-
-
-@app.get("/faxsimile.pdf")
-def faxsimile_pdf():
-    """
-    Genera un PDF stampabile dalla lettera in templates/lettera_execution_only.html
-    """
-    try:
-        # Render HTML dal template
-        html = render_template("lettera_execution_only.html")
-        text = _html_to_plaintext(html)
-
-        # ReportLab (serve reportlab in requirements.txt)
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.units import cm
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet
-
-        buf = io.BytesIO()
-        doc = SimpleDocTemplate(
-            buf,
-            pagesize=A4,
-            leftMargin=2 * cm,
-            rightMargin=2 * cm,
-            topMargin=2 * cm,
-            bottomMargin=2 * cm,
-            title="Faxsimile - Execution only",
-        )
-
-        styles = getSampleStyleSheet()
-        story = []
-
-        for block in text.split("\n"):
-            story.append(Paragraph(block, styles["Normal"]))
-            story.append(Spacer(1, 10))
-
-        doc.build(story)
-
-        pdf_bytes = buf.getvalue()
-        buf.close()
-
-        resp = make_response(pdf_bytes)
-        resp.headers["Content-Type"] = "application/pdf"
-        resp.headers["Content-Disposition"] = 'inline; filename="faxsimile-execution-only.pdf"'
-        return resp
-
-    except Exception as e:
-        return _json_error(
-            f"Errore PDF: {type(e).__name__}: {e}",
-            500,
-            traceback=traceback.format_exc(),
-        )
 
 
 # ----------------------------
@@ -455,9 +414,10 @@ def api_diag():
         "env": {
             "LS80_TICKER": LS80_TICKER,
             "GOLD_TICKER": GOLD_TICKER,
+            "AUTO_COMPLETE_DATA": AUTO_COMPLETE_DATA,
+            "AUTO_COMPLETE_COOLDOWN_HOURS": AUTO_COMPLETE_COOLDOWN_HOURS,
             "OPENAI_API_KEY_present": bool(os.getenv("OPENAI_API_KEY", "").strip()),
             "OPENAI_MODEL": OPENAI_MODEL,
-            "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
             "ASK_DAILY_LIMIT": ASK_DAILY_LIMIT,
         },
         "versions": {
@@ -469,7 +429,6 @@ def api_diag():
             "openai": _pkg_version("openai"),
             "yfinance": _pkg_version("yfinance"),
             "requests": _pkg_version("requests"),
-            "reportlab": _pkg_version("reportlab"),
         },
         "files": {},
         "merge": {},
@@ -490,8 +449,6 @@ def api_diag():
                     "last_date": str(df["date"].iloc[-1].date()),
                     "first_value": float(df["close"].iloc[0]),
                     "last_value": float(df["close"].iloc[-1]),
-                    "date_sample": [str(x.date()) for x in df["date"].tail(3)],
-                    "close_sample": [float(x) for x in df["close"].tail(3)],
                 }
             )
         except Exception as e:
@@ -516,51 +473,15 @@ def api_diag():
     return jsonify(diag)
 
 
-@app.get("/api/diag/compute_smoke")
-def api_diag_compute_smoke():
-    """
-    Test rapido: calcola con w_gold=20% e capitale=10k.
-    """
-    try:
-        w_gold = 0.20
-        capital = 10000.0
-
-        ls = _read_price_csv(LS80_FILE)
-        gd = _read_price_csv(GOLD_FILE)
-        df = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
-        df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
-        if len(df) < 20:
-            return _json_error("Poche date in comune (merge troppo corto).", 400, rows_inner=int(len(df)))
-
-        dates = df["date"]
-        port = _annual_rebalance_portfolio(df["ls80"], df["gold"], dates, w_gold=w_gold, capital=capital)
-        cagr = _compute_cagr(port, dates)
-        max_dd = _compute_drawdown(port)
-        years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
-
-        return jsonify(
-            {
-                "ok": True,
-                "rows": int(len(df)),
-                "first_date": str(dates.iloc[0].date()),
-                "last_date": str(dates.iloc[-1].date()),
-                "final_value": float(port.iloc[-1]),
-                "annualized_return": cagr,
-                "max_drawdown": max_dd,
-                "years_period": years_period,
-                "time_utc": _now_iso(),
-            }
-        )
-    except Exception as e:
-        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
-
-
 # ----------------------------
 # API: compute (grafico + metriche)
 # ----------------------------
 @app.get("/api/compute")
 def api_compute():
     try:
+        # ✅ ripristino: prima di calcolare, provo a completare i CSV (safe + cooldown)
+        autocomplete_info = _maybe_autocomplete_data()
+
         w_gold = _safe_float(request.args.get("w_gold"))
         if w_gold is None:
             w_ls80 = _safe_float(request.args.get("w_ls80"))
@@ -605,12 +526,15 @@ def api_compute():
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         final_value = float(port.iloc[-1])
 
+        last_data_date = str(dates.iloc[-1].date())
+
         metrics = {
             "cagr_portfolio": cagr,
             "max_dd_portfolio": max_dd,
             "doubling_years_portfolio": dbl,
             "final_portfolio": final_value,
             "final_years": years_period,
+            "last_data_date": last_data_date,
             "weights": {
                 "gold": w_gold,
                 "ls80": w_ls80,
@@ -625,6 +549,10 @@ def api_compute():
             "portfolio": [float(x) for x in port],
             "metrics": metrics,
             "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
+            "data_info": {
+                "updated_to": last_data_date,         # ✅ quello che mostriamo in pagina
+                "autocomplete": autocomplete_info,    # ✅ debug utile (non obbligatorio)
+            },
         }
 
         return jsonify(payload)
@@ -644,7 +572,6 @@ def api_ask():
         if not question:
             return _json_error("Scrivi una domanda.", 400)
 
-        # quota per IP
         ip = _client_ip()
         remaining, limit = _check_and_consume_quota(ip)
         if remaining == 0 and limit > 0:
@@ -688,70 +615,6 @@ def api_ask():
 
         return jsonify({"ok": True, "answer": answer.strip(), "remaining": remaining, "limit": limit})
 
-    except Exception as e:
-        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
-
-
-# ----------------------------
-# API: update data (richiede yfinance)
-# ----------------------------
-@app.get("/api/update_data")
-def api_update_data():
-    token = (request.args.get("token") or "").strip()
-    if not UPDATE_TOKEN or token != UPDATE_TOKEN:
-        return _json_error("Token non valido.", 401)
-
-    try:
-        import yfinance as yf
-    except Exception as e:
-        return _json_error(f"yfinance non disponibile (requirements). {type(e).__name__}: {e}", 500)
-
-    def update_one(ticker: str, file_path: Path) -> Dict[str, Any]:
-        info: Dict[str, Any] = {
-            "asset": file_path.stem,
-            "ticker_used": ticker,
-            "file": str(file_path),
-            "updated": False,
-        }
-
-        df = _read_price_csv(file_path)
-        last_date = df["date"].iloc[-1].date()
-
-        hist_raw = yf.download(ticker, period="10d", interval="1d", auto_adjust=False, progress=False)
-        hist = _yf_to_hist_df(hist_raw, ticker)
-
-        if hist.empty:
-            info["reason"] = "no_data_from_yahoo"
-            return info
-
-        new_rows = hist[hist["date"].dt.date > last_date]
-        if new_rows.empty:
-            info["reason"] = "already_up_to_date"
-            return info
-
-        out = pd.concat([df, new_rows], ignore_index=True)
-        out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
-
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-        save = pd.DataFrame(
-            {
-                "Date": out["date"].dt.strftime("%d/%m/%Y"),
-                "Close": out["close"].map(lambda x: f"{float(x):.2f}"),
-            }
-        )
-        save.to_csv(file_path, sep=";", index=False)
-
-        info["updated"] = True
-        info["added_rows"] = int(len(new_rows))
-        info["last_date"] = str(out["date"].iloc[-1].date())
-        info["last_value"] = float(out["close"].iloc[-1])
-        return info
-
-    try:
-        res_ls = update_one(LS80_TICKER, LS80_FILE)
-        res_gd = update_one(GOLD_TICKER, GOLD_FILE)
-        return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "time_utc": _now_iso()})
     except Exception as e:
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
