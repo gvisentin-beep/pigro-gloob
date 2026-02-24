@@ -46,7 +46,7 @@ AUTO_UPDATE_MINUTES = int(os.getenv("AUTO_UPDATE_MINUTES", "0") or "0")  # se >0
 UPDATE_MIN_INTERVAL_HOURS = float(os.getenv("UPDATE_MIN_INTERVAL_HOURS", "6") or "6")
 
 # Firma build (per vedere subito da /api/diag che Render gira QUESTO file)
-BUILD_ID = os.getenv("BUILD_ID", "2026-02-24_autoupdate_forceupdate_v2").strip()
+BUILD_ID = os.getenv("BUILD_ID", "2026-02-24_autoupdate_historyMI_v3").strip()
 
 
 # ----------------------------
@@ -289,38 +289,18 @@ def _json_error(message: str, status: int = 500, **extra: Any):
     return jsonify(payload), status
 
 
-def _yf_to_hist_df(hist: pd.DataFrame, ticker: str) -> pd.DataFrame:
+def _hist_to_df_from_history(hist: pd.DataFrame) -> pd.DataFrame:
     """
-    Converte l'output di yfinance.download() in DataFrame standard:
-      - date (datetime naive)
-      - close (float)
-
-    Gestisce anche MultiIndex.
+    Converte l'output di yf.Ticker(...).history(...) in df standard {date, close}
     """
     if hist is None or hist.empty:
         return pd.DataFrame(columns=["date", "close"])
 
-    close_ser = None
-
-    if isinstance(hist.columns, pd.MultiIndex):
-        lvl0 = set(hist.columns.get_level_values(0))
-        if "Close" in lvl0:
-            close_obj = hist["Close"]
-            if hasattr(close_obj, "columns"):
-                if ticker in close_obj.columns:
-                    close_ser = close_obj[ticker]
-                else:
-                    close_ser = close_obj.iloc[:, 0]
-            else:
-                close_ser = close_obj
-    else:
-        if "Close" in hist.columns:
-            close_ser = hist["Close"]
-
-    if close_ser is None:
+    # spesso history ha colonne Open High Low Close Volume...
+    if "Close" not in hist.columns:
         return pd.DataFrame(columns=["date", "close"])
 
-    tmp = close_ser.dropna().to_frame("close")
+    tmp = hist[["Close"]].rename(columns={"Close": "close"}).copy()
     tmp["date"] = tmp.index
     tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
 
@@ -356,11 +336,10 @@ def _should_run_update(force: bool = False) -> bool:
     return (_now_utc() - _LAST_UPDATE_AT_UTC).total_seconds() >= _cooldown_seconds()
 
 
-def _update_one_asset_in_memory(
-    yf, ticker: str, file_path: Path
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+def _update_one_asset_in_memory(yf, ticker: str, file_path: Path) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Legge il CSV locale e prova ad aggiungere righe da Yahoo.
+    ✅ Per .MI usa yf.Ticker(ticker).history(...) (molto più affidabile di yf.download su Render)
 
     Ritorna:
       - df_final (anche se non salvato su disco)
@@ -378,34 +357,58 @@ def _update_one_asset_in_memory(
     last_local = df_local["date"].iloc[-1].date()
     info["last_local_date"] = str(last_local)
 
-    # ✅ richiesta robusta: dal giorno successivo all'ultima data locale fino a oggi (+1 end)
+    # Per log/debug: intervallo desiderato
     start = (last_local + timedelta(days=1)).strftime("%Y-%m-%d")
     end = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
     info["requested_start"] = start
     info["requested_end"] = end
 
-    hist_raw = yf.download(
-        ticker,
-        start=start,
-        end=end,
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-    )
-    hist = _yf_to_hist_df(hist_raw, ticker)
+    # --------
+    # Metodo principale (history) - stabile per ETF/ETC europei
+    # --------
+    try:
+        tkr = yf.Ticker(ticker)
+        hist_raw = tkr.history(period="6mo", interval="1d", auto_adjust=False)
+        hist = _hist_to_df_from_history(hist_raw)
+        info["method"] = "Ticker.history(period=6mo)"
+    except Exception as e:
+        hist = pd.DataFrame(columns=["date", "close"])
+        info["method_error"] = f"{type(e).__name__}: {e}"
 
-    # fallback: a volte start/end su EU tickers dà vuoto; riproviamo con una finestra più ampia
+    # Fallback 1: period più ampio
     if hist.empty:
-        hist_raw2 = yf.download(
-            ticker,
-            period="6mo",
-            interval="1d",
-            auto_adjust=False,
-            progress=False,
-        )
-        hist2 = _yf_to_hist_df(hist_raw2, ticker)
-        hist = hist2
-        info["fallback"] = "period_6mo"
+        try:
+            tkr = yf.Ticker(ticker)
+            hist_raw = tkr.history(period="1y", interval="1d", auto_adjust=False)
+            hist = _hist_to_df_from_history(hist_raw)
+            info["fallback"] = "Ticker.history(period=1y)"
+        except Exception as e:
+            info["fallback_error"] = f"{type(e).__name__}: {e}"
+
+    # Fallback 2: usa download (solo se proprio necessario)
+    if hist.empty:
+        try:
+            hist_raw = yf.download(
+                ticker,
+                period="1y",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+            )
+            # download può arrivare con colonne diverse; qui prendiamo Close
+            if hist_raw is not None and not hist_raw.empty and "Close" in hist_raw.columns:
+                tmp = hist_raw[["Close"]].rename(columns={"Close": "close"}).copy()
+                tmp["date"] = tmp.index
+                tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
+                try:
+                    tmp["date"] = tmp["date"].dt.tz_localize(None)
+                except Exception:
+                    pass
+                tmp["close"] = pd.to_numeric(tmp["close"], errors="coerce")
+                hist = tmp.dropna().sort_values("date")[["date", "close"]]
+                info["fallback2"] = "yf.download(period=1y)"
+        except Exception as e:
+            info["fallback2_error"] = f"{type(e).__name__}: {e}"
 
     if hist.empty:
         info["reason"] = "no_data_from_yahoo"
@@ -454,8 +457,8 @@ def _maybe_update_data(force: bool = False) -> Dict[str, Any]:
         return _LAST_UPDATE_RESULT
 
     try:
-        df_ls, info_ls = _update_one_asset_in_memory(yf, LS80_TICKER, LS80_FILE)
-        df_gd, info_gd = _update_one_asset_in_memory(yf, GOLD_TICKER, GOLD_FILE)
+        _, info_ls = _update_one_asset_in_memory(yf, LS80_TICKER, LS80_FILE)
+        _, info_gd = _update_one_asset_in_memory(yf, GOLD_TICKER, GOLD_FILE)
 
         _LAST_UPDATE_AT_UTC = _now_utc()
         _LAST_UPDATE_RESULT = {
@@ -469,30 +472,6 @@ def _maybe_update_data(force: bool = False) -> Dict[str, Any]:
         _LAST_UPDATE_AT_UTC = _now_utc()
         _LAST_UPDATE_RESULT = {"ok": False, "reason": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}
         return _LAST_UPDATE_RESULT
-
-
-def _get_latest_dataframes() -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
-    """
-    Ritorna:
-      - df_ls80 (aggiornato in RAM se update riuscito)
-      - df_gold (aggiornato in RAM se update riuscito)
-      - info_update (dettagli)
-    """
-    update_info = _maybe_update_data(force=False)
-
-    # Se update eseguito con successo e ha aggiornato, potremmo voler rileggere i file,
-    # ma per sicurezza (Render) usiamo sempre la lettura da file per coerenza,
-    # e ci fidiamo dell'update in RAM solo per la compute (vedi sotto).
-    # Qui facciamo semplice: leggiamo da file; se persisted=False ma updated=True,
-    # allora leggiamo ancora da file (che resterà vecchio) -> quindi in compute useremo out in RAM.
-    #
-    # Per questo, in compute rifacciamo update_one_in_memory quando necessario.
-    #
-    # Qui ritorniamo i df da file come baseline:
-    df_ls_file = _read_price_csv(LS80_FILE)
-    df_gd_file = _read_price_csv(GOLD_FILE)
-
-    return df_ls_file, df_gd_file, update_info
 
 
 # ----------------------------
