@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import os
+import io
+import re
 import json
 import math
 import traceback
+from html.parser import HTMLParser
 from datetime import datetime, date
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, make_response
 
 # OpenAI SDK 1.x
 try:
@@ -290,12 +293,10 @@ def _yf_to_hist_df(hist: pd.DataFrame, ticker: str) -> pd.DataFrame:
     close_ser = None
 
     if isinstance(hist.columns, pd.MultiIndex):
-        # livello 0: Open/High/Low/Close/...
         lvl0 = set(hist.columns.get_level_values(0))
         if "Close" in lvl0:
             close_obj = hist["Close"]  # può essere DataFrame con colonne = tickers
             if hasattr(close_obj, "columns"):
-                # se c'è la colonna ticker, preferiscila
                 if ticker in close_obj.columns:
                     close_ser = close_obj[ticker]
                 else:
@@ -323,6 +324,44 @@ def _yf_to_hist_df(hist: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return tmp[["date", "close"]]
 
 
+# ---- PDF: estrazione testo dal template HTML ----
+class _HTMLText(HTMLParser):
+    """Estrae testo da HTML (sufficiente per una lettera PDF stampabile)."""
+
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data):
+        t = data or ""
+        if t.strip():
+            self.parts.append(t)
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in {"p", "br", "div", "li", "h1", "h2", "h3", "tr"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in {"p", "div", "li", "h1", "h2", "h3"}:
+            self.parts.append("\n")
+
+
+def _html_to_plaintext(html: str) -> str:
+    parser = _HTMLText()
+    parser.feed(html or "")
+    text = "".join(parser.parts)
+
+    text = text.replace("\r", "")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    lines = [ln.strip() for ln in text.split("\n")]
+    text = "\n".join([ln for ln in lines if ln != ""])
+    return text.strip()
+
+
 # ----------------------------
 # Pages
 # ----------------------------
@@ -334,6 +373,67 @@ def home():
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "time_utc": _now_iso()})
+
+
+# ----------------------------
+# Faxsimile (HTML + PDF)
+# ----------------------------
+@app.get("/faxsimile")
+def faxsimile_html():
+    # pagina HTML (debug/anteprima)
+    return render_template("lettera_execution_only.html")
+
+
+@app.get("/faxsimile.pdf")
+def faxsimile_pdf():
+    """
+    Genera un PDF stampabile dalla lettera in templates/lettera_execution_only.html
+    """
+    try:
+        # Render HTML dal template
+        html = render_template("lettera_execution_only.html")
+        text = _html_to_plaintext(html)
+
+        # ReportLab (serve reportlab in requirements.txt)
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            leftMargin=2 * cm,
+            rightMargin=2 * cm,
+            topMargin=2 * cm,
+            bottomMargin=2 * cm,
+            title="Faxsimile - Execution only",
+        )
+
+        styles = getSampleStyleSheet()
+        story = []
+
+        for block in text.split("\n"):
+            story.append(Paragraph(block, styles["Normal"]))
+            story.append(Spacer(1, 10))
+
+        doc.build(story)
+
+        pdf_bytes = buf.getvalue()
+        buf.close()
+
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = 'inline; filename="faxsimile-execution-only.pdf"'
+        return resp
+
+    except Exception as e:
+        return _json_error(
+            f"Errore PDF: {type(e).__name__}: {e}",
+            500,
+            traceback=traceback.format_exc(),
+        )
 
 
 # ----------------------------
@@ -624,7 +724,6 @@ def api_update_data():
             info["reason"] = "no_data_from_yahoo"
             return info
 
-        # ultime righe > last_date
         new_rows = hist[hist["date"].dt.date > last_date]
         if new_rows.empty:
             info["reason"] = "already_up_to_date"
