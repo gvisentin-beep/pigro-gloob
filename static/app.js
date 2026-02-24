@@ -1,16 +1,4 @@
-// static/app.js
 let chart = null;
-
-/* -----------------------------
-   Config (da index.html)
------------------------------ */
-function getUpdateToken() {
-  return (window.__UPDATE_TOKEN || "").toString().trim();
-}
-function getUpdateMinHours() {
-  const n = Number(window.__UPDATE_MIN_INTERVAL_HOURS);
-  return Number.isFinite(n) && n > 0 ? n : 6;
-}
 
 /* -----------------------------
    Format helpers
@@ -35,6 +23,14 @@ function pct(x) {
 function years1(x) {
   if (x === null || x === undefined || isNaN(x)) return "—";
   return Number(x).toFixed(1).replace(".", ",");
+}
+
+function formatITDateFromISO(iso) {
+  if (!iso) return "—";
+  // iso: YYYY-MM-DD
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 /* -----------------------------
@@ -134,49 +130,10 @@ function updateSliderLabelAndComposition(goldPct) {
   return comp;
 }
 
-/* -----------------------------
-   ✅ Auto-update dati (CSV) prima del compute
-   - chiamata a /api/update_data?token=...
-   - throttling client-side con localStorage (N ore)
------------------------------ */
-function _lsKeyForUpdate() {
-  return "pigro:last_update_attempt_ms";
-}
-
-function shouldAttemptUpdateNow() {
-  const token = getUpdateToken();
-  if (!token) return false;
-
-  const hours = getUpdateMinHours();
-  const last = Number(localStorage.getItem(_lsKeyForUpdate()) || "0");
-  const now = Date.now();
-  const deltaHours = (now - last) / (1000 * 60 * 60);
-  return deltaHours >= hours;
-}
-
-function markUpdateAttemptNow() {
-  try {
-    localStorage.setItem(_lsKeyForUpdate(), String(Date.now()));
-  } catch (_) {}
-}
-
-async function tryAutoUpdateData() {
-  const token = getUpdateToken();
-  if (!token) return;
-
-  if (!shouldAttemptUpdateNow()) return;
-
-  // segna subito l'attentativo (così evitiamo loop in caso di errori)
-  markUpdateAttemptNow();
-
-  try {
-    const url = `/api/update_data?token=${encodeURIComponent(token)}&t=${Date.now()}`;
-    const res = await fetch(url, { cache: "no-store" });
-    // non blocchiamo se response non è ok: il grafico deve comunque caricare
-    await res.text().catch(() => {});
-  } catch (e) {
-    console.warn("Auto-update failed:", e);
-  }
+function setDataUpdatedLabel(isoDate) {
+  const el = document.getElementById("data_updated");
+  if (!el) return;
+  el.textContent = `Dati aggiornati al ${formatITDateFromISO(isoDate)}`;
 }
 
 /* -----------------------------
@@ -189,10 +146,6 @@ async function loadData() {
   const capital = getCapitalValue();
   const comp = updateSliderLabelAndComposition(goldPct);
 
-  // ✅ 1) prova ad aggiornare i CSV all'ultima chiusura (throttled)
-  await tryAutoUpdateData();
-
-  // ✅ 2) poi calcola e disegna
   const url =
     `/api/compute?w_ls80=${encodeURIComponent(comp.w_ls80)}` +
     `&w_gold=${encodeURIComponent(comp.w_gold)}` +
@@ -219,6 +172,10 @@ async function loadData() {
   }
 
   const m = data.metrics || {};
+
+  // ✅ scritta "Dati aggiornati al ..."
+  const lastDate = (data.data_info && data.data_info.updated_to) || m.last_data_date || null;
+  if (lastDate) setDataUpdatedLabel(lastDate);
 
   // Linea 1 e 3 (linea 2 è già aggiornata in updateSliderLabelAndComposition)
   const line1 = document.getElementById("metrics_line1");
@@ -297,7 +254,6 @@ async function loadData() {
           x: {
             type: "time",
             time: {
-              // ✅ UNA SOLA ETICHETTA PER ANNO
               unit: "year",
               tooltipFormat: "dd/MM/yyyy",
               displayFormats: { year: "yyyy" },
@@ -315,7 +271,6 @@ async function loadData() {
       },
     });
 
-    // se tutto ok, togli eventuali errori a schermo
     setAskStatus("", "info");
   } catch (e) {
     console.error(e);
@@ -336,7 +291,6 @@ function formatCapitalField() {
     el.value = n ? num0(n) : "10.000";
   });
 
-  // INVIO nel campo capitale -> aggiorna
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -357,11 +311,19 @@ function wireControls() {
     });
   }
 
+  // ✅ tasto PDF (stampa/salva in PDF)
+  const btnPdf = document.getElementById("btn_pdf");
+  if (btnPdf) {
+    btnPdf.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.print();
+    });
+  }
+
   const slider = document.getElementById("w_gold");
   if (slider) {
     let t = null;
 
-    // mentre trascini: aggiorna label + composizione; dopo 250ms ricalcola
     slider.addEventListener("input", () => {
       const goldPct = Number(slider.value || 0);
       updateSliderLabelAndComposition(goldPct);
@@ -370,7 +332,6 @@ function wireControls() {
       t = setTimeout(() => loadData(), 250);
     });
 
-    // quando rilasci: ricalcola subito
     slider.addEventListener("change", () => {
       loadData();
     });
@@ -451,8 +412,6 @@ function init() {
   formatCapitalField();
   wireControls();
   wireAssistant();
-
-  // primo render
   loadData();
 }
 
