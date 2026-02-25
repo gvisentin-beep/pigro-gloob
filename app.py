@@ -25,7 +25,7 @@ except Exception:
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 
 LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
@@ -35,15 +35,14 @@ ASK_STORE_FILE = DATA_DIR / "ask_limits.json"
 
 UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
 
-# ✅ default corretti (ma se su Render hai env, prevalgono comunque)
+# default corretti (se su Render sono presenti env, prevalgono)
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
 
-# Modello OpenAI
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
-# Firma build: la vedi in /api/diag per sapere se Render sta girando QUESTO file
-BUILD_ID = os.getenv("BUILD_ID", "2026-02-26_restore_working_plus_update_fix_v1").strip()
+# Firma build: controllala da /api/diag
+BUILD_ID = os.getenv("BUILD_ID", "2026-02-26_restore_plus_force_update_v2").strip()
 
 
 # ----------------------------
@@ -63,11 +62,6 @@ def _safe_float(x) -> Optional[float]:
 
 
 def _detect_sep(file_path: Path) -> str:
-    """
-    Supporta CSV con:
-      - Date;Close
-      - Date,Close
-    """
     try:
         with file_path.open("r", encoding="utf-8", errors="ignore") as f:
             head = f.readline()
@@ -81,11 +75,6 @@ def _detect_sep(file_path: Path) -> str:
 
 
 def _read_price_csv(file_path: Path) -> pd.DataFrame:
-    """
-    Ritorna DataFrame con colonne:
-      - date (datetime naive)
-      - close (float)
-    """
     if not file_path.exists():
         raise FileNotFoundError(f"File non trovato: {file_path}")
 
@@ -109,9 +98,7 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
 
     if len(out) < 10:
-        raise ValueError(
-            f"CSV {file_path.name}: troppo poche righe valide dopo parsing ({len(out)})."
-        )
+        raise ValueError(f"CSV {file_path.name}: troppo poche righe valide ({len(out)}).")
 
     try:
         out["date"] = out["date"].dt.tz_localize(None)
@@ -119,6 +106,17 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
         pass
 
     return out
+
+
+def _write_price_csv(file_path: Path, df: pd.DataFrame) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    save = pd.DataFrame(
+        {
+            "Date": pd.to_datetime(df["date"]).dt.strftime("%d/%m/%Y"),
+            "Close": pd.to_numeric(df["close"]).map(lambda x: f"{float(x):.2f}"),
+        }
+    )
+    save.to_csv(file_path, sep=";", index=False)
 
 
 def _compute_drawdown(series: pd.Series) -> float:
@@ -160,10 +158,6 @@ def _annual_rebalance_portfolio(
     w_gold: float,
     capital: float,
 ) -> pd.Series:
-    """
-    Portafoglio 2 strumenti ribilanciato 1 volta l'anno
-    (sul primo giorno di borsa dell'anno).
-    """
     w_gold = float(np.clip(w_gold, 0.0, 1.0))
     w_ls80 = 1.0 - w_gold
 
@@ -231,9 +225,7 @@ def _check_and_consume_quota(ip: str) -> Tuple[int, int]:
 
 def _openai_client() -> Optional[Any]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return None
-    if OpenAI is None:
+    if not api_key or OpenAI is None:
         return None
     try:
         return OpenAI(api_key=api_key)
@@ -263,7 +255,7 @@ def _json_error(message: str, status: int = 500, **extra: Any):
     return jsonify(payload), status
 
 
-# ✅ conversione robusta da history()
+# --- yfinance helpers (robusto per .MI) ---
 def _history_to_df(hist: pd.DataFrame) -> pd.DataFrame:
     if hist is None or hist.empty or "Close" not in hist.columns:
         return pd.DataFrame(columns=["date", "close"])
@@ -276,6 +268,70 @@ def _history_to_df(hist: pd.DataFrame) -> pd.DataFrame:
     tmp["close"] = pd.to_numeric(tmp["close"], errors="coerce")
     tmp = tmp.dropna().sort_values("date")
     return tmp[["date", "close"]]
+
+
+def _update_one_asset(yf, ticker: str, file_path: Path) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "asset": file_path.stem,
+        "ticker_used": ticker,
+        "file": str(file_path),
+        "updated": False,
+    }
+
+    df_local = _read_price_csv(file_path)
+    last_local = df_local["date"].iloc[-1].date()
+    info["last_local_date"] = str(last_local)
+
+    hist = pd.DataFrame(columns=["date", "close"])
+    try:
+        tkr = yf.Ticker(ticker)
+        hist_raw = tkr.history(period="6mo", interval="1d", auto_adjust=False)
+        hist = _history_to_df(hist_raw)
+        info["method"] = "Ticker.history(6mo)"
+    except Exception as e:
+        info["method_error"] = f"{type(e).__name__}: {e}"
+
+    if hist.empty:
+        try:
+            tkr = yf.Ticker(ticker)
+            hist_raw = tkr.history(period="1y", interval="1d", auto_adjust=False)
+            hist = _history_to_df(hist_raw)
+            info["fallback"] = "Ticker.history(1y)"
+        except Exception as e:
+            info["fallback_error"] = f"{type(e).__name__}: {e}"
+
+    if hist.empty:
+        info["reason"] = "no_data_from_yahoo"
+        return info
+
+    new_rows = hist[hist["date"].dt.date > last_local]
+    if new_rows.empty:
+        info["reason"] = "already_up_to_date"
+        info["last_yahoo_date"] = str(hist["date"].iloc[-1].date())
+        return info
+
+    out = pd.concat([df_local, new_rows], ignore_index=True)
+    out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
+
+    _write_price_csv(file_path, out)
+
+    info["updated"] = True
+    info["added_rows"] = int(len(new_rows))
+    info["last_date"] = str(out["date"].iloc[-1].date())
+    info["last_value"] = float(out["close"].iloc[-1])
+    return info
+
+
+def _require_token() -> Optional[Tuple[Any, int]]:
+    """
+    Se UPDATE_TOKEN è impostato su Render, richiediamo ?token=... su endpoint sensibili.
+    """
+    if not UPDATE_TOKEN:
+        return None
+    token = (request.args.get("token") or "").strip()
+    if token != UPDATE_TOKEN:
+        return _json_error("Token non valido.", 401)
+    return None
 
 
 # ----------------------------
@@ -424,12 +480,7 @@ def api_compute():
             "doubling_years_portfolio": dbl,
             "final_portfolio": final_value,
             "final_years": years_period,
-            "weights": {
-                "gold": w_gold,
-                "ls80": w_ls80,
-                "equity": az,
-                "bond": ob,
-            },
+            "weights": {"gold": w_gold, "ls80": w_ls80, "equity": az, "bond": ob},
             "last_data_date": str(dates.iloc[-1].date()),
         }
 
@@ -506,82 +557,61 @@ def api_ask():
 
 
 # ----------------------------
-# API: update data (token) - FIX: usa history() per .MI
+# API: update data (token) - usa history() per .MI
 # ----------------------------
 @app.get("/api/update_data")
 def api_update_data():
-    token = (request.args.get("token") or "").strip()
-    if not UPDATE_TOKEN or token != UPDATE_TOKEN:
-        return _json_error("Token non valido.", 401)
+    err = _require_token()
+    if err is not None:
+        return err
 
     try:
         import yfinance as yf
     except Exception as e:
-        return _json_error(f"yfinance non disponibile (requirements). {type(e).__name__}: {e}", 500)
-
-    def update_one(ticker: str, file_path: Path) -> Dict[str, Any]:
-        info: Dict[str, Any] = {
-            "asset": file_path.stem,
-            "ticker_used": ticker,
-            "file": str(file_path),
-            "updated": False,
-        }
-
-        df = _read_price_csv(file_path)
-        last_date = df["date"].iloc[-1].date()
-
-        # ✅ metodo robusto: history (periodo ampio, poi filtriamo)
-        try:
-            tkr = yf.Ticker(ticker)
-            hist_raw = tkr.history(period="6mo", interval="1d", auto_adjust=False)
-            hist = _history_to_df(hist_raw)
-            info["method"] = "Ticker.history(period=6mo)"
-        except Exception as e:
-            hist = pd.DataFrame(columns=["date", "close"])
-            info["method_error"] = f"{type(e).__name__}: {e}"
-
-        if hist.empty:
-            # fallback più ampio
-            try:
-                tkr = yf.Ticker(ticker)
-                hist_raw = tkr.history(period="1y", interval="1d", auto_adjust=False)
-                hist = _history_to_df(hist_raw)
-                info["fallback"] = "Ticker.history(period=1y)"
-            except Exception as e:
-                info["fallback_error"] = f"{type(e).__name__}: {e}"
-
-        if hist.empty:
-            info["reason"] = "no_data_from_yahoo"
-            return info
-
-        new_rows = hist[hist["date"].dt.date > last_date]
-        if new_rows.empty:
-            info["reason"] = "already_up_to_date"
-            info["last_yahoo_date"] = str(hist["date"].iloc[-1].date())
-            return info
-
-        out = pd.concat([df, new_rows], ignore_index=True)
-        out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
-
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        save = pd.DataFrame(
-            {
-                "Date": out["date"].dt.strftime("%d/%m/%Y"),
-                "Close": out["close"].map(lambda x: f"{float(x):.2f}"),
-            }
-        )
-        save.to_csv(file_path, sep=";", index=False)
-
-        info["updated"] = True
-        info["added_rows"] = int(len(new_rows))
-        info["last_date"] = str(out["date"].iloc[-1].date())
-        info["last_value"] = float(out["close"].iloc[-1])
-        return info
+        return _json_error(f"yfinance non disponibile. {type(e).__name__}: {e}", 500)
 
     try:
-        res_ls = update_one(LS80_TICKER, LS80_FILE)
-        res_gd = update_one(GOLD_TICKER, GOLD_FILE)
+        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
+        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
         return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "time_utc": _now_iso()})
+    except Exception as e:
+        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
+
+
+# ----------------------------
+# ✅ API: force update (token) - ora esiste e non dà più 404
+# ----------------------------
+@app.get("/api/force_update")
+def api_force_update():
+    """
+    Forza l'update e poi rilegge i file per mostrare la data effettiva scritta su disco.
+    """
+    err = _require_token()
+    if err is not None:
+        return err
+
+    try:
+        import yfinance as yf
+    except Exception as e:
+        return _json_error(f"yfinance non disponibile. {type(e).__name__}: {e}", 500)
+
+    try:
+        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
+        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
+
+        after = {}
+        try:
+            after["ls80_last_date_file"] = str(_read_price_csv(LS80_FILE)["date"].iloc[-1].date())
+        except Exception as e:
+            after["ls80_last_date_file_error"] = f"{type(e).__name__}: {e}"
+        try:
+            after["gold_last_date_file"] = str(_read_price_csv(GOLD_FILE)["date"].iloc[-1].date())
+        except Exception as e:
+            after["gold_last_date_file_error"] = f"{type(e).__name__}: {e}"
+
+        return jsonify(
+            {"ok": True, "ls80": res_ls, "gold": res_gd, "after_file": after, "time_utc": _now_iso()}
+        )
     except Exception as e:
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
