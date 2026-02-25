@@ -3,7 +3,7 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 18 * * 1-5"  # Lun-Ven 18:15 UTC (19:15 Italia)
+    - cron: "15 18 * * 1-5"   # Lun–Ven 18:15 UTC
 
 permissions:
   contents: write
@@ -15,9 +15,8 @@ concurrency:
 jobs:
   update-data:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -29,19 +28,28 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run update script (LS80 + GOLD)
         env:
-          LS80_TICKER: VINGA80.MI
+          LS80_TICKER: VNGA80.MI
           GOLD_TICKER: GLD
+          YF_MAX_RETRIES: "7"
+          YF_BASE_SLEEP: "8"
         run: |
           python update_data.py
 
       - name: Commit updated data
         run: |
-          git config user.name "gloob-bot"
-          git config user.email "bot@gloob.local"
+          git status --porcelain
           git add data/*.csv || true
-          git commit -m "Auto update dati portafoglio" || echo "Nessuna modifica"
+          if git diff --cached --quiet; then
+            echo "Nessun cambiamento da committare."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Aggiorna dati (VNGA80.MI + GLD)"
+          git pull --rebase
           git push
