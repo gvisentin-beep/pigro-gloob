@@ -35,21 +35,10 @@ jobs:
         env:
           LS80_TICKER: VNGA80.MI
           GOLD_TICKER: GLD
+          YF_MAX_RETRIES: "6"
+          YF_BASE_SLEEP: "10"
         run: |
-          set -e
-          for i in 1 2 3 4 5; do
-            echo "Attempt $i/5: updating CSVs..."
-            if python scripts/update_data.py; then
-              echo "Update OK"
-              break
-            fi
-            echo "Update failed. Sleeping before retry..."
-            sleep $((i * 15))
-            if [ "$i" -eq 5 ]; then
-              echo "All retries failed."
-              exit 1
-            fi
-          done
+          python update_data.py
 
       - name: Commit & push if changed
         run: |
