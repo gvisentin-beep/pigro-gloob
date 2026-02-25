@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request, render_template
 try:
     from openai import OpenAI
 except Exception:
-    OpenAI = None  # gestiamo sotto
+    OpenAI = None
 
 
 # ----------------------------
@@ -45,13 +45,10 @@ AUTO_UPDATE = os.getenv("AUTO_UPDATE", "1").strip().lower() not in {"0", "false"
 AUTO_UPDATE_MINUTES = int(os.getenv("AUTO_UPDATE_MINUTES", "0") or "0")  # se >0: cooldown in minuti
 UPDATE_MIN_INTERVAL_HOURS = float(os.getenv("UPDATE_MIN_INTERVAL_HOURS", "6") or "6")
 
-# Firma build (per vedere subito da /api/diag che Render gira QUESTO file)
-BUILD_ID = os.getenv("BUILD_ID", "2026-02-24_autoupdate_historyMI_v3").strip()
+# Firma build (vedi /api/diag)
+BUILD_ID = os.getenv("BUILD_ID", "2026-02-25_historyMI_full_v1").strip()
 
-
-# ----------------------------
-# In-memory cache per evitare update continui
-# ----------------------------
+# Cache update
 _LAST_UPDATE_AT_UTC: Optional[datetime] = None
 _LAST_UPDATE_RESULT: Dict[str, Any] = {}
 
@@ -77,11 +74,6 @@ def _safe_float(x) -> Optional[float]:
 
 
 def _detect_sep(file_path: Path) -> str:
-    """
-    Supporta CSV con:
-      - Date;Close
-      - Date,Close
-    """
     try:
         with file_path.open("r", encoding="utf-8", errors="ignore") as f:
             head = f.readline()
@@ -95,19 +87,14 @@ def _detect_sep(file_path: Path) -> str:
 
 
 def _read_price_csv(file_path: Path) -> pd.DataFrame:
-    """
-    Ritorna DataFrame con colonne:
-      - date (datetime naive)
-      - close (float)
-    """
     if not file_path.exists():
         raise FileNotFoundError(f"File non trovato: {file_path}")
 
     sep = _detect_sep(file_path)
     df = pd.read_csv(file_path, sep=sep)
     df.columns = [c.strip() for c in df.columns]
-
     cols = {c.lower(): c for c in df.columns}
+
     if "date" not in cols or "close" not in cols:
         raise ValueError(
             f"CSV {file_path.name}: colonne attese 'Date' e 'Close'. Trovate: {list(df.columns)}"
@@ -134,9 +121,6 @@ def _read_price_csv(file_path: Path) -> pd.DataFrame:
 
 
 def _write_price_csv(file_path: Path, df: pd.DataFrame) -> None:
-    """
-    Salva nel formato atteso (Date dd/mm/YYYY ; Close con 2 decimali, separatore ';')
-    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     save = pd.DataFrame(
         {
@@ -186,9 +170,6 @@ def _annual_rebalance_portfolio(
     w_gold: float,
     capital: float,
 ) -> pd.Series:
-    """
-    Portafoglio 2 strumenti ribilanciato 1 volta l'anno (primo giorno di borsa dell'anno).
-    """
     w_gold = float(np.clip(w_gold, 0.0, 1.0))
     w_ls80 = 1.0 - w_gold
 
@@ -228,9 +209,7 @@ def _load_ask_store() -> Dict[str, Any]:
 
 
 def _save_ask_store(store: Dict[str, Any]) -> None:
-    """
-    Su Render il filesystem può essere effimero: non bloccare se non si riesce.
-    """
+    # su Render può essere effimero: non bloccare se non si riesce
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         ASK_STORE_FILE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -289,20 +268,17 @@ def _json_error(message: str, status: int = 500, **extra: Any):
     return jsonify(payload), status
 
 
+# ----------------------------
+# Yahoo updater (robusto per .MI)
+# ----------------------------
 def _hist_to_df_from_history(hist: pd.DataFrame) -> pd.DataFrame:
-    """
-    Converte l'output di yf.Ticker(...).history(...) in df standard {date, close}
-    """
     if hist is None or hist.empty:
         return pd.DataFrame(columns=["date", "close"])
-
-    # spesso history ha colonne Open High Low Close Volume...
     if "Close" not in hist.columns:
         return pd.DataFrame(columns=["date", "close"])
 
     tmp = hist[["Close"]].rename(columns={"Close": "close"}).copy()
-    tmp["date"] = tmp.index
-    tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
+    tmp["date"] = pd.to_datetime(tmp.index, errors="coerce")
 
     try:
         tmp["date"] = tmp["date"].dt.tz_localize(None)
@@ -315,11 +291,6 @@ def _hist_to_df_from_history(hist: pd.DataFrame) -> pd.DataFrame:
 
 
 def _cooldown_seconds() -> int:
-    """
-    Cooldown per auto-update.
-    - se AUTO_UPDATE_MINUTES > 0: usa minuti
-    - altrimenti usa UPDATE_MIN_INTERVAL_HOURS
-    """
     if AUTO_UPDATE_MINUTES and AUTO_UPDATE_MINUTES > 0:
         return int(AUTO_UPDATE_MINUTES * 60)
     return int(UPDATE_MIN_INTERVAL_HOURS * 3600)
@@ -336,14 +307,10 @@ def _should_run_update(force: bool = False) -> bool:
     return (_now_utc() - _LAST_UPDATE_AT_UTC).total_seconds() >= _cooldown_seconds()
 
 
-def _update_one_asset_in_memory(yf, ticker: str, file_path: Path) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+def _update_one_asset(yf, ticker: str, file_path: Path) -> Dict[str, Any]:
     """
-    Legge il CSV locale e prova ad aggiungere righe da Yahoo.
-    ✅ Per .MI usa yf.Ticker(ticker).history(...) (molto più affidabile di yf.download su Render)
-
-    Ritorna:
-      - df_final (anche se non salvato su disco)
-      - info (include persisted=True/False e reason)
+    Aggiorna il CSV locale aggiungendo eventuali nuove righe da Yahoo.
+    Metodo principale: Ticker().history() (molto più stabile per .MI su server).
     """
     info: Dict[str, Any] = {
         "asset": file_path.stem,
@@ -357,68 +324,38 @@ def _update_one_asset_in_memory(yf, ticker: str, file_path: Path) -> Tuple[pd.Da
     last_local = df_local["date"].iloc[-1].date()
     info["last_local_date"] = str(last_local)
 
-    # Per log/debug: intervallo desiderato
-    start = (last_local + timedelta(days=1)).strftime("%Y-%m-%d")
-    end = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
-    info["requested_start"] = start
-    info["requested_end"] = end
+    # download history ampio: poi filtriamo
+    method = "Ticker.history(period=2y)"
+    hist_df = pd.DataFrame(columns=["date", "close"])
 
-    # --------
-    # Metodo principale (history) - stabile per ETF/ETC europei
-    # --------
     try:
         tkr = yf.Ticker(ticker)
-        hist_raw = tkr.history(period="6mo", interval="1d", auto_adjust=False)
-        hist = _hist_to_df_from_history(hist_raw)
-        info["method"] = "Ticker.history(period=6mo)"
+        hist_raw = tkr.history(period="2y", interval="1d", auto_adjust=False)
+        hist_df = _hist_to_df_from_history(hist_raw)
     except Exception as e:
-        hist = pd.DataFrame(columns=["date", "close"])
         info["method_error"] = f"{type(e).__name__}: {e}"
 
-    # Fallback 1: period più ampio
-    if hist.empty:
+    # fallback: 5y
+    if hist_df.empty:
         try:
+            method = "Ticker.history(period=5y)"
             tkr = yf.Ticker(ticker)
-            hist_raw = tkr.history(period="1y", interval="1d", auto_adjust=False)
-            hist = _hist_to_df_from_history(hist_raw)
-            info["fallback"] = "Ticker.history(period=1y)"
+            hist_raw = tkr.history(period="5y", interval="1d", auto_adjust=False)
+            hist_df = _hist_to_df_from_history(hist_raw)
         except Exception as e:
             info["fallback_error"] = f"{type(e).__name__}: {e}"
 
-    # Fallback 2: usa download (solo se proprio necessario)
-    if hist.empty:
-        try:
-            hist_raw = yf.download(
-                ticker,
-                period="1y",
-                interval="1d",
-                auto_adjust=False,
-                progress=False,
-            )
-            # download può arrivare con colonne diverse; qui prendiamo Close
-            if hist_raw is not None and not hist_raw.empty and "Close" in hist_raw.columns:
-                tmp = hist_raw[["Close"]].rename(columns={"Close": "close"}).copy()
-                tmp["date"] = tmp.index
-                tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
-                try:
-                    tmp["date"] = tmp["date"].dt.tz_localize(None)
-                except Exception:
-                    pass
-                tmp["close"] = pd.to_numeric(tmp["close"], errors="coerce")
-                hist = tmp.dropna().sort_values("date")[["date", "close"]]
-                info["fallback2"] = "yf.download(period=1y)"
-        except Exception as e:
-            info["fallback2_error"] = f"{type(e).__name__}: {e}"
+    info["method"] = method
 
-    if hist.empty:
+    if hist_df.empty:
         info["reason"] = "no_data_from_yahoo"
-        return df_local, info
+        return info
 
-    new_rows = hist[hist["date"].dt.date > last_local]
+    new_rows = hist_df[hist_df["date"].dt.date > last_local]
     if new_rows.empty:
         info["reason"] = "already_up_to_date"
-        info["last_yahoo_date"] = str(hist["date"].iloc[-1].date())
-        return df_local, info
+        info["last_yahoo_date"] = str(hist_df["date"].iloc[-1].date())
+        return info
 
     out = pd.concat([df_local, new_rows], ignore_index=True)
     out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
@@ -428,22 +365,17 @@ def _update_one_asset_in_memory(yf, ticker: str, file_path: Path) -> Tuple[pd.Da
     info["last_date"] = str(out["date"].iloc[-1].date())
     info["last_value"] = float(out["close"].iloc[-1])
 
-    # prova a persistere su disco (se fallisce, comunque useremo out in RAM)
     try:
         _write_price_csv(file_path, out)
         info["persisted"] = True
     except Exception as e:
-        info["persisted"] = False
         info["persist_error"] = f"{type(e).__name__}: {e}"
+        info["persisted"] = False
 
-    return out, info
+    return info
 
 
 def _maybe_update_data(force: bool = False) -> Dict[str, Any]:
-    """
-    Esegue aggiornamento (se non in cooldown).
-    Salva risultato in cache e ritorna info.
-    """
     global _LAST_UPDATE_AT_UTC, _LAST_UPDATE_RESULT
 
     if not _should_run_update(force=force):
@@ -457,15 +389,15 @@ def _maybe_update_data(force: bool = False) -> Dict[str, Any]:
         return _LAST_UPDATE_RESULT
 
     try:
-        _, info_ls = _update_one_asset_in_memory(yf, LS80_TICKER, LS80_FILE)
-        _, info_gd = _update_one_asset_in_memory(yf, GOLD_TICKER, GOLD_FILE)
+        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
+        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
 
         _LAST_UPDATE_AT_UTC = _now_utc()
         _LAST_UPDATE_RESULT = {
             "ok": True,
             "time_utc": _now_iso(),
-            "ls80": info_ls,
-            "gold": info_gd,
+            "ls80": res_ls,
+            "gold": res_gd,
         }
         return _LAST_UPDATE_RESULT
     except Exception as e:
@@ -573,16 +505,12 @@ def api_diag():
 
 @app.get("/api/force_update")
 def api_force_update():
-    """
-    Forza update (bypassa cooldown) e restituisce dettagli + last_date dopo.
-    """
     global _LAST_UPDATE_AT_UTC, _LAST_UPDATE_RESULT
     _LAST_UPDATE_AT_UTC = None
     _LAST_UPDATE_RESULT = {}
 
     res = _maybe_update_data(force=True)
 
-    # rileggi da file per vedere se la persistenza ha funzionato
     after = {}
     try:
         after["ls80_last_date_file"] = str(_read_price_csv(LS80_FILE)["date"].iloc[-1].date())
@@ -602,6 +530,9 @@ def api_force_update():
 @app.get("/api/compute")
 def api_compute():
     try:
+        # opzionale: prova update safe (se AUTO_UPDATE=1)
+        update_info = _maybe_update_data(force=False)
+
         w_gold = _safe_float(request.args.get("w_gold"))
         if w_gold is None:
             w_ls80 = _safe_float(request.args.get("w_ls80"))
@@ -619,33 +550,8 @@ def api_compute():
         if capital <= 0:
             capital = 10000.0
 
-        # baseline da file
-        df_ls_file = _read_price_csv(LS80_FILE)
-        df_gd_file = _read_price_csv(GOLD_FILE)
-
-        update_info = _maybe_update_data(force=False)
-
-        # Se update dice updated=True ma persisted=False, i file potrebbero essere rimasti vecchi.
-        # Per garantire grafico aggiornato, in quel caso rifacciamo update in RAM per compute.
-        df_ls = df_ls_file
-        df_gd = df_gd_file
-        ram_used = {"ls80": False, "gold": False}
-
-        try:
-            import yfinance as yf
-        except Exception:
-            yf = None
-
-        if yf is not None and isinstance(update_info, dict) and update_info.get("ok"):
-            ls_info = update_info.get("ls80") or {}
-            gd_info = update_info.get("gold") or {}
-
-            if ls_info.get("updated") and not ls_info.get("persisted"):
-                df_ls, _ = _update_one_asset_in_memory(yf, LS80_TICKER, LS80_FILE)
-                ram_used["ls80"] = True
-            if gd_info.get("updated") and not gd_info.get("persisted"):
-                df_gd, _ = _update_one_asset_in_memory(yf, GOLD_TICKER, GOLD_FILE)
-                ram_used["gold"] = True
+        df_ls = _read_price_csv(LS80_FILE)
+        df_gd = _read_price_csv(GOLD_FILE)
 
         df = df_ls.merge(df_gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
         df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
@@ -670,7 +576,6 @@ def api_compute():
 
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         final_value = float(port.iloc[-1])
-
         last_data_date = str(dates.iloc[-1].date())
 
         metrics = {
@@ -697,7 +602,6 @@ def api_compute():
             "data_info": {
                 "updated_to": last_data_date,
                 "auto_update": update_info,
-                "ram_used": ram_used,
             },
         }
 
@@ -721,9 +625,7 @@ def api_ask():
         ip = _client_ip()
         remaining, limit = _check_and_consume_quota(ip)
         if remaining == 0 and limit > 0:
-            return jsonify(
-                {"ok": False, "error": "Limite giornaliero raggiunto.", "remaining": 0, "limit": limit}
-            ), 429
+            return jsonify({"ok": False, "error": "Limite giornaliero raggiunto.", "remaining": 0, "limit": limit}), 429
 
         client = _openai_client()
         if client is None:
@@ -776,7 +678,6 @@ def api_update_data():
     if not UPDATE_TOKEN or token != UPDATE_TOKEN:
         return _json_error("Token non valido.", 401)
 
-    # forza update bypassando cooldown
     res = _maybe_update_data(force=True)
 
     after = {}
