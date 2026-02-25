@@ -3,10 +3,14 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 18 * * 1-5"  # Lun-Ven 18:15 UTC (circa 19:15 Italia inverno)
+    - cron: "15 18 * * 1-5"  # Lun-Ven 18:15 UTC
 
 permissions:
   contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: true
 
 jobs:
   update-data:
@@ -27,12 +31,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy yfinance requests
 
-      - name: Update CSV data
+      - name: Update CSV data (with retry)
         env:
           LS80_TICKER: VNGA80.MI
-          GOLD_TICKER: SGLD.MI
+          GOLD_TICKER: GLD
         run: |
-          python scripts/update_data.py
+          set -e
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i/5: updating CSVs..."
+            if python scripts/update_data.py; then
+              echo "Update OK"
+              break
+            fi
+            echo "Update failed. Sleeping before retry..."
+            sleep $((i * 15))
+            if [ "$i" -eq 5 ]; then
+              echo "All retries failed."
+              exit 1
+            fi
+          done
 
       - name: Commit & push if changed
         run: |
