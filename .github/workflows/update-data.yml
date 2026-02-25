@@ -3,7 +3,7 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 18 * * 1-5"  # Lun-Ven 18:15 UTC
+    - cron: "15 18 * * 1-5"  # Lun-Ven 18:15 UTC (19:15 Italia)
 
 permissions:
   contents: write
@@ -15,8 +15,9 @@ concurrency:
 jobs:
   update-data:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -24,30 +25,23 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas numpy yfinance requests
+          pip install -r requirements.txt
 
-      - name: Update CSV data (with retry)
+      - name: Run update script (LS80 + GOLD)
         env:
-          LS80_TICKER: VNGA80.MI
+          LS80_TICKER: VINGA80.MI
           GOLD_TICKER: GLD
-          YF_MAX_RETRIES: "6"
-          YF_BASE_SLEEP: "10"
         run: |
           python update_data.py
 
-      - name: Commit & push if changed
+      - name: Commit updated data
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.csv
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          git commit -m "Auto-update data (ls80/gold)"
+          git config user.name "gloob-bot"
+          git config user.email "bot@gloob.local"
+          git add data/*.csv || true
+          git commit -m "Auto update dati portafoglio" || echo "Nessuna modifica"
           git push
