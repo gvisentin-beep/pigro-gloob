@@ -41,65 +41,6 @@
         .container { max-width: 100% !important; }
         #chartWrap { height: 520px !important; }
       }
-
-      /* ✅ MODAL consulenti */
-      .modalOverlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,.45);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        padding: 18px;
-        z-index: 9999;
-      }
-      .modalOverlay.show { display: flex; }
-      .modalBox {
-        width: min(860px, 100%);
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 18px 45px rgba(0,0,0,.22);
-        padding: 16px 16px 12px;
-      }
-      .modalTop {
-        display:flex;
-        align-items:flex-start;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 8px;
-      }
-      .modalTop h2 { margin: 0; font-size: 20px; }
-      .modalClose {
-        border: 0;
-        border-radius: 10px;
-        padding: 8px 10px;
-        cursor: pointer;
-        font-weight: 700;
-      }
-      .consGrid {
-        display: grid;
-        grid-template-columns: 1fr 1fr 1fr;
-        gap: 12px;
-        margin-top: 12px;
-      }
-      @media (max-width: 860px) {
-        .consGrid { grid-template-columns: 1fr; }
-      }
-      .consCard {
-        border: 1px solid rgba(0,0,0,.08);
-        border-radius: 14px;
-        padding: 12px;
-      }
-      .consName { margin: 0 0 6px; font-size: 16px; }
-      .consMeta { margin: 0; font-size: 13px; opacity: .85; }
-      .consLinks { margin-top: 10px; font-size: 13px; }
-      .consLinks a { text-decoration: underline; }
-      .modalNote {
-        margin-top: 12px;
-        font-size: 12px;
-        opacity: .85;
-        line-height: 1.35;
-      }
     </style>
   </head>
 
@@ -139,14 +80,9 @@
             <button id="btn_update" class="btn">Aggiorna</button>
           </div>
 
-          <!-- ✅ tasto Facsimile / PDF (già presente) -->
+          <!-- ✅ tasto PDF -->
           <div class="ctrl">
             <button id="btn_pdf" class="btn">PDF</button>
-          </div>
-
-          <!-- ✅ nuovo tasto: messo alla fine della riga, accanto al facsimile/PDF -->
-          <div class="ctrl">
-            <button id="btn_consulenti" class="btn">Consulenti fee-only (OCF)</button>
           </div>
 
           <div class="finalBox">
@@ -265,99 +201,6 @@
       </div>
     </div>
 
-    <!-- ✅ MODAL: consulenti fee-only (OCF) -->
-    <div id="consModal" class="modalOverlay noPrint" aria-hidden="true">
-      <div class="modalBox" role="dialog" aria-modal="true" aria-label="Consulenti fee-only (OCF)">
-        <div class="modalTop">
-          <div>
-            <h2>Consulenti indipendenti (fee-only) — verificabili su OCF</h2>
-            <div class="muted">
-              Gloob fornisce solo informazione/analisi generica. Per consulenza personalizzata puoi contattare un professionista esterno.
-            </div>
-          </div>
-          <button class="modalClose" id="consModalClose" aria-label="Chiudi">✕</button>
-        </div>
-
-        <div class="consGrid">
-          <!-- Consulente 1 -->
-          <div class="consCard">
-            <p class="consName"><b>Nome Cognome</b></p>
-            <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
-            <div class="consLinks">
-              Email: <a href="mailto:email@example.com">email@example.com</a><br />
-              Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
-              Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
-              Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
-            </div>
-          </div>
-
-          <!-- Consulente 2 -->
-          <div class="consCard">
-            <p class="consName"><b>Nome Cognome</b></p>
-            <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
-            <div class="consLinks">
-              Email: <a href="mailto:email@example.com">email@example.com</a><br />
-              Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
-              Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
-              Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
-            </div>
-          </div>
-
-          <!-- Consulente 3 -->
-          <div class="consCard">
-            <p class="consName"><b>Nome Cognome</b></p>
-            <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
-            <div class="consLinks">
-              Email: <a href="mailto:email@example.com">email@example.com</a><br />
-              Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
-              Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
-              Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
-            </div>
-          </div>
-        </div>
-
-        <div class="modalNote">
-          <b>Trasparenza:</b> i consulenti elencati sono <u>soggetti terzi</u>. Gloob non fornisce consulenza finanziaria personalizzata,
-          non raccoglie dati per finalità di consulenza, e non percepisce compensi/commissioni per i contatti generati (salvo diversa indicazione esplicita).
-          Verifica sempre l’iscrizione e lo stato sul registro pubblico OCF.
-        </div>
-      </div>
-    </div>
-
     <script src="/static/app.js"></script>
-
-    <!-- ✅ JS modal consulenti (non tocca app.js) -->
-    <script>
-      (function () {
-        const btn = document.getElementById("btn_consulenti");
-        const modal = document.getElementById("consModal");
-        const closeBtn = document.getElementById("consModalClose");
-
-        function openModal() {
-          if (!modal) return;
-          modal.classList.add("show");
-          modal.setAttribute("aria-hidden", "false");
-        }
-
-        function closeModal() {
-          if (!modal) return;
-          modal.classList.remove("show");
-          modal.setAttribute("aria-hidden", "true");
-        }
-
-        if (btn) btn.addEventListener("click", openModal);
-        if (closeBtn) closeBtn.addEventListener("click", closeModal);
-
-        if (modal) {
-          modal.addEventListener("click", function (e) {
-            if (e.target === modal) closeModal();
-          });
-        }
-
-        document.addEventListener("keydown", function (e) {
-          if (e.key === "Escape") closeModal();
-        });
-      })();
-    </script>
   </body>
 </html>
