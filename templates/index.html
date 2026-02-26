@@ -41,6 +41,82 @@
         .container { max-width: 100% !important; }
         #chartWrap { height: 520px !important; }
       }
+
+      /* ==============================
+         ✅ Execution only + Faxsimile
+         ============================== */
+      .execution-only-wrap{
+        display:inline-flex;
+        align-items:center;
+        gap:10px;
+        position:relative;
+      }
+
+      .execution-only-trigger{
+        position:relative;
+        font-weight:700;
+        cursor:help;
+        color:#1f4e79;
+        text-decoration:none;
+      }
+      .execution-only-trigger:hover{
+        text-decoration:underline;
+      }
+
+      /* Tooltip con anteprima PDF */
+      .pdf-tooltip{
+        display:none;
+        position:absolute;
+        top:28px;
+        left:0;
+        width:420px;
+        height:520px;
+        border:2px solid #cfcfcf;
+        background:#fff;
+        box-shadow:0 8px 22px rgba(0,0,0,.22);
+        border-radius:10px;
+        overflow:hidden;
+        z-index:9999;
+      }
+      .pdf-tooltip iframe{
+        width:100%;
+        height:100%;
+        border:0;
+      }
+      /* mostra tooltip quando passi sul testo */
+      .execution-only-wrap:hover .pdf-tooltip{
+        display:block;
+      }
+
+      /* Bottone Faxsimile */
+      .fax-btn{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        padding:5px 10px;
+        border-radius:8px;
+        background:#1f4e79;
+        color:#fff;
+        text-decoration:none;
+        font-size:14px;
+        font-weight:700;
+        line-height:1;
+        white-space:nowrap;
+        transition:.18s ease;
+      }
+      .fax-btn:hover{
+        background:#163a5c;
+        transform:scale(1.02);
+      }
+
+      /* Su schermi piccoli: tooltip più compatto */
+      @media (max-width: 680px){
+        .pdf-tooltip{
+          width:92vw;
+          height:65vh;
+          left:0;
+        }
+      }
     </style>
   </head>
 
@@ -122,7 +198,22 @@
         <h2>Come applicarlo concretamente</h2>
         <ol>
           <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
-          <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
+          <li>
+            Investi nei due strumenti attraverso la tua banca con
+            <span class="execution-only-wrap">
+              <span class="execution-only-trigger">“execution only”</span>
+
+              <!-- ✅ Tooltip con anteprima PDF -->
+              <span class="pdf-tooltip">
+                <iframe src="/static/faxsimile_execution_only.pdf"></iframe>
+              </span>
+
+              <!-- ✅ Link diretto PDF -->
+              <a class="fax-btn" href="/static/faxsimile_execution_only.pdf" target="_blank" rel="noopener">
+                📄 Faxsimile PDF
+              </a>
+            </span>.
+          </li>
           <li>Non intervenire durante l’anno.</li>
           <li>A dicembre ribilancia ai pesi originali.</li>
         </ol>
