@@ -3,7 +3,7 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 18 * * 1-5"   # Lun–Ven 18:15 UTC
+    - cron: "15 18 * * 1-5" # Lun-Ven 18:15 UTC
 
 permissions:
   contents: write
@@ -15,6 +15,7 @@ concurrency:
 jobs:
   update-data:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,23 +34,20 @@ jobs:
 
       - name: Run update script (LS80 + GOLD)
         env:
-          LS80_TICKER: VNGA80.MI
-          GOLD_TICKER: GLD
-          YF_MAX_RETRIES: "7"
-          YF_BASE_SLEEP: "8"
+          LS80_TICKER: ${{ secrets.LS80_TICKER }}
+          GOLD_TICKER: ${{ secrets.GOLD_TICKER }}
         run: |
           python update_data.py
 
       - name: Commit updated data
         run: |
-          git status --porcelain
-          git add data/*.csv || true
-          if git diff --cached --quiet; then
-            echo "Nessun cambiamento da committare."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "Aggiorna dati (VNGA80.MI + GLD)"
-          git pull --rebase
+          git add data/ls80.csv data/gold.csv
+          git diff --cached --quiet || git commit -m "Update data (ls80, gold)"
           git push
+
+      - name: Trigger Render deploy
+        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
+        run: |
+          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
