@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-import random
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,238 +17,256 @@ import yfinance as yf
 # =========================
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
-GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
+LS80_TICKER_DEFAULT = "VNGA80.MI"  # <-- CORRETTO
+GOLD_TICKER_DEFAULT = "GLD"
 
 LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
 
-MAX_RETRIES = int(os.getenv("YF_MAX_RETRIES", "6"))
-BASE_SLEEP = float(os.getenv("YF_BASE_SLEEP", "8"))  # seconds
-JITTER = float(os.getenv("YF_JITTER", "2.5"))  # seconds
+MAX_RETRIES = int(os.getenv("YF_MAX_RETRIES", "8"))
+BASE_SLEEP = float(os.getenv("YF_BASE_SLEEP", "10"))  # secondi
+JITTER = float(os.getenv("YF_JITTER", "1.5"))         # randomizzazione semplice
+
+# Se i file sono nel formato italiano Date;Close con date dd/mm/yyyy e ordine decrescente
+OUT_SEP = ";"
+OUT_DATE_FMT = "%d/%m/%Y"
 
 
 # =========================
-# Helpers
+# Utils
 # =========================
-def _now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+def _now_utc_str() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _detect_sep(path: Path) -> str:
-    # Prefer ';' for your files, but auto-detect if needed
-    try:
-        head = path.read_text(encoding="utf-8", errors="ignore")[:2048]
-    except Exception:
+def _detect_sep(text: str) -> str:
+    # preferisci ; se presente nella prima riga (il tuo caso)
+    first_line = text.splitlines()[0] if text else ""
+    if ";" in first_line:
         return ";"
-    if head.count(";") >= head.count(","):
-        return ";"
-    return ","
+    if "," in first_line:
+        return ","
+    # fallback
+    return ";"
 
 
-def _normalize_local_df(df: pd.DataFrame) -> pd.DataFrame:
+def _read_local_csv(path: Path) -> Optional[pd.DataFrame]:
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    sep = _detect_sep(raw)
+
+    df = pd.read_csv(path, sep=sep, engine="python")
+    if df.empty:
+        return None
+    return _normalize_prices_df(df)
+
+
+def _normalize_prices_df(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Accepts many shapes, returns columns: date (datetime64), close (float)
+    Normalizza vari formati possibili in due colonne: date, price
+    Accetta:
+    - Date/Close (il tuo)
+    - date/price
+    - Date/Adj Close, ecc.
     """
     cols = {c.strip(): c for c in df.columns}
+    lower = {c.strip().lower(): c for c in df.columns}
 
-    # Pick date column
+    # date column
     date_col = None
-    for cand in ["Date", "date", "DATA", "Data", "timestamp", "Datetime"]:
-        if cand in cols:
-            date_col = cols[cand]
+    for key in ("date", "data"):
+        if key in lower:
+            date_col = lower[key]
             break
     if date_col is None:
-        # Sometimes index is date-like
-        if df.index.name and "date" in df.index.name.lower():
-            df = df.reset_index()
-            date_col = df.columns[0]
-        else:
-            raise KeyError("Nessuna colonna data trovata (attese: Date/date/...).")
+        # prova la prima colonna
+        date_col = df.columns[0]
 
-    # Pick close column
-    close_col = None
-    for cand in ["Close", "close", "Adj Close", "adjclose", "price", "Price", "PREZZO", "Prezzo"]:
-        if cand in cols:
-            close_col = cols[cand]
+    # price column (preferenze)
+    price_col = None
+    for key in ("adj close", "adj_close", "close", "prezzo", "price", "valore"):
+        if key in lower:
+            price_col = lower[key]
             break
-    if close_col is None:
-        raise KeyError("Nessuna colonna prezzo trovata (attese: Close/Adj Close/price/...).")
+    if price_col is None:
+        # prova la seconda colonna
+        if len(df.columns) >= 2:
+            price_col = df.columns[1]
+        else:
+            raise ValueError("CSV locale: non trovo una colonna prezzo.")
 
-    out = df[[date_col, close_col]].copy()
-    out.columns = ["date", "close"]
+    out = df[[date_col, price_col]].copy()
+    out.columns = ["date", "price"]
 
-    # Parse date: your format is dd/mm/yyyy
-    out["date"] = pd.to_datetime(out["date"], errors="coerce", dayfirst=True).dt.tz_localize(None)
-    out = out.dropna(subset=["date"])
+    # parse date: dayfirst True (dd/mm/yyyy)
+    out["date"] = pd.to_datetime(out["date"], errors="coerce", dayfirst=True).dt.date
+    out["price"] = pd.to_numeric(out["price"], errors="coerce")
 
-    out["close"] = pd.to_numeric(out["close"], errors="coerce")
-    out = out.dropna(subset=["close"])
-
-    out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
-    return out
-
-
-def read_local_prices(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame(columns=["date", "close"])
-
-    sep = _detect_sep(path)
-    df = pd.read_csv(path, sep=sep, engine="python")
-    return _normalize_local_df(df)
+    out = out.dropna(subset=["date", "price"])
+    out = out.drop_duplicates(subset=["date"]).sort_values("date")  # crescente internamente
+    return out.reset_index(drop=True)
 
 
-def yf_download(ticker: str, start: Optional[pd.Timestamp]) -> pd.DataFrame:
+def _yf_download_daily(ticker: str, start: Optional[str] = None) -> pd.DataFrame:
     """
-    Download daily prices. Returns df with columns: date, close
+    Scarica dati giornalieri da Yahoo via yfinance.
+    Ritorna DF con index datetime e colonne OHLC + Adj Close/Close.
     """
-    last_err: Optional[Exception] = None
+    # Nota: yfinance è instabile; usiamo retry fuori
+    df = yf.download(
+        tickers=ticker,
+        start=start,
+        progress=False,
+        interval="1d",
+        auto_adjust=False,
+        group_by="column",
+        threads=False,
+    )
+    # df può essere vuoto
+    return df
 
-    # Strategy:
-    # - Try with start (if available) to reduce load
-    # - If empty, fall back to period='max' and filter
-    for attempt in range(1, MAX_RETRIES + 1):
+
+def _download_with_retry(ticker: str, start: Optional[str]) -> pd.DataFrame:
+    last_err = None
+    for i in range(1, MAX_RETRIES + 1):
         try:
-            kwargs = dict(interval="1d", auto_adjust=True, progress=False)
-            if start is not None:
-                df = yf.download(ticker, start=start.date().isoformat(), **kwargs)
-            else:
-                df = yf.download(ticker, period="max", **kwargs)
-
-            if df is None or df.empty:
-                # fallback once
-                df = yf.download(ticker, period="max", **kwargs)
-
-            if df is None or df.empty:
-                raise RuntimeError("download vuoto (nessun dato)")
-
-            # yfinance index is DatetimeIndex
-            df = df.reset_index()
-
-            # Normalize columns
-            # With auto_adjust=True, Close exists
-            date_col = None
-            for c in df.columns:
-                if str(c).lower() in ["date", "datetime"]:
-                    date_col = c
-                    break
-            if date_col is None:
-                date_col = df.columns[0]
-
-            close_col = None
-            for cand in ["Close", "Adj Close"]:
-                if cand in df.columns:
-                    close_col = cand
-                    break
-            if close_col is None:
-                # sometimes lowercase
-                for c in df.columns:
-                    if str(c).lower() == "close":
-                        close_col = c
-                        break
-            if close_col is None:
-                raise RuntimeError("colonna Close non trovata nei dati scaricati")
-
-            out = df[[date_col, close_col]].copy()
-            out.columns = ["date", "close"]
-            out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.tz_localize(None)
-            out["close"] = pd.to_numeric(out["close"], errors="coerce")
-            out = out.dropna(subset=["date", "close"]).sort_values("date").drop_duplicates("date", keep="last")
-
-            if start is not None:
-                out = out[out["date"] >= start]
-
-            return out
-
+            df = _yf_download_daily(ticker, start=start)
+            if df is not None and not df.empty:
+                return df
+            last_err = RuntimeError(f"Nessun dato da Yahoo per {ticker} (vuoto).")
         except Exception as e:
             last_err = e
-            # backoff with jitter
-            sleep_s = BASE_SLEEP * (attempt ** 1.2) + random.uniform(0, JITTER)
-            print(f"[{ticker}] Tentativo {attempt}/{MAX_RETRIES} fallito: {e}. Sleep {sleep_s:.1f}s")
-            time.sleep(sleep_s)
+
+        sleep_s = BASE_SLEEP * i
+        # jitter semplice senza random (per evitare import extra)
+        sleep_s += (i % 3) * JITTER
+        print(f"  Tentativo {i}/{MAX_RETRIES} fallito per {ticker}: {last_err}")
+        print(f"  Attendo {sleep_s:.1f}s e riprovo...")
+        time.sleep(sleep_s)
 
     raise RuntimeError(f"Impossibile scaricare dati per {ticker}. Ultimo errore: {last_err}")
 
 
-def write_local_prices(path: Path, df: pd.DataFrame) -> None:
+def _yf_to_prices(df_yf: pd.DataFrame) -> pd.DataFrame:
     """
-    Writes Date;Close with dd/mm/yyyy and ';' separator
+    Converte df Yahoo in df con colonne date, price.
+    Preferisce Adj Close se disponibile altrimenti Close.
     """
-    df2 = df.copy()
-    df2 = df2.sort_values("date").drop_duplicates("date", keep="last")
-    df2["Date"] = df2["date"].dt.strftime("%d/%m/%Y")
-    df2["Close"] = df2["close"].map(lambda x: f"{x:.2f}")
-    out = df2[["Date", "Close"]]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(path, sep=";", index=False)
+    col = "Adj Close" if "Adj Close" in df_yf.columns else "Close"
+    if col not in df_yf.columns:
+        raise RuntimeError("Yahoo DF: non trovo né 'Adj Close' né 'Close'.")
+
+    out = df_yf[[col]].copy()
+    out = out.reset_index()  # Date column
+    out.columns = ["date", "price"]
+    out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.date
+    out["price"] = pd.to_numeric(out["price"], errors="coerce")
+    out = out.dropna(subset=["date", "price"])
+    out = out.drop_duplicates(subset=["date"]).sort_values("date")
+    return out.reset_index(drop=True)
 
 
-@dataclass
-class UpdateResult:
-    ticker: str
-    file: Path
-    updated: bool
-    last_before: Optional[str]
-    last_after: Optional[str]
-    note: str
+def _merge_and_save(path: Path, df_old: Optional[pd.DataFrame], df_new: pd.DataFrame) -> Tuple[int, int]:
+    """
+    Merge per data, salva in formato Date;Close con date dd/mm/yyyy, ordine decrescente.
+    Ritorna: (n_righe_prima, n_righe_dopo)
+    """
+    n_before = int(df_old.shape[0]) if df_old is not None else 0
+
+    if df_old is None or df_old.empty:
+        merged = df_new.copy()
+    else:
+        merged = pd.concat([df_old, df_new], ignore_index=True)
+        merged = merged.drop_duplicates(subset=["date"], keep="last").sort_values("date")
+
+    merged = merged.reset_index(drop=True)
+
+    # scrivi in formato "Date;Close" con date italiane
+    out = merged.copy()
+    out["Date"] = pd.to_datetime(out["date"]).dt.strftime(OUT_DATE_FMT)
+    out["Close"] = out["price"].astype(float).round(6)
+    out = out[["Date", "Close"]]
+
+    # per coerenza con i tuoi file: ordine decrescente (ultima data in alto)
+    out = out.iloc[::-1].reset_index(drop=True)
+
+    path.write_text("", encoding="utf-8")  # reset
+    out.to_csv(path, sep=OUT_SEP, index=False, encoding="utf-8")
+
+    n_after = int(merged.shape[0])
+    return n_before, n_after
 
 
-def update_one(ticker: str, file_path: Path) -> UpdateResult:
-    local = read_local_prices(file_path)
-    last_before = None
-    if not local.empty:
-        last_before = local["date"].iloc[-1].strftime("%Y-%m-%d")
+def _ticker_fixups(t: str) -> str:
+    t = (t or "").strip()
+    # Fix automatico errore comune (VINGA80.MI -> VNGA80.MI)
+    if t.upper() == "VINGA80.MI":
+        return "VNGA80.MI"
+    return t
 
+
+def update_one(ticker: str, file_path: Path) -> bool:
+    ticker = _ticker_fixups(ticker)
+    print(f"\n=== Aggiornamento {ticker} -> {file_path} ===")
+
+    df_old = _read_local_csv(file_path)
+
+    # start: giorno dopo l'ultima data locale, così scarichiamo solo incrementale
     start = None
-    if not local.empty:
-        # start from next day (safe)
-        start = local["date"].iloc[-1] + pd.Timedelta(days=1)
+    if df_old is not None and not df_old.empty:
+        last_date = max(df_old["date"])
+        start = (pd.Timestamp(last_date) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        print(f"  Ultima data locale: {last_date} | Start download: {start}")
+    else:
+        # scarica parecchio storico (da 2000 in poi)
+        start = "2000-01-01"
+        print("  Nessun file locale valido. Scarico storico da 2000-01-01.")
 
-    try:
-        new = yf_download(ticker, start=start)
-    except Exception as e:
-        # IMPORTANT: do not fail the whole workflow
-        note = f"Download fallito: {e}. File lasciato invariato."
-        print(f"[{ticker}] {note}")
-        last_after = last_before
-        return UpdateResult(ticker, file_path, False, last_before, last_after, note)
+    df_yf = _download_with_retry(ticker, start=start)
+    df_new = _yf_to_prices(df_yf)
 
-    if new.empty:
-        note = "Nessun nuovo dato (download vuoto dopo filtro)."
-        print(f"[{ticker}] {note}")
-        last_after = last_before
-        return UpdateResult(ticker, file_path, False, last_before, last_after, note)
+    if df_new.empty:
+        print("  Nessun dato nuovo da unire.")
+        return False
 
-    merged = pd.concat([local, new], ignore_index=True) if not local.empty else new
-    merged = merged.sort_values("date").drop_duplicates("date", keep="last")
-
-    last_after = merged["date"].iloc[-1].strftime("%Y-%m-%d")
-
-    if last_before == last_after:
-        note = "Nessun avanzamento (ultima data invariata)."
-        print(f"[{ticker}] {note}")
-        return UpdateResult(ticker, file_path, False, last_before, last_after, note)
-
-    write_local_prices(file_path, merged)
-    note = "Aggiornato."
-    print(f"[{ticker}] {note} {last_before} -> {last_after}")
-    return UpdateResult(ticker, file_path, True, last_before, last_after, note)
+    before, after = _merge_and_save(file_path, df_old, df_new)
+    print(f"  Righe: {before} -> {after}")
+    print(f"  Ultima data (dopo merge): {pd.to_datetime(df_new['date'].max()).date()}")
+    return after > before
 
 
 def main() -> int:
-    print(f"Timestamp: {_now_utc()}")
-    print(f"LS80_TICKER={LS80_TICKER} | GOLD_TICKER={GOLD_TICKER}")
-    print(f"DATA_DIR={DATA_DIR}")
+    print(f"Timestamp UTC: {_now_utc_str()}")
+    ls80_ticker = _ticker_fixups(os.getenv("LS80_TICKER", LS80_TICKER_DEFAULT))
+    gold_ticker = _ticker_fixups(os.getenv("GOLD_TICKER", GOLD_TICKER_DEFAULT))
 
-    res1 = update_one(LS80_TICKER, LS80_FILE)
-    res2 = update_one(GOLD_TICKER, GOLD_FILE)
+    changed_any = False
+    ok_any = False
 
-    print("--- RISULTATO ---")
-    for r in [res1, res2]:
-        print(f"{r.ticker} -> {r.file.name} | updated={r.updated} | {r.last_before} -> {r.last_after} | {r.note}")
+    # LS80
+    try:
+        ok_any = True
+        changed_any |= update_one(ls80_ticker, LS80_FILE)
+    except Exception as e:
+        print(f"ERRORE LS80 ({ls80_ticker}): {e}")
 
-    # Always exit 0 so scheduled job doesn't become a graveyard of failures.
+    # GOLD
+    try:
+        ok_any = True
+        changed_any |= update_one(gold_ticker, GOLD_FILE)
+    except Exception as e:
+        print(f"ERRORE GOLD ({gold_ticker}): {e}")
+
+    if not ok_any:
+        return 1
+
+    # se non cambia nulla non è un errore: magari mercato chiuso
+    print("\nDONE.")
+    print("Changed:", changed_any)
     return 0
 
 
