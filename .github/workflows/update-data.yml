@@ -1,9 +1,9 @@
 name: Aggiornamento automatico dati Gloob
 
 on:
-  workflow_dispatch:
- schedule:
-  - cron: "45 21 * * 1-5"  # ogni notte dopo chiusura mercati
+  workflow_dispatch: {}
+  schedule:
+    - cron: "45 21 * * 1-5"  # Lun-Ven 21:45 UTC (sera/notte Italia)
 
 permissions:
   contents: write
@@ -31,12 +31,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy yfinance requests
 
-      - name: Update CSV data (with retry)
-        env:
-          LS80_TICKER: VNGA80.MI
-          GOLD_TICKER: GLD
-          YF_MAX_RETRIES: "6"
-          YF_BASE_SLEEP: "10"
+      - name: Update CSV data
         run: |
           python update_data.py
 
