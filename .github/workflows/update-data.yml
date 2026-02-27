@@ -3,7 +3,7 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "45 21 * * 1-5"  # Lun-Ven 21:45 UTC (sera/notte Italia)
+    - cron: "45 21 * * 1-5"  # ogni notte dopo chiusura mercati (UTC)
 
 permissions:
   contents: write
@@ -15,8 +15,9 @@ concurrency:
 jobs:
   update-data:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -31,18 +32,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy yfinance requests
 
-      - name: Update CSV data
+      - name: Run update script
         run: |
           python update_data.py
 
-      - name: Commit & push if changed
+      - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/*.csv
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "Nessun aggiornamento dati"
             exit 0
           fi
-          git commit -m "Auto-update data (ls80/gold)"
+          git commit -m "Auto-update dati Gloob (ls80/gold)"
           git push
