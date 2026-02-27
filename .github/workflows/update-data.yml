@@ -2,8 +2,8 @@ name: Aggiornamento automatico dati Gloob
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "15 18 * * 1-5"  # Lun-Ven 18:15 UTC
+ schedule:
+  - cron: "45 21 * * 1-5"  # ogni notte dopo chiusura mercati
 
 permissions:
   contents: write
