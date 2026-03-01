@@ -143,7 +143,6 @@
             <button id="btn_update" class="btn">Aggiorna</button>
           </div>
 
-          <!-- tasto PDF già presente -->
           <div class="ctrl">
             <button id="btn_pdf" class="btn">PDF</button>
           </div>
@@ -169,12 +168,10 @@
         <canvas id="chart"></canvas>
       </div>
 
-      <!-- scritta sotto grafico -->
       <div class="muted" style="margin-top:8px;">
         <span id="data_updated">Dati aggiornati al —</span>
       </div>
 
-      <!-- SECONDA PARTE -->
       <div class="card">
         <b>Messaggio chiave:</b><br />
         La differenza non è indovinare il mercato.<br />
@@ -188,13 +185,9 @@
           <li>
             Investi nei due strumenti attraverso la tua banca con “execution only”.
             <span class="inlineBtns noPrint">
-              <button id="btn_execution" class="btn" type="button"
-                title="Esempio di richiesta alla banca in modalità execution only">
-                Execution only
-              </button>
-
-              <!-- ✅ URL CONFERMATO -->
-              <a id="btn_faxsimile" class="btn" href="/faxsimile_execution_only.pdf"
+              <!-- ✅ solo i due pulsanti richiesti -->
+              <a id="btn_faxsimile" class="btn"
+                 href="/faxsimile_execution_only.pdf"
                  target="_blank" rel="noopener noreferrer"
                  title="Apri il facsimile stampabile">
                 Faxsimile PDF
@@ -216,7 +209,6 @@
       </div>
 
       <div class="grid2">
-        <!-- DOMANDE LIBERE -->
         <div class="card noPrint">
           <h2>Domande libere</h2>
           <p class="muted">
@@ -240,7 +232,6 @@
           </p>
         </div>
 
-        <!-- FAQ -->
         <div class="card">
           <h2>FAQ (passa il mouse)</h2>
           <p class="muted">Su mobile: tocca la domanda per vedere la risposta.</p>
@@ -345,7 +336,6 @@
         </div>
 
         <div class="consGrid">
-          <!-- Consulente 1 -->
           <div class="consCard">
             <p class="consName"><b>Nome Cognome</b></p>
             <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
@@ -357,7 +347,6 @@
             </div>
           </div>
 
-          <!-- Consulente 2 -->
           <div class="consCard">
             <p class="consName"><b>Nome Cognome</b></p>
             <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
@@ -369,7 +358,6 @@
             </div>
           </div>
 
-          <!-- Consulente 3 -->
           <div class="consCard">
             <p class="consName"><b>Nome Cognome</b></p>
             <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
@@ -392,7 +380,7 @@
 
     <script src="/static/app.js"></script>
 
-    <!-- ✅ JS: popup consulenti + esempio execution only -->
+    <!-- ✅ JS: popup consulenti -->
     <script>
       (function () {
         const btnCons = document.getElementById("btn_consulenti");
@@ -420,20 +408,6 @@
         document.addEventListener("keydown", function (e) {
           if (e.key === "Escape") closeModal();
         });
-
-        // Execution only: esempio rapido (popup semplice)
-        const btnExec = document.getElementById("btn_execution");
-        if (btnExec) {
-          btnExec.addEventListener("click", function () {
-            alert(
-              "Esempio (execution only):\n\n" +
-              "Gentile Banca,\n" +
-              "con la presente richiedo l’esecuzione dell’ordine di acquisto dei seguenti strumenti in modalità 'execution only',\n" +
-              "senza consulenza né raccomandazioni personalizzate.\n\n" +
-              "Cordiali saluti"
-            );
-          });
-        }
       })();
     </script>
   </body>
