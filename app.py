@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file  # ✅ aggiunto send_file
 
 # OpenAI SDK 1.x
 try:
@@ -345,6 +345,69 @@ def home():
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "time_utc": _now_iso()})
+
+
+# ----------------------------
+# ✅ Faxsimile PDF (execution only)
+# ----------------------------
+@app.get("/faxsimile_execution_only.pdf")
+def faxsimile_execution_only_pdf():
+    """
+    Serve il PDF del facsimile.
+
+    - Se esiste: /static/faxsimile_execution_only.pdf → lo serve.
+    - Altrimenti genera un PDF semplice al volo (fallback), così niente 404.
+    """
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    static_pdf = BASE_DIR / "static" / "faxsimile_execution_only.pdf"
+    if static_pdf.exists():
+        return send_file(static_pdf, mimetype="application/pdf")
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    y = height - 70
+    lines = [
+        "FACSIMILE — Richiesta ordine in modalità 'execution only'",
+        "",
+        "Spett.le [BANCA]",
+        "",
+        "Oggetto: Richiesta esecuzione ordine in modalità 'execution only'",
+        "",
+        "Con la presente richiedo l’esecuzione dell’ordine di acquisto dei seguenti strumenti",
+        "in modalità 'execution only', senza consulenza né raccomandazioni personalizzate.",
+        "",
+        "Strumento 1: [INSERIRE ISIN / Ticker]   Quantità/Importo: [____]",
+        "Strumento 2: [INSERIRE ISIN / Ticker]   Quantità/Importo: [____]",
+        "",
+        "Dichiaro di aver compreso che l’operazione potrebbe non essere coerente con il mio profilo",
+        "MIFID e che la banca si limita alla sola esecuzione dell’ordine.",
+        "",
+        "Data: ____/____/______",
+        "Firma: __________________________",
+    ]
+
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(60, y, lines[0])
+    y -= 28
+
+    c.setFont("Helvetica", 11)
+    for line in lines[1:]:
+        c.drawString(60, y, line)
+        y -= 16
+        if y < 70:
+            c.showPage()
+            c.setFont("Helvetica", 11)
+            y = height - 70
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return send_file(buf, mimetype="application/pdf", download_name="faxsimile_execution_only.pdf")
 
 
 # ----------------------------
