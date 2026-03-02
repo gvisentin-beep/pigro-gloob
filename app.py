@@ -41,8 +41,8 @@ GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
-# Firma build: controllala da /api/diag
-BUILD_ID = os.getenv("BUILD_ID", "2026-02-26_restore_plus_force_update_v2").strip()
+# ✅ Firma build: controllala da /api/diag o /api/build_id
+BUILD_ID = os.getenv("BUILD_ID", "2026-03-02_rigorous_A_autodeployhook_v1").strip()
 
 
 # ----------------------------
@@ -323,9 +323,6 @@ def _update_one_asset(yf, ticker: str, file_path: Path) -> Dict[str, Any]:
 
 
 def _require_token() -> Optional[Tuple[Any, int]]:
-    """
-    Se UPDATE_TOKEN è impostato su Render, richiediamo ?token=... su endpoint sensibili.
-    """
     if not UPDATE_TOKEN:
         return None
     token = (request.args.get("token") or "").strip()
@@ -347,17 +344,17 @@ def health():
     return jsonify({"ok": True, "time_utc": _now_iso()})
 
 
+# ✅ endpoint leggero per verificare subito il deploy
+@app.get("/api/build_id")
+def api_build_id():
+    return jsonify({"ok": True, "build_id": BUILD_ID, "time_utc": _now_iso()})
+
+
 # ----------------------------
 # ✅ Faxsimile PDF (execution only)
 # ----------------------------
 @app.get("/faxsimile_execution_only.pdf")
 def faxsimile_execution_only_pdf():
-    """
-    Serve il PDF del facsimile.
-
-    - Se esiste: /static/faxsimile_execution_only.pdf → lo serve.
-    - Altrimenti genera un PDF semplice al volo (fallback), così niente 404.
-    """
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -488,7 +485,7 @@ def api_diag():
 
 
 # ----------------------------
-# API: compute (grafico + metriche)
+# API: compute (grafico + metriche) — modalità A (rigoroso)
 # ----------------------------
 @app.get("/api/compute")
 def api_compute():
@@ -513,6 +510,7 @@ def api_compute():
         ls = _read_price_csv(LS80_FILE)
         gd = _read_price_csv(GOLD_FILE)
 
+        # ✅ A: rigoroso → solo date comuni
         df = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
         df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
 
@@ -544,6 +542,7 @@ def api_compute():
             "final_portfolio": final_value,
             "final_years": years_period,
             "weights": {"gold": w_gold, "ls80": w_ls80, "equity": az, "bond": ob},
+            # ✅ utile solo per debug; lato pagina puoi non mostrarla
             "last_data_date": str(dates.iloc[-1].date()),
         }
 
@@ -642,13 +641,10 @@ def api_update_data():
 
 
 # ----------------------------
-# ✅ API: force update (token) - ora esiste e non dà più 404
+# ✅ API: force update (token)
 # ----------------------------
 @app.get("/api/force_update")
 def api_force_update():
-    """
-    Forza l'update e poi rilegge i file per mostrare la data effettiva scritta su disco.
-    """
     err = _require_token()
     if err is not None:
         return err
@@ -672,9 +668,7 @@ def api_force_update():
         except Exception as e:
             after["gold_last_date_file_error"] = f"{type(e).__name__}: {e}"
 
-        return jsonify(
-            {"ok": True, "ls80": res_ls, "gold": res_gd, "after_file": after, "time_utc": _now_iso()}
-        )
+        return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "after_file": after, "time_utc": _now_iso()})
     except Exception as e:
         return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
 
