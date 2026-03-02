@@ -3,7 +3,7 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "45 21 * * 1-5"  # ogni notte dopo chiusura mercati (UTC)
+    - cron: "45 21 * * 1-5"  # 22:45 ora italiana circa (UTC)
 
 permissions:
   contents: write
@@ -36,6 +36,13 @@ jobs:
         run: |
           python update_data.py
 
+      - name: Show last dates (diagnostica)
+        run: |
+          echo "LS80 last row:"
+          tail -n 3 data/ls80.csv || true
+          echo "GOLD last row:"
+          tail -n 3 data/gold.csv || true
+
       - name: Commit and push if data changed
         run: |
           git config user.name "github-actions[bot]"
@@ -47,3 +54,10 @@ jobs:
           fi
           git commit -m "Auto-update dati Gloob (ls80/gold)"
           git push
+
+      - name: Trigger Render Deploy (forza aggiornamento sito)
+        if: success()
+        run: |
+          curl -X POST "$RENDER_DEPLOY_HOOK"
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
