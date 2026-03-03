@@ -33,18 +33,14 @@ jobs:
           pip install pandas numpy yfinance requests
 
       - name: Run update script
-        env:
-          # ✅ stessi ticker del Render (se li imposti come repo variables/secrets è perfetto)
-          LS80_TICKER: ${{ vars.LS80_TICKER }}
-          GOLD_TICKER: ${{ vars.GOLD_TICKER }}
         run: |
           python update_data.py
 
-      - name: Debug tail CSV
+      - name: Show last rows (diagnostica)
         run: |
-          echo "---- data/ls80.csv (tail) ----"
+          echo "LS80 last rows:"
           tail -n 5 data/ls80.csv || true
-          echo "---- data/gold.csv (tail) ----"
+          echo "GOLD last rows:"
           tail -n 5 data/gold.csv || true
 
       - name: Commit and push if data changed
@@ -60,7 +56,14 @@ jobs:
           git pull --rebase
           git push
 
-      - name: Trigger Render deploy (optional)
-        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
+      - name: Trigger Render Deploy Hook (non bloccare se fallisce)
+        continue-on-error: true
         run: |
-          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          if [ -z "${RENDER_DEPLOY_HOOK}" ]; then
+            echo "RENDER_DEPLOY_HOOK non presente: skip"
+            exit 0
+          fi
+          echo "Chiamo Deploy Hook Render..."
+          curl -sS -X POST "${RENDER_DEPLOY_HOOK}" || true
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
