@@ -33,15 +33,19 @@ jobs:
           pip install pandas numpy yfinance requests
 
       - name: Run update script
+        env:
+          # ✅ stessi ticker del Render (se li imposti come repo variables/secrets è perfetto)
+          LS80_TICKER: ${{ vars.LS80_TICKER }}
+          GOLD_TICKER: ${{ vars.GOLD_TICKER }}
         run: |
           python update_data.py
 
-      - name: Show last rows (diagnostica)
+      - name: Debug tail CSV
         run: |
-          echo "LS80 last rows:"
-          tail -n 3 data/ls80.csv || true
-          echo "GOLD last rows:"
-          tail -n 3 data/gold.csv || true
+          echo "---- data/ls80.csv (tail) ----"
+          tail -n 5 data/ls80.csv || true
+          echo "---- data/gold.csv (tail) ----"
+          tail -n 5 data/gold.csv || true
 
       - name: Commit and push if data changed
         run: |
@@ -53,10 +57,10 @@ jobs:
             exit 0
           fi
           git commit -m "Auto-update dati Gloob (ls80/gold)"
+          git pull --rebase
           git push
 
-      - name: Trigger Render Deploy Hook (forza aggiornamento sito)
+      - name: Trigger Render deploy (optional)
+        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
         run: |
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
