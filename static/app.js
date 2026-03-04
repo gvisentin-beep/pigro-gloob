@@ -17,127 +17,117 @@ function num0(x) {
 }
 
 function pct(x) {
-  if (x === null || x === undefined || Number.isNaN(x)) return "—";
-  return (Number(x) * 100).toFixed(1).replace(".", ",") + "%";
+  if (x === null || x === undefined || isNaN(x)) return "—";
+  return (x * 100).toFixed(1) + "%";
 }
 
 function years1(x) {
-  if (x === null || x === undefined || Number.isNaN(x)) return "—";
+  if (x === null || x === undefined || isNaN(x)) return "—";
   return Number(x).toFixed(1).replace(".", ",");
 }
 
-function clamp(v, a, b) {
-  return Math.max(a, Math.min(b, v));
-}
+/* -----------------------------
+   Composition: slider is GOLD %
+   LS80 split: 80% equity, 20% bond
+----------------------------- */
+function computeComposition(goldPct) {
+  const w_gold = Number(goldPct);
+  const w_ls80 = 100 - w_gold;
+  const equity = 0.8 * w_ls80;
+  const bond = 0.2 * w_ls80;
 
-function parseCapitalInput(str) {
-  const s = String(str || "").trim().replace(/\./g, "").replace(",", ".");
-  const v = Number(s);
-  return Number.isFinite(v) && v > 0 ? v : 10000;
+  return {
+    w_gold,
+    w_ls80,
+    equity: Math.round(equity),
+    bond: Math.round(bond),
+  };
 }
 
 /* -----------------------------
    UI helpers
 ----------------------------- */
-function setAskStatus(msg, kind) {
-  const el = document.getElementById("ask_status");
-  if (!el) return;
-  el.textContent = msg || "";
-  el.className = "muted" + (kind === "err" ? " err" : "");
+function setAskStatus(msg, kind = "info") {
+  const box = document.getElementById("ask_status");
+  if (!box) return;
+
+  box.classList.remove("ok", "err", "info");
+  box.classList.add(kind);
+  box.textContent = msg || "";
+  box.style.display = msg ? "block" : "none";
 }
 
-function updateSliderLabelAndComposition(goldPct) {
-  const gold = clamp(goldPct, 0, 50) / 100;
-  const ls80 = 1 - gold;
-
-  const goldValEl = document.getElementById("gold_val");
-  if (goldValEl) goldValEl.textContent = `${Math.round(gold * 100)}%`;
-
-  const line2 = document.getElementById("metrics_line2");
-  if (line2) {
-    const az = ls80 * 0.80;
-    const ob = ls80 * 0.20;
-    line2.textContent =
-      `Composizione: Azionario ${Math.round(az * 100)}% | ` +
-      `Obbligazionario ${Math.round(ob * 100)}% | ` +
-      `Oro ${Math.round(gold * 100)}%`;
+function setRemaining(remaining, limit) {
+  const el = document.getElementById("ask_remaining");
+  if (!el) return;
+  if (remaining === null || remaining === undefined || limit === null || limit === undefined) {
+    el.textContent = "";
+    return;
   }
+  el.textContent = `Domande rimanenti oggi: ${remaining}/${limit}`;
+}
 
-  return { w_ls80: ls80, w_gold: gold };
+/**
+ * Normalizza date per Chart.js time scale.
+ * Supporta:
+ * - "YYYY-MM-DD"
+ * - "DD/MM/YYYY"
+ * - casi sporchi tipo "21/01/2026,39.37"
+ */
+function normalizeDateToISO(s) {
+  if (!s) return null;
+  let x = String(s).trim();
+
+  x = x.split(",")[0].trim();
+  x = x.split(";")[0].trim();
+  x = x.split(" ")[0].trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(x)) return x;
+
+  const m = x.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+
+  const first10 = x.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(first10)) return first10;
+
+  const m2 = first10.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+
+  return null;
 }
 
 function getCapitalValue() {
-  const el = document.getElementById("capital_input");
-  return parseCapitalInput(el ? el.value : "10000");
+  const el = document.getElementById("initial");
+  if (!el) return 10000;
+
+  const raw = (el.value || "")
+    .toString()
+    .replace(/\./g, "")
+    .replace(/[^\d]/g, "");
+  const n = Number(raw) || 10000;
+  return n > 0 ? n : 10000;
 }
 
-/* -----------------------------
-   Chart
------------------------------ */
-function ensureChart() {
-  const canvas = document.getElementById("chart");
-  if (!canvas) return;
+function updateSliderLabelAndComposition(goldPct) {
+  const comp = computeComposition(goldPct);
 
-  const ctx = canvas.getContext("2d");
+  const goldVal = document.getElementById("w_gold_val");
+  if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
 
-  if (chart) {
-    chart.destroy();
-    chart = null;
+  const line2 = document.getElementById("metrics_line2");
+  if (line2) {
+    line2.textContent =
+      `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
   }
 
-  chart = new Chart(ctx, {
-    type: "line",
-    data: {
-      datasets: [
-        {
-          label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
-          data: [],
-          borderWidth: 2,
-          tension: 0.15,
-          pointRadius: 0,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        // ✅ NIENTE DATE / TOOLTIP
-        tooltip: { enabled: false },
-        legend: { display: true },
-      },
-      scales: {
-        x: {
-          // ✅ NASCONDI COMPLETAMENTE ASSE X (DATE)
-          display: false,
-          type: "time",
-          time: {
-            unit: "year",
-            tooltipFormat: "dd/MM/yyyy",
-            displayFormats: { year: "yyyy" },
-          },
-          ticks: {
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 12,
-          },
-        },
-        y: {
-          ticks: {
-            callback: (v) => `${num0(v)} €`,
-          },
-        },
-      },
-    },
-  });
+  return comp;
 }
 
 /* -----------------------------
-   Compute + render
+   Data load + chart
 ----------------------------- */
-async function refreshAll() {
-  const slider = document.getElementById("gold_slider");
+async function loadData() {
+  const slider = document.getElementById("w_gold");
   const goldPct = Number(slider ? slider.value : 0);
 
   const capital = getCapitalValue();
@@ -170,6 +160,7 @@ async function refreshAll() {
 
   const m = data.metrics || {};
 
+  // Linea 1 e 3 (linea 2 è già aggiornata in updateSliderLabelAndComposition)
   const line1 = document.getElementById("metrics_line1");
   const line3 = document.getElementById("metrics_line3");
 
@@ -183,37 +174,146 @@ async function refreshAll() {
     line3.textContent = `Raddoppio del portafoglio in anni: ${years1(m.doubling_years_portfolio)}`;
   }
 
+  // Finali (sulla riga in alto)
   const finalValue = document.getElementById("final_value");
   const finalYears = document.getElementById("final_years");
   if (finalValue) finalValue.textContent = euro(m.final_portfolio);
   if (finalYears) finalYears.textContent = years1(m.final_years);
 
+  // Serie per chart
   const dates = Array.isArray(data.dates) ? data.dates : [];
   const values = Array.isArray(data.portfolio) ? data.portfolio : [];
 
   const points = [];
-  for (let i = 0; i < Math.min(dates.length, values.length); i++) {
-    points.push({ x: dates[i], y: values[i] });
+  const n = Math.min(dates.length, values.length);
+  for (let i = 0; i < n; i++) {
+    const iso = normalizeDateToISO(dates[i]);
+    if (!iso) continue;
+    points.push({ x: iso, y: Number(values[i]) });
   }
 
-  ensureChart();
-  if (chart) {
-    chart.data.datasets[0].data = points;
-    chart.update();
+  if (points.length < 2) {
+    setAskStatus(
+      "Errore dati: non riesco a leggere le date. Controlla i CSV (Date: YYYY-MM-DD o DD/MM/YYYY).",
+      "err"
+    );
+    return;
+  }
+
+  // Chart render
+  try {
+    const canvas = document.getElementById("chart");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        datasets: [
+          {
+            label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
+            data: points,
+            borderWidth: 2,
+            tension: 0.15,
+            pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (context) => `${context.dataset.label}: ${euro(context.parsed.y)}`,
+            },
+          },
+          legend: { display: true },
+        },
+        scales: {
+          x: {
+            type: "time",
+            time: {
+              // ✅ UNA SOLA ETICHETTA PER ANNO
+              unit: "year",
+              tooltipFormat: "dd/MM/yyyy",
+              displayFormats: { year: "yyyy" },
+            },
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              // facoltativo: se hai 50+ anni di storico, evita affollamento
+              maxTicksLimit: 40,
+            },
+          },
+          y: {
+            ticks: { callback: (value) => euro(value) },
+          },
+        },
+      },
+    });
+
+    // se tutto ok, togli eventuali errori a schermo
+    setAskStatus("", "info");
+  } catch (e) {
+    console.error(e);
+    setAskStatus(`Errore grafico: ${String(e).slice(0, 240)}`, "err");
   }
 }
 
 /* -----------------------------
-   PDF + Faxsimile
+   Capital field formatting
 ----------------------------- */
-function setupButtons() {
-  const btnPdf = document.getElementById("btn_pdf");
-  if (btnPdf) btnPdf.addEventListener("click", () => window.print());
+function formatCapitalField() {
+  const el = document.getElementById("initial");
+  if (!el) return;
 
-  const btnFax = document.getElementById("btn_faxsimile");
-  if (btnFax) {
-    btnFax.addEventListener("click", () => {
-      window.open("/faxsimile_execution_only.pdf", "_blank", "noopener,noreferrer");
+  el.addEventListener("blur", () => {
+    const raw = (el.value || "").toString().replace(/\./g, "").replace(/[^\d]/g, "");
+    const n = Number(raw || "0");
+    el.value = n ? num0(n) : "10.000";
+  });
+
+  // INVIO nel campo capitale -> aggiorna
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadData();
+    }
+  });
+}
+
+/* -----------------------------
+   Controls wiring
+----------------------------- */
+function wireControls() {
+  const btn = document.getElementById("btn_update");
+  if (btn) {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      loadData();
+    });
+  }
+
+  const slider = document.getElementById("w_gold");
+  if (slider) {
+    let t = null;
+
+    // mentre trascini: aggiorna label + composizione; dopo 250ms ricalcola
+    slider.addEventListener("input", () => {
+      const goldPct = Number(slider.value || 0);
+      updateSliderLabelAndComposition(goldPct);
+
+      if (t) clearTimeout(t);
+      t = setTimeout(() => loadData(), 250);
+    });
+
+    // quando rilasci: ricalcola subito
+    slider.addEventListener("change", () => {
+      loadData();
     });
   }
 }
@@ -222,40 +322,66 @@ function setupButtons() {
    Assistant
 ----------------------------- */
 async function askAssistant() {
-  const input = document.getElementById("ask_input");
+  const q = (document.getElementById("ask_question").value || "").trim();
   const btn = document.getElementById("ask_btn");
-  const out = document.getElementById("ask_answer");
-  const remaining = document.getElementById("ask_remaining");
+  const ans = document.getElementById("ask_answer");
 
-  const question = (input ? input.value : "").trim();
-  if (!question) return;
+  if (!q) {
+    setAskStatus("Scrivi una domanda.", "err");
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  setAskStatus("Sto pensando…", "info");
 
   try {
-    if (btn) btn.disabled = true;
-    setAskStatus("Sto pensando…");
-
-    const res = await fetch("/api/ask", {
+    const res = await fetch(`/api/ask?t=${Date.now()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      cache: "no-store",
+      body: JSON.stringify({ question: q }),
     });
 
-    const data = await res.json().catch(() => ({}));
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    const data = ct.includes("application/json")
+      ? await res.json()
+      : { ok: false, error: await res.text() };
+
     if (!res.ok || !data.ok) {
-      throw new Error(data.error || `Errore (${res.status})`);
+      const msg = (data.error || `Errore server (${res.status})`).toString();
+      setAskStatus(msg.slice(0, 240), "err");
+      if (ans) ans.textContent = "";
+      if ("remaining" in data && "limit" in data) setRemaining(data.remaining, data.limit);
+      return;
     }
 
-    if (out) out.textContent = data.answer || "";
-    setAskStatus("");
-
-    if (remaining && typeof data.remaining === "number" && typeof data.limit === "number") {
-      remaining.textContent = `Domande rimanenti oggi: ${data.remaining}/${data.limit}`;
-    }
+    if (ans) ans.textContent = data.answer || "";
+    setAskStatus("", "ok");
+    setRemaining(data.remaining, data.limit);
   } catch (e) {
-    console.error(e);
-    setAskStatus(String(e).slice(0, 240), "err");
+    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+function wireAssistant() {
+  const btn = document.getElementById("ask_btn");
+  if (btn) {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      askAssistant();
+    });
+  }
+
+  const ta = document.getElementById("ask_question");
+  if (ta) {
+    ta.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        askAssistant();
+      }
+    });
   }
 }
 
@@ -263,37 +389,12 @@ async function askAssistant() {
    Init
 ----------------------------- */
 function init() {
-  const slider = document.getElementById("gold_slider");
-  const cap = document.getElementById("capital_input");
-  const btnUpdate = document.getElementById("btn_update");
-  const askBtn = document.getElementById("ask_btn");
-  const askInput = document.getElementById("ask_input");
+  formatCapitalField();
+  wireControls();
+  wireAssistant();
 
-  if (slider) {
-    updateSliderLabelAndComposition(Number(slider.value));
-    slider.addEventListener("input", () => updateSliderLabelAndComposition(Number(slider.value)));
-    slider.addEventListener("change", refreshAll);
-  }
-
-  if (cap) {
-    cap.addEventListener("change", refreshAll);
-    cap.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") refreshAll();
-    });
-  }
-
-  if (btnUpdate) btnUpdate.addEventListener("click", refreshAll);
-
-  setupButtons();
-
-  if (askBtn) askBtn.addEventListener("click", askAssistant);
-  if (askInput) {
-    askInput.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) askAssistant();
-    });
-  }
-
-  refreshAll();
+  // primo render
+  loadData();
 }
 
-document.addEventListener("DOMContentLoaded", init);
+window.addEventListener("DOMContentLoaded", init);
