@@ -169,7 +169,10 @@
         <canvas id="chart"></canvas>
       </div>
 
-      <!-- ✅ RIMOSSO: "Dati aggiornati al ..." (nessuna data in pagina) -->
+      <!-- scritta sotto grafico -->
+      <div class="muted" style="margin-top:8px;">
+        <span id="data_updated">Dati aggiornati al —</span>
+      </div>
 
       <!-- SECONDA PARTE -->
       <div class="card">
@@ -184,16 +187,20 @@
           <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
           <li>
             Investi nei due strumenti attraverso la tua banca con “execution only”.
+            <!-- ✅ RIPRISTINO: i 2 pulsanti mancanti + consulenti -->
             <span class="inlineBtns noPrint">
+              <!-- Execution only: qui lasciamo un bottone "informativo" -->
               <button id="btn_execution" class="btn" type="button" title="Esempio di richiesta alla banca in modalità execution only">
                 Execution only
               </button>
 
+              <!-- ⚠️ Faxsimile PDF: se il tuo link è diverso, cambia SOLO l'href qui sotto -->
               <a id="btn_faxsimile" class="btn" href="/faxsimile_execution_only.pdf" target="_blank" rel="noopener noreferrer"
                  title="Apri il facsimile stampabile">
                 Faxsimile PDF
               </a>
 
+              <!-- Consulenti -->
               <button id="btn_consulenti" class="btn" type="button" title="Consulenti indipendenti verificabili su OCF">
                 Richiedi Consulente
               </button>
@@ -203,6 +210,7 @@
           <li>A dicembre ribilancia ai pesi originali.</li>
         </ol>
 
+        <!-- piccola nota trasparenza -->
         <p class="muted" style="margin-top:10px;">
           Nota: Gloob fornisce solo informazione e analisi generica; non è consulenza finanziaria personalizzata.
         </p>
@@ -280,65 +288,112 @@
         </div>
       </div>
 
-      <!-- MODAL consulenti -->
-      <div id="consModal" class="modalOverlay noPrint" aria-hidden="true">
-        <div class="modalBox" role="dialog" aria-modal="true" aria-label="Consulenti fee-only (OCF)">
-          <div class="modalTop">
-            <div>
-              <h2>Consulenti indipendenti (fee-only) — verificabili su OCF</h2>
-              <div class="muted">
-                Gloob fornisce solo informazione/analisi generica. Per consulenza personalizzata puoi contattare un professionista esterno.
-              </div>
+      <!-- 📘 SEZIONE LIBRO - GLOOB PIGRO -->
+      <div class="card" style="text-align:center; margin-top: 32px;">
+        <h2 style="margin-bottom: 10px;">Per saperne di più</h2>
+
+        <p class="muted" style="max-width: 720px; margin: 0 auto 18px;">
+          La filosofia del “Metodo Pigro” si basa su semplicità, disciplina e diversificazione globale.
+          In questa pubblicazione viene spiegato in modo chiaro il funzionamento pratico della strategia
+          e la logica di lungo periodo del portafoglio Gloob Pigro.
+        </p>
+
+        <a
+          href="https://www.amazon.it/dp/B0GQM925QR/ref=sr"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display:inline-block; margin-bottom:12px;"
+        >
+          <img
+            src="https://m.media-amazon.com/images/I/41k6L1Q1z-L._SX331_BO1,204,203,200_.jpg"
+            alt="Il Vantaggio del Pigro - Libro"
+            style="width: 180px; height: auto; border-radius: 10px; box-shadow: 0 8px 22px rgba(0,0,0,0.18);"
+          />
+        </a>
+
+        <div class="muted" style="margin-bottom:18px; font-size: 13px; font-weight:700;">
+          Autore: Gottardo Visentin — Gloob Pigro
+        </div>
+
+        <a
+          href="https://www.amazon.it/dp/B0GQM925QR/ref=sr"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn"
+          style="font-size:18px; padding:14px 30px;"
+        >
+          📘 Per saperne di più su "Il Vantaggio del Pigro"
+        </a>
+
+        <p class="muted" style="margin-top:12px; font-size:12px;">
+          Link esterno Amazon – pubblicazione di approfondimento sulla filosofia di investimento del Metodo Pigro.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- ✅ MODAL: consulenti fee-only (OCF) -->
+    <div id="consModal" class="modalOverlay noPrint" aria-hidden="true">
+      <div class="modalBox" role="dialog" aria-modal="true" aria-label="Consulenti fee-only (OCF)">
+        <div class="modalTop">
+          <div>
+            <h2>Consulenti indipendenti (fee-only) — verificabili su OCF</h2>
+            <div class="muted">
+              Gloob fornisce solo informazione/analisi generica. Per consulenza personalizzata puoi contattare un professionista esterno.
             </div>
-            <button class="modalClose" id="consModalClose" aria-label="Chiudi">✕</button>
+          </div>
+          <button class="modalClose" id="consModalClose" aria-label="Chiudi">✕</button>
+        </div>
+
+        <div class="consGrid">
+          <!-- Consulente 1 -->
+          <div class="consCard">
+            <p class="consName"><b>Nome Cognome</b></p>
+            <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
+            <div class="consLinks">
+              Email: <a href="mailto:email@example.com">email@example.com</a><br />
+              Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
+              Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
+              Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
+            </div>
           </div>
 
-          <div class="consGrid">
-            <div class="consCard">
-              <p class="consName"><b>Nome Cognome</b></p>
-              <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
-              <div class="consLinks">
-                Email: <a href="mailto:email@example.com">email@example.com</a><br />
-                Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
-                Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
-                Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
-              </div>
-            </div>
-
-            <div class="consCard">
-              <p class="consName"><b>Nome Cognome</b></p>
-              <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
-              <div class="consLinks">
-                Email: <a href="mailto:email@example.com">email@example.com</a><br />
-                Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
-                Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
-                Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
-              </div>
-            </div>
-
-            <div class="consCard">
-              <p class="consName"><b>Nome Cognome</b></p>
-              <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
-              <div class="consLinks">
-                Email: <a href="mailto:email@example.com">email@example.com</a><br />
-                Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
-                Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
-                Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
-              </div>
+          <!-- Consulente 2 -->
+          <div class="consCard">
+            <p class="consName"><b>Nome Cognome</b></p>
+            <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
+            <div class="consLinks">
+              Email: <a href="mailto:email@example.com">email@example.com</a><br />
+              Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
+              Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
+              Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
             </div>
           </div>
 
-          <div class="modalNote">
-            <b>Trasparenza:</b> i consulenti elencati sono <u>soggetti terzi</u>. Gloob non fornisce consulenza finanziaria personalizzata,
-            non raccoglie dati per finalità di consulenza, e non percepisce compensi/commissioni per i contatti generati (salvo diversa indicazione esplicita).
-            Verifica sempre l’iscrizione e lo stato sul registro pubblico OCF.
+          <!-- Consulente 3 -->
+          <div class="consCard">
+            <p class="consName"><b>Nome Cognome</b></p>
+            <p class="consMeta">Consulente finanziario autonomo (fee-only)</p>
+            <div class="consLinks">
+              Email: <a href="mailto:email@example.com">email@example.com</a><br />
+              Tel: <a href="tel:+390000000000">+39 000 000 0000</a><br />
+              Sito: <a href="https://example.com" target="_blank" rel="noopener noreferrer">example.com</a><br />
+              Verifica OCF: <a href="https://www.organismocf.it" target="_blank" rel="noopener noreferrer">Registro OCF</a>
+            </div>
           </div>
+        </div>
+
+        <div class="modalNote">
+          <b>Trasparenza:</b> i consulenti elencati sono <u>soggetti terzi</u>. Gloob non fornisce consulenza finanziaria personalizzata,
+          non raccoglie dati per finalità di consulenza, e non percepisce compensi/commissioni per i contatti generati (salvo diversa indicazione esplicita).
+          Verifica sempre l’iscrizione e lo stato sul registro pubblico OCF.
         </div>
       </div>
     </div>
 
     <script src="/static/app.js"></script>
 
+    <!-- ✅ JS: popup consulenti + esempio execution only -->
     <script>
       (function () {
         const btnCons = document.getElementById("btn_consulenti");
@@ -367,6 +422,7 @@
           if (e.key === "Escape") closeModal();
         });
 
+        // Execution only: esempio rapido (popup semplice)
         const btnExec = document.getElementById("btn_execution");
         if (btnExec) {
           btnExec.addEventListener("click", function () {
