@@ -226,16 +226,18 @@ async function loadData() {
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          // ✅ niente date (tooltip disattivato)
-          tooltip: { enabled: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => `${context.dataset.label}: ${euro(context.parsed.y)}`,
+            },
+          },
           legend: { display: true },
         },
         scales: {
           x: {
-            // ✅ niente date (asse X nascosto)
-            display: false,
             type: "time",
             time: {
+              // ✅ UNA SOLA ETICHETTA PER ANNO
               unit: "year",
               tooltipFormat: "dd/MM/yyyy",
               displayFormats: { year: "yyyy" },
@@ -243,6 +245,7 @@ async function loadData() {
             ticks: {
               maxRotation: 0,
               autoSkip: true,
+              // facoltativo: se hai 50+ anni di storico, evita affollamento
               maxTicksLimit: 40,
             },
           },
@@ -253,6 +256,7 @@ async function loadData() {
       },
     });
 
+    // se tutto ok, togli eventuali errori a schermo
     setAskStatus("", "info");
   } catch (e) {
     console.error(e);
@@ -273,6 +277,7 @@ function formatCapitalField() {
     el.value = n ? num0(n) : "10.000";
   });
 
+  // INVIO nel campo capitale -> aggiorna
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -297,6 +302,7 @@ function wireControls() {
   if (slider) {
     let t = null;
 
+    // mentre trascini: aggiorna label + composizione; dopo 250ms ricalcola
     slider.addEventListener("input", () => {
       const goldPct = Number(slider.value || 0);
       updateSliderLabelAndComposition(goldPct);
@@ -305,17 +311,9 @@ function wireControls() {
       t = setTimeout(() => loadData(), 250);
     });
 
+    // quando rilasci: ricalcola subito
     slider.addEventListener("change", () => {
       loadData();
-    });
-  }
-
-  // PDF = stampa
-  const btnPdf = document.getElementById("btn_pdf");
-  if (btnPdf) {
-    btnPdf.addEventListener("click", (e) => {
-      e.preventDefault();
-      window.print();
     });
   }
 }
@@ -395,6 +393,7 @@ function init() {
   wireControls();
   wireAssistant();
 
+  // primo render
   loadData();
 }
 
