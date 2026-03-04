@@ -1,418 +1,275 @@
-let chart = null;
+(() => {
+  'use strict';
 
-/* -----------------------------
-   Format helpers
------------------------------ */
-function euro(x) {
-  return new Intl.NumberFormat("it-IT", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(Number(x));
-}
+  const $ = (id) => document.getElementById(id);
 
-function num0(x) {
-  return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Number(x));
-}
+  const elGold = $('w_gold');
+  const elGoldVal = $('w_gold_val');
+  const elInitial = $('initial');
+  const btnUpdate = $('btn_update');
 
-function pct(x) {
-  if (x === null || x === undefined || isNaN(x)) return "—";
-  return (x * 100).toFixed(1) + "%";
-}
+  const elFinalValue = $('final_value');
+  const elFinalYears = $('final_years');
 
-function years1(x) {
-  if (x === null || x === undefined || isNaN(x)) return "—";
-  return Number(x).toFixed(1).replace(".", ",");
-}
+  const m1 = $('metrics_line1');
+  const m2 = $('metrics_line2');
+  const m3 = $('metrics_line3');
 
-function formatITDateFromISO(iso) {
-  if (!iso) return "—";
-  // iso: YYYY-MM-DD
-  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return iso;
-  return `${m[3]}/${m[2]}/${m[1]}`;
-}
+  const btnPdf = $('btn_pdf');
+  const btnFax = $('btn_faxsimile');
 
-/* -----------------------------
-   Composition: slider is GOLD %
-   LS80 split: 80% equity, 20% bond
------------------------------ */
-function computeComposition(goldPct) {
-  const w_gold = Number(goldPct);
-  const w_ls80 = 100 - w_gold;
-  const equity = 0.8 * w_ls80;
-  const bond = 0.2 * w_ls80;
+  // Assistente
+  const askQ = $('ask_question');
+  const askBtn = $('ask_btn');
+  const askAns = $('ask_answer');
+  const askStatus = $('ask_status');
+  const askRemaining = $('ask_remaining');
 
-  return {
-    w_gold,
-    w_ls80,
-    equity: Math.round(equity),
-    bond: Math.round(bond),
-  };
-}
+  let chart;
 
-/* -----------------------------
-   UI helpers
------------------------------ */
-function setAskStatus(msg, kind = "info") {
-  const box = document.getElementById("ask_status");
-  if (!box) return;
-
-  box.classList.remove("ok", "err", "info");
-  box.classList.add(kind);
-  box.textContent = msg || "";
-  box.style.display = msg ? "block" : "none";
-}
-
-function setRemaining(remaining, limit) {
-  const el = document.getElementById("ask_remaining");
-  if (!el) return;
-  if (remaining === null || remaining === undefined || limit === null || limit === undefined) {
-    el.textContent = "";
-    return;
-  }
-  el.textContent = `Domande rimanenti oggi: ${remaining}/${limit}`;
-}
-
-/**
- * Normalizza date per Chart.js time scale.
- * Supporta:
- * - "YYYY-MM-DD"
- * - "DD/MM/YYYY"
- * - casi sporchi tipo "21/01/2026,39.37"
- */
-function normalizeDateToISO(s) {
-  if (!s) return null;
-  let x = String(s).trim();
-
-  x = x.split(",")[0].trim();
-  x = x.split(";")[0].trim();
-  x = x.split(" ")[0].trim();
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(x)) return x;
-
-  const m = x.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-
-  const first10 = x.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(first10)) return first10;
-
-  const m2 = first10.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
-
-  return null;
-}
-
-function getCapitalValue() {
-  const el = document.getElementById("initial");
-  if (!el) return 10000;
-
-  const raw = (el.value || "")
-    .toString()
-    .replace(/\./g, "")
-    .replace(/[^\d]/g, "");
-  const n = Number(raw) || 10000;
-  return n > 0 ? n : 10000;
-}
-
-function updateSliderLabelAndComposition(goldPct) {
-  const comp = computeComposition(goldPct);
-
-  const goldVal = document.getElementById("w_gold_val");
-  if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
-
-  const line2 = document.getElementById("metrics_line2");
-  if (line2) {
-    line2.textContent =
-      `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
+  function fmtEuro(n) {
+    try {
+      return new Intl.NumberFormat('it-IT', {
+        style: 'currency',
+        currency: 'EUR',
+        maximumFractionDigits: 0,
+      }).format(n);
+    } catch {
+      return `${Math.round(n)} €`;
+    }
   }
 
-  return comp;
-}
-
-function setDataUpdatedLabel(isoDate) {
-  const el = document.getElementById("data_updated");
-  if (!el) return;
-  el.textContent = `Dati aggiornati al ${formatITDateFromISO(isoDate)}`;
-}
-
-/* -----------------------------
-   Data load + chart
------------------------------ */
-async function loadData() {
-  const slider = document.getElementById("w_gold");
-  const goldPct = Number(slider ? slider.value : 0);
-
-  const capital = getCapitalValue();
-  const comp = updateSliderLabelAndComposition(goldPct);
-
-  const url =
-    `/api/compute?w_ls80=${encodeURIComponent(comp.w_ls80)}` +
-    `&w_gold=${encodeURIComponent(comp.w_gold)}` +
-    `&capital=${encodeURIComponent(capital)}` +
-    `&t=${Date.now()}`;
-
-  let res;
-  let data;
-
-  try {
-    res = await fetch(url, { cache: "no-store" });
-    const ct = (res.headers.get("content-type") || "").toLowerCase();
-    data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
-  } catch (e) {
-    console.error(e);
-    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
-    return;
+  function fmtPct(x) {
+    if (x === null || x === undefined || Number.isNaN(x)) return '—';
+    return (x * 100).toFixed(1).replace('.', ',') + '%';
   }
 
-  if (!res.ok || data.error) {
-    console.error(data.error || res.statusText);
-    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 240)}`, "err");
-    return;
+  function fmtNum(x, digits = 1) {
+    if (x === null || x === undefined || Number.isNaN(x)) return '—';
+    return Number(x).toFixed(digits).replace('.', ',');
   }
 
-  const m = data.metrics || {};
-
-  // ✅ scritta "Dati aggiornati al ..."
-  const lastDate = (data.data_info && data.data_info.updated_to) || m.last_data_date || null;
-  if (lastDate) setDataUpdatedLabel(lastDate);
-
-  // Linea 1 e 3 (linea 2 è già aggiornata in updateSliderLabelAndComposition)
-  const line1 = document.getElementById("metrics_line1");
-  const line3 = document.getElementById("metrics_line3");
-
-  if (line1) {
-    line1.textContent =
-      `Portafoglio (ETF Azion-Obblig + ETC Oro): ` +
-      `Rendimento annualizzato ${pct(m.cagr_portfolio)} | ` +
-      `Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
-  }
-  if (line3) {
-    line3.textContent = `Raddoppio del portafoglio in anni: ${years1(m.doubling_years_portfolio)}`;
+  function getGoldWeight() {
+    // slider 0-50 step 5 in %
+    const v = Number(elGold?.value ?? 20);
+    return Math.max(0, Math.min(50, v)) / 100;
   }
 
-  // Finali (sulla riga in alto)
-  const finalValue = document.getElementById("final_value");
-  const finalYears = document.getElementById("final_years");
-  if (finalValue) finalValue.textContent = euro(m.final_portfolio);
-  if (finalYears) finalYears.textContent = years1(m.final_years);
-
-  // Serie per chart
-  const dates = Array.isArray(data.dates) ? data.dates : [];
-  const values = Array.isArray(data.portfolio) ? data.portfolio : [];
-
-  const points = [];
-  const n = Math.min(dates.length, values.length);
-  for (let i = 0; i < n; i++) {
-    const iso = normalizeDateToISO(dates[i]);
-    if (!iso) continue;
-    points.push({ x: iso, y: Number(values[i]) });
+  function getCapital() {
+    const raw = (elInitial?.value || '')
+      .toString()
+      .replace(/\./g, '')
+      .replace(',', '.');
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v <= 0) return 10000;
+    return v;
   }
 
-  if (points.length < 2) {
-    setAskStatus(
-      "Errore dati: non riesco a leggere le date. Controlla i CSV (Date: YYYY-MM-DD o DD/MM/YYYY).",
-      "err"
-    );
-    return;
+  function setGoldLabel() {
+    if (!elGoldVal || !elGold) return;
+    elGoldVal.textContent = `${elGold.value}%`;
   }
 
-  // Chart render
-  try {
-    const canvas = document.getElementById("chart");
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (chart) chart.destroy();
+  function buildChart() {
+    const ctx = $('chart')?.getContext('2d');
+    if (!ctx) return;
 
     chart = new Chart(ctx, {
-      type: "line",
+      type: 'line',
       data: {
+        labels: [],
         datasets: [
           {
-            label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
-            data: points,
+            label: 'Portafoglio (ETF Azion-Obblig + ETC Oro)',
+            data: [],
             borderWidth: 2,
-            tension: 0.15,
             pointRadius: 0,
+            tension: 0.15,
           },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
+        parsing: false,
+        animation: false,
+        interaction: { mode: 'nearest', intersect: false },
         plugins: {
-          tooltip: {
-            callbacks: {
-              label: (context) => `${context.dataset.label}: ${euro(context.parsed.y)}`,
-            },
-          },
           legend: { display: true },
+          // ✅ Nessuna data neanche al passaggio del mouse
+          tooltip: { enabled: false },
         },
         scales: {
-          x: {
-            type: "time",
-            time: {
-              unit: "year",
-              tooltipFormat: "dd/MM/yyyy",
-              displayFormats: { year: "yyyy" },
-            },
-            ticks: {
-              maxRotation: 0,
-              autoSkip: true,
-              maxTicksLimit: 40,
-            },
-          },
+          // ✅ Nascondo completamente l'asse X (date)
+          x: { display: false },
           y: {
-            ticks: { callback: (value) => euro(value) },
+            ticks: {
+              callback: (val) => {
+                try {
+                  return new Intl.NumberFormat('it-IT').format(val) + ' €';
+                } catch {
+                  return val + ' €';
+                }
+              },
+            },
           },
         },
       },
     });
-
-    setAskStatus("", "info");
-  } catch (e) {
-    console.error(e);
-    setAskStatus(`Errore grafico: ${String(e).slice(0, 240)}`, "err");
   }
-}
 
-/* -----------------------------
-   Capital field formatting
------------------------------ */
-function formatCapitalField() {
-  const el = document.getElementById("initial");
-  if (!el) return;
+  async function fetchCompute() {
+    const wGold = getGoldWeight();
+    const capital = getCapital();
 
-  el.addEventListener("blur", () => {
-    const raw = (el.value || "").toString().replace(/\./g, "").replace(/[^\d]/g, "");
-    const n = Number(raw || "0");
-    el.value = n ? num0(n) : "10.000";
-  });
+    const url = `/api/compute?w_gold=${encodeURIComponent(
+      wGold
+    )}&capital=${encodeURIComponent(capital)}`;
 
-  el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      loadData();
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`Errore /api/compute (${res.status}): ${t}`);
     }
-  });
-}
-
-/* -----------------------------
-   Controls wiring
------------------------------ */
-function wireControls() {
-  const btn = document.getElementById("btn_update");
-  if (btn) {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      loadData();
-    });
+    return await res.json();
   }
 
-  // ✅ tasto PDF (stampa/salva in PDF)
-  const btnPdf = document.getElementById("btn_pdf");
-  if (btnPdf) {
-    btnPdf.addEventListener("click", (e) => {
-      e.preventDefault();
-      window.print();
-    });
-  }
+  function updateUI(payload) {
+    if (!payload || !payload.ok) return;
 
-  const slider = document.getElementById("w_gold");
-  if (slider) {
-    let t = null;
+    const dates = payload.dates || [];
+    const values = payload.portfolio || [];
+    const metrics = payload.metrics || {};
+    const comp = payload.composition || {};
 
-    slider.addEventListener("input", () => {
-      const goldPct = Number(slider.value || 0);
-      updateSliderLabelAndComposition(goldPct);
-
-      if (t) clearTimeout(t);
-      t = setTimeout(() => loadData(), 250);
-    });
-
-    slider.addEventListener("change", () => {
-      loadData();
-    });
-  }
-}
-
-/* -----------------------------
-   Assistant
------------------------------ */
-async function askAssistant() {
-  const q = (document.getElementById("ask_question").value || "").trim();
-  const btn = document.getElementById("ask_btn");
-  const ans = document.getElementById("ask_answer");
-
-  if (!q) {
-    setAskStatus("Scrivi una domanda.", "err");
-    return;
-  }
-
-  if (btn) btn.disabled = true;
-  setAskStatus("Sto pensando…", "info");
-
-  try {
-    const res = await fetch(`/api/ask?t=${Date.now()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ question: q }),
-    });
-
-    const ct = (res.headers.get("content-type") || "").toLowerCase();
-    const data = ct.includes("application/json")
-      ? await res.json()
-      : { ok: false, error: await res.text() };
-
-    if (!res.ok || !data.ok) {
-      const msg = (data.error || `Errore server (${res.status})`).toString();
-      setAskStatus(msg.slice(0, 240), "err");
-      if (ans) ans.textContent = "";
-      if ("remaining" in data && "limit" in data) setRemaining(data.remaining, data.limit);
-      return;
+    // ✅ Grafico: le date restano solo come labels interne, ma non vengono mai mostrate
+    if (chart) {
+      chart.data.labels = dates;
+      chart.data.datasets[0].data = values;
+      chart.update('none');
     }
 
-    if (ans) ans.textContent = data.answer || "";
-    setAskStatus("", "ok");
-    setRemaining(data.remaining, data.limit);
-  } catch (e) {
-    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
+    // Finale
+    if (elFinalValue)
+      elFinalValue.textContent = fmtEuro(
+        metrics.final_portfolio ??
+          (values.length ? values[values.length - 1] : 0)
+      );
+    if (elFinalYears) elFinalYears.textContent = fmtNum(metrics.final_years ?? null, 1);
 
-function wireAssistant() {
-  const btn = document.getElementById("ask_btn");
-  if (btn) {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      askAssistant();
-    });
+    // Metriche
+    const cagr = metrics.cagr_portfolio;
+    const maxdd = metrics.max_dd_portfolio;
+    const dbl = metrics.doubling_years_portfolio;
+
+    const az = comp.azionario ?? metrics.weights?.equity;
+    const ob = comp.obbligazionario ?? metrics.weights?.bond;
+    const oro = comp.oro ?? metrics.weights?.gold;
+
+    if (m1)
+      m1.innerHTML = `<b>Portafoglio (ETF Azion-Obblig + ETC Oro)</b>: Rendimento annualizzato <b>${fmtPct(
+        cagr
+      )}</b> | Max Ribasso nel periodo <b>${fmtPct(maxdd)}</b>`;
+    if (m2)
+      m2.textContent = `Composizione: Azionario ${(az * 100).toFixed(
+        0
+      )}% | Obbligazionario ${(ob * 100).toFixed(0)}% | Oro ${(oro * 100).toFixed(0)}%`;
+    if (m3)
+      m3.textContent = `Raddoppio del portafoglio in anni: ${fmtNum(dbl, 1)}`;
   }
 
-  const ta = document.getElementById("ask_question");
-  if (ta) {
-    ta.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        askAssistant();
+  async function refresh() {
+    try {
+      btnUpdate && (btnUpdate.disabled = true);
+      const payload = await fetchCompute();
+      updateUI(payload);
+    } catch (e) {
+      console.error(e);
+      if (m1) m1.textContent = 'Impossibile aggiornare i dati in questo momento.';
+    } finally {
+      btnUpdate && (btnUpdate.disabled = false);
+    }
+  }
+
+  async function ask() {
+    try {
+      const q = (askQ?.value || '').trim();
+      if (!q) return;
+
+      askBtn && (askBtn.disabled = true);
+      askStatus && (askStatus.textContent = 'Sto pensando…');
+      askAns && (askAns.textContent = '');
+
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok || !payload.ok) {
+        const msg = payload?.error || `Errore (${res.status})`;
+        askStatus && (askStatus.textContent = msg);
+        return;
       }
-    });
+
+      askAns && (askAns.textContent = payload.answer || '');
+      askStatus && (askStatus.textContent = '');
+      if (askRemaining) {
+        if (typeof payload.remaining === 'number' && typeof payload.limit === 'number') {
+          askRemaining.textContent = `Domande rimanenti oggi: ${payload.remaining}/${payload.limit}`;
+        } else {
+          askRemaining.textContent = '';
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      askStatus && (askStatus.textContent = 'Errore. Riprova.');
+    } finally {
+      askBtn && (askBtn.disabled = false);
+    }
   }
-}
 
-/* -----------------------------
-   Init
------------------------------ */
-function init() {
-  formatCapitalField();
-  wireControls();
-  wireAssistant();
-  loadData();
-}
+  function bind() {
+    if (elGold) {
+      elGold.addEventListener('input', () => setGoldLabel());
+      elGold.addEventListener('change', refresh);
+    }
 
-window.addEventListener("DOMContentLoaded", init);
+    if (elInitial) {
+      elInitial.addEventListener('change', refresh);
+      elInitial.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') refresh();
+      });
+    }
+
+    btnUpdate && btnUpdate.addEventListener('click', refresh);
+
+    // PDF: stampa browser
+    btnPdf && btnPdf.addEventListener('click', () => window.print());
+
+    // Faxsimile: apre il PDF generato dal server
+    btnFax &&
+      btnFax.addEventListener('click', () => {
+        window.open('/faxsimile_execution_only.pdf', '_blank', 'noopener,noreferrer');
+      });
+
+    askBtn && askBtn.addEventListener('click', ask);
+    askQ &&
+      askQ.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) ask();
+      });
+
+    // ✅ Se per caso esiste ancora un elemento data_updated, lo nascondiamo
+    const du = $('data_updated');
+    if (du) du.style.display = 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setGoldLabel();
+    buildChart();
+    bind();
+    refresh();
+  });
+})();
