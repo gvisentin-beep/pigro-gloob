@@ -42,7 +42,7 @@ GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
 # ✅ Firma build: controllala da /api/diag o /api/build_id
-BUILD_ID = os.getenv("BUILD_ID", "2026-03-02_rigorous_A_autodeployhook_v1").strip()
+BUILD_ID = os.getenv("BUILD_ID", "2026-03-04_outer_ffill_alignment_v1").strip()
 
 
 # ----------------------------
@@ -485,7 +485,8 @@ def api_diag():
 
 
 # ----------------------------
-# API: compute (grafico + metriche) — modalità A (rigoroso)
+# API: compute (grafico + metriche)
+# Allineamento "outer + ffill": evita blocco quando uno dei due ETF aggiorna 1 giorno dopo
 # ----------------------------
 @app.get("/api/compute")
 def api_compute():
@@ -510,15 +511,18 @@ def api_compute():
         ls = _read_price_csv(LS80_FILE)
         gd = _read_price_csv(GOLD_FILE)
 
-        # ✅ A: rigoroso → solo date comuni
-        df = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
+        # ✅ MODIFICA (3 righe): outer + forward-fill + dropna (allineamento robusto)
+        df = ls.merge(gd, on="date", how="outer", suffixes=("_ls80", "_gold")).sort_values("date")
+        df[["close_ls80", "close_gold"]] = df[["close_ls80", "close_gold"]].ffill()
+        df = df.dropna(subset=["close_ls80", "close_gold"])
+
         df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
 
         if len(df) < 20:
             return _json_error(
-                "Poche date in comune tra LS80 e Oro (merge troppo corto).",
+                "Poche date utili dopo allineamento dati tra LS80 e Oro.",
                 400,
-                rows_inner=int(len(df)),
+                rows=int(len(df)),
             )
 
         dates = df["date"]
@@ -542,7 +546,6 @@ def api_compute():
             "final_portfolio": final_value,
             "final_years": years_period,
             "weights": {"gold": w_gold, "ls80": w_ls80, "equity": az, "bond": ob},
-            # ✅ utile solo per debug; lato pagina puoi non mostrarla
             "last_data_date": str(dates.iloc[-1].date()),
         }
 
