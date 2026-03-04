@@ -15,18 +15,16 @@
   </head>
 
   <body>
-    <div class="page">
-      <header class="top">
-        <div class="brand">
-          <img class="logo" src="/static/logo.png" alt="Gloob" />
-          <div>
-            <div class="brand-title">Gloob</div>
-            <div class="brand-sub">Metodo Pigro</div>
-          </div>
+    <div class="container">
+      <header class="brand">
+        <img src="/static/logo.png" alt="Gloob" class="brand-logo" />
+        <div class="brand-text">
+          <div class="brand-title">Gloob</div>
+          <div class="brand-sub">Metodo Pigro</div>
         </div>
       </header>
 
-      <div class="card">
+      <div class="card intro">
         <div class="muted">Due strumenti globali. Nessuna previsione. Solo disciplina.</div>
         <ul class="bullets">
           <li><b>Pochi strumenti</b>: due mattoni globali</li>
@@ -37,83 +35,91 @@
 
         <div class="controls">
           <div class="control">
-            <label for="w_gold"><b>Oro (%)</b> (0–50, step 5) <span id="w_gold_val">20%</span></label>
-            <input id="w_gold" type="range" min="0" max="50" step="5" value="20" />
+            <label for="gold_slider"><b>Oro (%)</b> (0–50, step 5) <span id="gold_val">20%</span></label>
+            <input id="gold_slider" type="range" min="0" max="50" step="5" value="20" />
           </div>
 
           <div class="control">
-            <label for="initial"><b>Capitale (€)</b></label>
-            <input id="initial" type="text" value="10.000" />
+            <label for="capital_input"><b>Capitale (€)</b></label>
+            <input id="capital_input" type="text" value="10.000" />
           </div>
 
-          <button id="btn_update" class="btn primary">Aggiorna</button>
+          <button id="btn_update" class="btn btn-primary">Aggiorna</button>
 
-          <div class="right-tools">
-            <button id="btn_pdf" class="btn">PDF</button>
-          </div>
+          <button id="btn_pdf" class="btn btn-primary">PDF</button>
 
-          <div class="final-box">
-            <div class="final-label"><b>Finale:</b> <span id="final_value">—</span> <span class="muted">(in anni <span id="final_years">—</span>)</span></div>
+          <div class="finale">
+            <b>Finale:</b> <span id="final_value">—</span>
+            <span class="muted">(in anni <span id="final_years">—</span>)</span>
           </div>
         </div>
 
-        <div class="muted" style="margin-top: 10px;">
-          Il grafico include andamento e riepilogo.
-        </div>
+        <div class="muted">Il grafico include andamento e riepilogo.</div>
 
-        <div style="margin-top: 12px;">
-          <div id="metrics_line1" class="metrics-title"></div>
-          <div id="metrics_line2" class="metrics-line"></div>
-          <div id="metrics_line3" class="metrics-line"></div>
+        <div class="metrics">
+          <div id="metrics_line1" class="metrics-line1"></div>
+          <div id="metrics_line2" class="metrics-line2"></div>
+          <div id="metrics_line3" class="metrics-line3"></div>
         </div>
       </div>
 
-      <div class="card" id="chartWrap">
-        <canvas id="chart"></canvas>
+      <div class="card chart-card">
+        <div class="chart-wrap">
+          <canvas id="chart"></canvas>
+        </div>
       </div>
 
+      <!-- ✅ QUI HO TOLTO COMPLETAMENTE IL BLOCCO "Dati aggiornati al ..." -->
+
+      <!-- SECONDA PARTE -->
       <div class="card">
         <b>Messaggio chiave:</b><br />
         La differenza non è indovinare il mercato.<br />
         È avere una struttura semplice e ribilanciarla una volta l’anno.
       </div>
 
-      <div class="two-cols">
-        <div class="card">
-          <h3>Come applicarlo concretamente</h3>
-          <ol class="steps">
-            <li>Scegli le percentuali (es. 80% ETF Azion-Obblig → 20% Oro).</li>
-            <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
-            <li>Non intervenire durante l’anno.</li>
-            <li>A dicembre ribilancia ai pesi originali.</li>
-          </ol>
+      <div class="card" id="execution-only">
+        <h2>Come applicarlo concretamente</h2>
+        <ol>
+          <li>Scegli le percentuali (es. 80% ETF Azion-Obblig → 20% Oro).</li>
+          <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
+          <li>Non intervenire durante l’anno.</li>
+          <li>A dicembre ribilancia ai pesi originali.</li>
+        </ol>
 
-          <div class="buttons-row">
-            <a id="btn_execution" class="btn link" href="/static/execution_only.pdf" target="_blank" rel="noopener noreferrer">Execution only</a>
-            <button id="btn_faxsimile" class="btn">Faxsimile PDF</button>
-          </div>
-
-          <button id="btn_consulenti" class="btn ghost" style="margin-top:10px;">Richiedi Consulente</button>
+        <div class="btn-row">
+          <a class="btn btn-primary" href="/static/execution_only.pdf" target="_blank" rel="noopener noreferrer">Execution only</a>
+          <button id="btn_faxsimile" class="btn btn-primary">Faxsimile PDF</button>
         </div>
 
-        <div class="card">
-          <h3>Domande libere</h3>
-          <div class="muted">Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).</div>
-          <div class="muted">Tip: su PC invia con Ctrl+Invio.</div>
+        <button id="btn_consulenti" class="btn btn-secondary">Richiedi Consulente</button>
+      </div>
 
-          <textarea id="ask_question" rows="4" placeholder="Scrivi qui la tua domanda…"></textarea>
-          <div class="buttons-row" style="margin-top:10px;">
-            <button id="ask_btn" class="btn primary">Chiedi all’assistente</button>
+      <div class="card two-cols">
+        <div>
+          <h2>Domande libere</h2>
+          <div class="muted">
+            Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).<br />
+            Tip: su PC invia con Ctrl+Invio.
+          </div>
+
+          <textarea id="ask_input" rows="4" placeholder="Scrivi qui la tua domanda…"></textarea>
+
+          <div class="btn-row" style="margin-top:10px;">
+            <button id="ask_btn" class="btn btn-primary">Chiedi all’assistente</button>
             <div id="ask_remaining" class="muted"></div>
           </div>
+
           <div id="ask_status" class="muted" style="margin-top:8px;"></div>
           <div id="ask_answer" class="answer" style="margin-top:10px;"></div>
 
-          <div class="muted" style="margin-top:12px;">
+          <div class="muted" style="margin-top:10px;">
             Nota: risposta informativa, non consulenza finanziaria.
           </div>
+        </div>
 
-          <h3 style="margin-top:18px;">FAQ (passa il mouse)</h3>
+        <div>
+          <h2>FAQ (passa il mouse)</h2>
           <div class="faq">
             <div class="faq-item"><b>1) Perché solo due strumenti?</b></div>
             <div class="faq-item"><b>2) Cos’è l’ETF Azion-Obblig?</b></div>
@@ -129,7 +135,7 @@
         </div>
       </div>
 
-      <!-- Modale consulenti (se già lo usi nel CSS/JS) -->
+      <!-- Modale consulenti (se già presente nel tuo CSS/JS) -->
       <div id="consModal" class="modal" style="display:none;">
         <div class="modal-content">
           <button id="consModalClose" class="modal-close">×</button>
