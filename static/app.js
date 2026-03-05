@@ -18,7 +18,7 @@ function num0(x) {
 }
 
 function pct(x) {
-  if (x === null || x === undefined || isNaN(x)) return "—";
+  if (x === null || x === undefined || isNaN(x)) return "n.d.";
   return (x * 100).toFixed(1) + "%";
 }
 
@@ -27,10 +27,18 @@ function years1(x) {
   return Number(x).toFixed(1).replace(".", ",");
 }
 
+function formatDateIT(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = d.getFullYear();
+  return `${dd}/${mm}/${yy}`;
+}
+
 /* -----------------------------
    Composition
-   w_gold slider is GOLD %
-   LS80 split: 80% equity, 20% bond
 ----------------------------- */
 function computeComposition(goldPct) {
   const w_gold = Number(goldPct);
@@ -67,7 +75,6 @@ function normalizeDateToISO(s) {
   const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
 
-  // fallback: try Date parsing
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
     const y = d.getFullYear();
@@ -75,7 +82,6 @@ function normalizeDateToISO(s) {
     const da = String(d.getDate()).padStart(2, "0");
     return `${y}-${mo}-${da}`;
   }
-
   return null;
 }
 
@@ -95,18 +101,101 @@ function computeDrawdownPoints(points) {
   return dd;
 }
 
+// se non ci sono punti nel periodo => null (non "0.0%")
 function minDrawdownInRange(ddPoints, fromISO, toISO) {
   const from = new Date(fromISO);
   const to = new Date(toISO);
+
+  let found = false;
   let min = 0;
+
   for (const p of ddPoints) {
     const d = new Date(p.x);
     if (d >= from && d <= to) {
       const v = Number(p.y);
-      if (isFinite(v) && v < min) min = v;
+      if (isFinite(v)) {
+        if (!found) {
+          found = true;
+          min = v;
+        } else if (v < min) {
+          min = v;
+        }
+      }
     }
   }
-  return min; // decimal (es. -0.35)
+  return found ? min : null;
+}
+
+/**
+ * Trova le "discese" reali (episodi di drawdown) con:
+ * - start = data del peak che innesca la discesa
+ * - valley = minimo raggiunto
+ * - end = data recupero del peak (se recupera), altrimenti null (in corso)
+ * - dd = drawdown massimo dell’episodio (numero negativo, es. -0.127)
+ */
+function findWorstDrawdownEpisodes(points, topN = 3) {
+  if (!Array.isArray(points) || points.length < 2) return [];
+
+  let peakVal = Number(points[0].y);
+  let peakDate = points[0].x;
+
+  let inDD = false;
+  let episode = null;
+
+  const episodes = [];
+
+  for (let i = 0; i < points.length; i++) {
+    const v = Number(points[i].y);
+    const dt = points[i].x;
+    if (!isFinite(v)) continue;
+
+    // nuovo massimo: aggiorna peak
+    if (v >= peakVal) {
+      // se eravamo in drawdown ed abbiamo recuperato il peak => chiudi episodio
+      if (inDD && episode) {
+        episode.endDate = dt;
+        episodes.push(episode);
+        inDD = false;
+        episode = null;
+      }
+      peakVal = v;
+      peakDate = dt;
+      continue;
+    }
+
+    // v < peakVal => siamo in drawdown
+    const dd = peakVal > 0 ? v / peakVal - 1 : 0; // negativo
+
+    if (!inDD) {
+      inDD = true;
+      episode = {
+        startDate: peakDate,
+        startValue: peakVal,
+        valleyDate: dt,
+        valleyValue: v,
+        endDate: null,
+        dd: dd,
+      };
+    } else if (episode) {
+      // aggiorna valley se peggiora
+      if (dd < episode.dd) {
+        episode.dd = dd;
+        episode.valleyDate = dt;
+        episode.valleyValue = v;
+      }
+    }
+  }
+
+  // se finisce ancora in drawdown => episodio "in corso"
+  if (inDD && episode) {
+    episodes.push(episode);
+  }
+
+  // ordina per drawdown più negativo
+  episodes.sort((a, b) => a.dd - b.dd);
+
+  // prendi topN
+  return episodes.slice(0, topN);
 }
 
 /* -----------------------------
@@ -174,7 +263,6 @@ async function loadData() {
 
   const m = data.metrics || {};
 
-  // Linea 1 e 3 (linea 2 è già aggiornata in updateSliderLabelAndComposition)
   const line1 = document.getElementById("metrics_line1");
   const line3 = document.getElementById("metrics_line3");
 
@@ -188,13 +276,11 @@ async function loadData() {
     line3.textContent = `Raddoppio del portafoglio in anni: ${years1(m.doubling_years_portfolio)}`;
   }
 
-  // Finali (sulla riga in alto)
   const finalValue = document.getElementById("final_value");
   const finalYears = document.getElementById("final_years");
   if (finalValue) finalValue.textContent = euro(m.final_portfolio);
   if (finalYears) finalYears.textContent = years1(m.final_years);
 
-  // Serie per chart
   const dates = Array.isArray(data.dates) ? data.dates : [];
   const values = Array.isArray(data.portfolio) ? data.portfolio : [];
 
@@ -214,7 +300,6 @@ async function loadData() {
     return;
   }
 
-  // Chart render
   try {
     const canvas = document.getElementById("chart");
     if (!canvas) return;
@@ -255,90 +340,105 @@ async function loadData() {
               tooltipFormat: "dd/MM/yyyy",
               displayFormats: { year: "yyyy" },
             },
-            ticks: {
-              maxRotation: 0,
-              autoSkip: true,
-              maxTicksLimit: 40,
-            },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 40 },
           },
-          y: {
-            ticks: { callback: (value) => euro(value) },
-          },
+          y: { ticks: { callback: (value) => euro(value) } },
         },
       },
     });
 
-    // ---- Drawdown chart (ribassi) ----
-    try {
-      const ddCanvas = document.getElementById("dd_chart");
-      const ddSummary = document.getElementById("dd_summary");
+    // ---- Drawdown chart + summary ----
+    const ddCanvas = document.getElementById("dd_chart");
+    const ddSummary = document.getElementById("dd_summary");
 
-      if (ddCanvas) {
-        const ddPoints = computeDrawdownPoints(points);
+    if (ddCanvas) {
+      const ddPoints = computeDrawdownPoints(points);
 
-        // periodi “iconici” (range indicativi)
-        const ddSubprime = minDrawdownInRange(ddPoints, "2007-10-01", "2009-03-31");
-        const ddCovid = minDrawdownInRange(ddPoints, "2020-02-15", "2020-04-30");
-        const ddTrump = minDrawdownInRange(ddPoints, "2018-09-01", "2018-12-31");
+      // Periodi "iconici"
+      const ddSubprime = minDrawdownInRange(ddPoints, "2007-10-01", "2009-03-31");
+      const ddCovid = minDrawdownInRange(ddPoints, "2020-02-15", "2020-04-30");
 
-        if (ddSummary) {
-          ddSummary.textContent =
-            `Drawdown peggiori (stima su periodi): ` +
-            `Subprime ${pct(ddSubprime)} · Covid ${pct(ddCovid)} · Dazi Trump ${pct(ddTrump)}`;
+      // ✅ Dazi Trump = 2025 (metto tutto il 2025 così cattura il minimo di quell’anno)
+      const ddTrump2025 = minDrawdownInRange(ddPoints, "2025-01-01", "2025-12-31");
+
+      // ✅ Top 3 discese reali della serie
+      const top3 = findWorstDrawdownEpisodes(points, 3);
+
+      if (ddSummary) {
+        let html =
+          `<b>Ribassi massimi (drawdown) nei periodi:</b> ` +
+          `Subprime ${pct(ddSubprime)} · Covid ${pct(ddCovid)} · Dazi Trump (2025) ${pct(ddTrump2025)}`;
+
+        html += `<br><b>Le 3 discese peggiori della serie:</b>`;
+
+        if (!top3.length) {
+          html += ` n.d.`;
+        } else {
+          html += `<ol style="margin:6px 0 0 18px; padding:0;">`;
+          for (const ep of top3) {
+            const start = formatDateIT(ep.startDate);
+            const valley = formatDateIT(ep.valleyDate);
+            const end = ep.endDate ? formatDateIT(ep.endDate) : "in corso";
+            html +=
+              `<li>` +
+              `<b>${pct(ep.dd)}</b>` +
+              ` (inizio ${start} → fondo ${valley} → fine ${end})` +
+              `</li>`;
+          }
+          html += `</ol>`;
         }
 
-        const ddCtx = ddCanvas.getContext("2d");
-        if (ddChart) ddChart.destroy();
-
-        ddChart = new Chart(ddCtx, {
-          type: "line",
-          data: {
-            datasets: [
-              {
-                label: "Drawdown (ribasso da massimo)",
-                data: ddPoints,
-                borderWidth: 2,
-                tension: 0.15,
-                pointRadius: 0,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-              tooltip: {
-                callbacks: {
-                  label: (context) => `${context.dataset.label}: ${pct(context.parsed.y)}`,
-                },
-              },
-              legend: { display: true },
-            },
-            scales: {
-              x: {
-                type: "time",
-                time: {
-                  unit: "year",
-                  tooltipFormat: "dd/MM/yyyy",
-                  displayFormats: { year: "yyyy" },
-                },
-                ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 40 },
-              },
-              y: {
-                suggestedMin: -0.6,
-                suggestedMax: 0,
-                ticks: { callback: (value) => pct(value) },
-              },
-            },
-          },
-        });
+        ddSummary.innerHTML = html;
       }
-    } catch (e) {
-      console.error("Drawdown chart error:", e);
+
+      const ddCtx = ddCanvas.getContext("2d");
+      if (ddChart) ddChart.destroy();
+
+      ddChart = new Chart(ddCtx, {
+        type: "line",
+        data: {
+          datasets: [
+            {
+              label: "Drawdown (ribasso da massimo)",
+              data: ddPoints,
+              borderWidth: 2,
+              tension: 0.15,
+              pointRadius: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: (context) => `${context.dataset.label}: ${pct(context.parsed.y)}`,
+              },
+            },
+            legend: { display: true },
+          },
+          scales: {
+            x: {
+              type: "time",
+              time: {
+                unit: "year",
+                tooltipFormat: "dd/MM/yyyy",
+                displayFormats: { year: "yyyy" },
+              },
+              ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 40 },
+            },
+            y: {
+              suggestedMin: -0.6,
+              suggestedMax: 0,
+              ticks: { callback: (value) => pct(value) },
+            },
+          },
+        },
+      });
     }
 
-    // se tutto ok, togli eventuali errori a schermo
     setAskStatus("", "info");
   } catch (e) {
     console.error(e);
@@ -359,7 +459,6 @@ function formatCapitalField() {
     el.value = n ? num0(n) : "10.000";
   });
 
-  // INVIO nel campo capitale -> aggiorna
   el.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -373,88 +472,18 @@ function formatCapitalField() {
 ----------------------------- */
 function wireControls() {
   const btn = document.getElementById("btn_update");
-  if (btn) {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      loadData();
-    });
-  }
+  if (btn) btn.addEventListener("click", (e) => { e.preventDefault(); loadData(); });
 
   const slider = document.getElementById("w_gold");
   if (slider) {
     slider.addEventListener("input", () => {
-      const goldPct = Number(slider.value);
-      updateSliderLabelAndComposition(goldPct);
+      updateSliderLabelAndComposition(Number(slider.value));
     });
     slider.addEventListener("change", () => loadData());
   }
 
   const pdf = document.getElementById("btn_pdf");
-  if (pdf) {
-    pdf.addEventListener("click", (e) => {
-      e.preventDefault();
-      window.print();
-    });
-  }
-}
-
-/* -----------------------------
-   Assistant wiring (se presente in pagina)
------------------------------ */
-async function askAssistant() {
-  const q = document.getElementById("ask_text");
-  const out = document.getElementById("ask_answer");
-  if (!q || !out) return;
-
-  const question = (q.value || "").trim();
-  if (!question) return;
-
-  setAskStatus("Sto pensando…", "info");
-  out.textContent = "";
-
-  const url = `/api/ask?t=${Date.now()}`;
-
-  let res;
-  let data;
-
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ question }),
-    });
-    const ct = (res.headers.get("content-type") || "").toLowerCase();
-    data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
-  } catch (e) {
-    console.error(e);
-    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
-    return;
-  }
-
-  if (!res.ok || data.error) {
-    console.error(data.error || res.statusText);
-    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 240)}`, "err");
-    return;
-  }
-
-  out.textContent = data.answer || "";
-  setAskStatus("", "info");
-}
-
-function wireAssistant() {
-  const btn = document.getElementById("ask_btn");
-  if (btn) btn.addEventListener("click", (e) => { e.preventDefault(); askAssistant(); });
-
-  const q = document.getElementById("ask_text");
-  if (q) {
-    q.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        askAssistant();
-      }
-    });
-  }
+  if (pdf) pdf.addEventListener("click", (e) => { e.preventDefault(); window.print(); });
 }
 
 /* -----------------------------
@@ -463,9 +492,6 @@ function wireAssistant() {
 function init() {
   formatCapitalField();
   wireControls();
-  wireAssistant();
-
-  // primo render
   loadData();
 }
 
