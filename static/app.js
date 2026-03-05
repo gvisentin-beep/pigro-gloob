@@ -1,5 +1,6 @@
 // static/app.js
 let chart = null;
+let ddChart = null;
 
 /* -----------------------------
    Format helpers
@@ -27,7 +28,8 @@ function years1(x) {
 }
 
 /* -----------------------------
-   Composition: slider is GOLD %
+   Composition
+   w_gold slider is GOLD %
    LS80 split: 80% equity, 20% bond
 ----------------------------- */
 function computeComposition(goldPct) {
@@ -50,81 +52,93 @@ function computeComposition(goldPct) {
 function setAskStatus(msg, kind = "info") {
   const box = document.getElementById("ask_status");
   if (!box) return;
-
-  box.classList.remove("ok", "err", "info");
-  box.classList.add(kind);
   box.textContent = msg || "";
-  box.style.display = msg ? "block" : "none";
+  box.className = "status " + (kind || "info");
 }
 
-function setRemaining(remaining, limit) {
-  const el = document.getElementById("ask_remaining");
-  if (!el) return;
-  if (remaining === null || remaining === undefined || limit === null || limit === undefined) {
-    el.textContent = "";
-    return;
-  }
-  el.textContent = `Domande rimanenti oggi: ${remaining}/${limit}`;
-}
-
-/**
- * Normalizza date per Chart.js time scale.
- * Supporta:
- * - "YYYY-MM-DD"
- * - "DD/MM/YYYY"
- * - casi sporchi tipo "21/01/2026,39.37"
- */
 function normalizeDateToISO(s) {
   if (!s) return null;
-  let x = String(s).trim();
+  const str = String(s).trim();
 
-  x = x.split(",")[0].trim();
-  x = x.split(";")[0].trim();
-  x = x.split(" ")[0].trim();
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(x)) return x;
-
-  const m = x.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  // DD/MM/YYYY
+  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
 
-  const first10 = x.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(first10)) return first10;
-
-  const m2 = first10.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+  // fallback: try Date parsing
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${da}`;
+  }
 
   return null;
 }
 
+/* -----------------------------
+   Drawdown helpers
+----------------------------- */
+function computeDrawdownPoints(points) {
+  let peak = -Infinity;
+  const dd = [];
+  for (const p of points) {
+    const v = Number(p.y);
+    if (!isFinite(v)) continue;
+    if (v > peak) peak = v;
+    const ddDec = peak > 0 ? v / peak - 1 : 0; // <= 0
+    dd.push({ x: p.x, y: ddDec });
+  }
+  return dd;
+}
+
+function minDrawdownInRange(ddPoints, fromISO, toISO) {
+  const from = new Date(fromISO);
+  const to = new Date(toISO);
+  let min = 0;
+  for (const p of ddPoints) {
+    const d = new Date(p.x);
+    if (d >= from && d <= to) {
+      const v = Number(p.y);
+      if (isFinite(v) && v < min) min = v;
+    }
+  }
+  return min; // decimal (es. -0.35)
+}
+
+/* -----------------------------
+   Capital parsing
+----------------------------- */
 function getCapitalValue() {
   const el = document.getElementById("initial");
   if (!el) return 10000;
-
-  const raw = (el.value || "")
-    .toString()
-    .replace(/\./g, "")
-    .replace(/[^\d]/g, "");
-  const n = Number(raw) || 10000;
+  const raw = (el.value || "").toString().replace(/\./g, "").replace(/[^\d]/g, "");
+  const n = Number(raw || "0");
   return n > 0 ? n : 10000;
 }
 
+/* -----------------------------
+   Slider label + composition line
+----------------------------- */
 function updateSliderLabelAndComposition(goldPct) {
-  const comp = computeComposition(goldPct);
+  const val = document.getElementById("w_gold_val");
+  if (val) val.textContent = `${goldPct}%`;
 
-  const goldVal = document.getElementById("w_gold_val");
-  if (goldVal) goldVal.textContent = `${comp.w_gold}%`;
+  const comp = computeComposition(goldPct);
 
   const line2 = document.getElementById("metrics_line2");
   if (line2) {
-    line2.textContent =
-      `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
+    line2.textContent = `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
   }
 
   return comp;
 }
 
 /* -----------------------------
-   Data load + chart
+   Main load + charts
 ----------------------------- */
 async function loadData() {
   const slider = document.getElementById("w_gold");
@@ -237,7 +251,6 @@ async function loadData() {
           x: {
             type: "time",
             time: {
-              // ✅ UNA SOLA ETICHETTA PER ANNO
               unit: "year",
               tooltipFormat: "dd/MM/yyyy",
               displayFormats: { year: "yyyy" },
@@ -245,7 +258,6 @@ async function loadData() {
             ticks: {
               maxRotation: 0,
               autoSkip: true,
-              // facoltativo: se hai 50+ anni di storico, evita affollamento
               maxTicksLimit: 40,
             },
           },
@@ -255,6 +267,76 @@ async function loadData() {
         },
       },
     });
+
+    // ---- Drawdown chart (ribassi) ----
+    try {
+      const ddCanvas = document.getElementById("dd_chart");
+      const ddSummary = document.getElementById("dd_summary");
+
+      if (ddCanvas) {
+        const ddPoints = computeDrawdownPoints(points);
+
+        // periodi “iconici” (range indicativi)
+        const ddSubprime = minDrawdownInRange(ddPoints, "2007-10-01", "2009-03-31");
+        const ddCovid = minDrawdownInRange(ddPoints, "2020-02-15", "2020-04-30");
+        const ddTrump = minDrawdownInRange(ddPoints, "2018-09-01", "2018-12-31");
+
+        if (ddSummary) {
+          ddSummary.textContent =
+            `Drawdown peggiori (stima su periodi): ` +
+            `Subprime ${pct(ddSubprime)} · Covid ${pct(ddCovid)} · Dazi Trump ${pct(ddTrump)}`;
+        }
+
+        const ddCtx = ddCanvas.getContext("2d");
+        if (ddChart) ddChart.destroy();
+
+        ddChart = new Chart(ddCtx, {
+          type: "line",
+          data: {
+            datasets: [
+              {
+                label: "Drawdown (ribasso da massimo)",
+                data: ddPoints,
+                borderWidth: 2,
+                tension: 0.15,
+                pointRadius: 0,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: (context) => `${context.dataset.label}: ${pct(context.parsed.y)}`,
+                },
+              },
+              legend: { display: true },
+            },
+            scales: {
+              x: {
+                type: "time",
+                time: {
+                  unit: "year",
+                  tooltipFormat: "dd/MM/yyyy",
+                  displayFormats: { year: "yyyy" },
+                },
+                ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 40 },
+              },
+              y: {
+                suggestedMin: -0.6,
+                suggestedMax: 0,
+                ticks: { callback: (value) => pct(value) },
+              },
+            },
+          },
+        });
+      }
+    } catch (e) {
+      console.error("Drawdown chart error:", e);
+    }
 
     // se tutto ok, togli eventuali errori a schermo
     setAskStatus("", "info");
@@ -300,83 +382,73 @@ function wireControls() {
 
   const slider = document.getElementById("w_gold");
   if (slider) {
-    let t = null;
-
-    // mentre trascini: aggiorna label + composizione; dopo 250ms ricalcola
     slider.addEventListener("input", () => {
-      const goldPct = Number(slider.value || 0);
+      const goldPct = Number(slider.value);
       updateSliderLabelAndComposition(goldPct);
-
-      if (t) clearTimeout(t);
-      t = setTimeout(() => loadData(), 250);
     });
+    slider.addEventListener("change", () => loadData());
+  }
 
-    // quando rilasci: ricalcola subito
-    slider.addEventListener("change", () => {
-      loadData();
+  const pdf = document.getElementById("btn_pdf");
+  if (pdf) {
+    pdf.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.print();
     });
   }
 }
 
 /* -----------------------------
-   Assistant
+   Assistant wiring (se presente in pagina)
 ----------------------------- */
 async function askAssistant() {
-  const q = (document.getElementById("ask_question").value || "").trim();
-  const btn = document.getElementById("ask_btn");
-  const ans = document.getElementById("ask_answer");
+  const q = document.getElementById("ask_text");
+  const out = document.getElementById("ask_answer");
+  if (!q || !out) return;
 
-  if (!q) {
-    setAskStatus("Scrivi una domanda.", "err");
-    return;
-  }
+  const question = (q.value || "").trim();
+  if (!question) return;
 
-  if (btn) btn.disabled = true;
   setAskStatus("Sto pensando…", "info");
+  out.textContent = "";
+
+  const url = `/api/ask?t=${Date.now()}`;
+
+  let res;
+  let data;
 
   try {
-    const res = await fetch(`/api/ask?t=${Date.now()}`, {
+    res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ question: q }),
+      body: JSON.stringify({ question }),
     });
-
     const ct = (res.headers.get("content-type") || "").toLowerCase();
-    const data = ct.includes("application/json")
-      ? await res.json()
-      : { ok: false, error: await res.text() };
-
-    if (!res.ok || !data.ok) {
-      const msg = (data.error || `Errore server (${res.status})`).toString();
-      setAskStatus(msg.slice(0, 240), "err");
-      if (ans) ans.textContent = "";
-      if ("remaining" in data && "limit" in data) setRemaining(data.remaining, data.limit);
-      return;
-    }
-
-    if (ans) ans.textContent = data.answer || "";
-    setAskStatus("", "ok");
-    setRemaining(data.remaining, data.limit);
+    data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
   } catch (e) {
+    console.error(e);
     setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
-  } finally {
-    if (btn) btn.disabled = false;
+    return;
   }
+
+  if (!res.ok || data.error) {
+    console.error(data.error || res.statusText);
+    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 240)}`, "err");
+    return;
+  }
+
+  out.textContent = data.answer || "";
+  setAskStatus("", "info");
 }
 
 function wireAssistant() {
   const btn = document.getElementById("ask_btn");
-  if (btn) {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      askAssistant();
-    });
-  }
+  if (btn) btn.addEventListener("click", (e) => { e.preventDefault(); askAssistant(); });
 
-  const ta = document.getElementById("ask_question");
-  if (ta) {
-    ta.addEventListener("keydown", (e) => {
+  const q = document.getElementById("ask_text");
+  if (q) {
+    q.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         askAssistant();
