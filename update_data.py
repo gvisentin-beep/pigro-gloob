@@ -75,6 +75,7 @@ def download_asset_history(ticker: str) -> Optional[pd.DataFrame]:
         if "Date" in df.columns:
             df = df.rename(columns={"Date": "date"})
 
+        # yfinance può restituire Adj Close oppure Close
         if "Adj Close" in df.columns:
             df["close"] = df["Adj Close"]
         elif "Close" in df.columns:
