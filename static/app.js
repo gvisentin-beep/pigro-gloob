@@ -1,498 +1,342 @@
-// static/app.js
-let chart = null;
-let ddChart = null;
-
-/* -----------------------------
-   Format helpers
------------------------------ */
-function euro(x) {
-  return new Intl.NumberFormat("it-IT", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(Number(x));
+// -----------------------------
+// Helpers
+// -----------------------------
+function formatEuro(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return "—";
+  const x = Number(n);
+  return x.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
 
-function num0(x) {
-  return new Intl.NumberFormat("it-IT", { maximumFractionDigits: 0 }).format(Number(x));
-}
-
-function pct(x) {
-  if (x === null || x === undefined || isNaN(x)) return "n.d.";
+function formatPct(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return "—";
+  const x = Number(n);
   return (x * 100).toFixed(1) + "%";
 }
 
-function years1(x) {
-  if (x === null || x === undefined || isNaN(x)) return "—";
-  return Number(x).toFixed(1).replace(".", ",");
+// -----------------------------
+// State
+// -----------------------------
+let chart = null;      // Chart.js main chart instance
+let chartDD = null;    // Chart.js drawdown chart instance
+
+// -----------------------------
+// UI elements
+// -----------------------------
+const elWG = document.getElementById("w_gold");
+const elWGLabel = document.getElementById("w_gold_label");
+const elCapital = document.getElementById("capital");
+
+const elFinal = document.getElementById("final_value");
+const elYears = document.getElementById("final_years");
+const elCagr = document.getElementById("cagr");
+const elMaxDD = document.getElementById("maxdd");
+const elDbl = document.getElementById("dbl");
+
+const elWEq = document.getElementById("w_equity");
+const elWBond = document.getElementById("w_bond");
+const elWGold2 = document.getElementById("w_gold2");
+
+const btnUpdate = document.getElementById("btn_update");
+const btnPdf = document.getElementById("btn_pdf");
+
+const btnFax = document.getElementById("btn_faxsimile");
+const btnCons = document.getElementById("btn_consulente");
+const btnLibro = document.getElementById("btn_libro");
+
+const btnAsk = document.getElementById("btn_ask");
+const askText = document.getElementById("ask_text");
+const askAnswer = document.getElementById("ask_answer");
+
+// -----------------------------
+// UI logic
+// -----------------------------
+function clampGold(v) {
+  v = Number(v);
+  if (Number.isNaN(v)) v = 20;
+  v = Math.max(0, Math.min(50, v));
+  // step 5
+  v = Math.round(v / 5) * 5;
+  return v;
 }
 
-function formatDateIT(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yy = d.getFullYear();
-  return `${dd}/${mm}/${yy}`;
+function parseCapital() {
+  let s = String(elCapital.value || "").trim();
+  s = s.replace(/\./g, "").replace(",", ".");
+  let v = Number(s);
+  if (Number.isNaN(v) || v <= 0) v = 10000;
+  return v;
 }
 
-/* -----------------------------
-   Composition
------------------------------ */
-function computeComposition(goldPct) {
-  const w_gold = Number(goldPct);
-  const w_ls80 = 100 - w_gold;
-  const equity = 0.8 * w_ls80;
+function updateSliderLabelAndComposition(wGold01) {
+  const pct = Math.round(wGold01 * 100);
+  elWGLabel.textContent = pct + "%";
+
+  const w_ls80 = 1 - wGold01;
+  const eq = 0.8 * w_ls80;
   const bond = 0.2 * w_ls80;
 
-  return {
-    w_gold,
-    w_ls80,
-    equity: Math.round(equity),
-    bond: Math.round(bond),
-  };
+  elWEq.textContent = Math.round(eq * 100) + "%";
+  elWBond.textContent = Math.round(bond * 100) + "%";
+  elWGold2.textContent = Math.round(wGold01 * 100) + "%";
 }
 
-/* -----------------------------
-   UI helpers
------------------------------ */
-function setAskStatus(msg, kind = "info") {
-  const box = document.getElementById("ask_status");
-  if (!box) return;
-  box.textContent = msg || "";
-  box.className = "status " + (kind || "info");
-}
-
-function normalizeDateToISO(s) {
-  if (!s) return null;
-  const str = String(s).trim();
-
-  // YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-
-  // DD/MM/YYYY
-  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-
-  const d = new Date(str);
-  if (!isNaN(d.getTime())) {
-    const y = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, "0");
-    const da = String(d.getDate()).padStart(2, "0");
-    return `${y}-${mo}-${da}`;
-  }
-  return null;
-}
-
-/* -----------------------------
-   Drawdown helpers
------------------------------ */
-function computeDrawdownPoints(points) {
-  let peak = -Infinity;
-  const dd = [];
-  for (const p of points) {
-    const v = Number(p.y);
-    if (!isFinite(v)) continue;
-    if (v > peak) peak = v;
-    const ddDec = peak > 0 ? v / peak - 1 : 0; // <= 0
-    dd.push({ x: p.x, y: ddDec });
-  }
-  return dd;
-}
-
-// se non ci sono punti nel periodo => null (non "0.0%")
-function minDrawdownInRange(ddPoints, fromISO, toISO) {
-  const from = new Date(fromISO);
-  const to = new Date(toISO);
-
-  let found = false;
-  let min = 0;
-
-  for (const p of ddPoints) {
-    const d = new Date(p.x);
-    if (d >= from && d <= to) {
-      const v = Number(p.y);
-      if (isFinite(v)) {
-        if (!found) {
-          found = true;
-          min = v;
-        } else if (v < min) {
-          min = v;
-        }
-      }
-    }
-  }
-  return found ? min : null;
-}
-
-/**
- * Trova le "discese" reali (episodi di drawdown) con:
- * - start = data del peak che innesca la discesa
- * - valley = minimo raggiunto
- * - end = data recupero del peak (se recupera), altrimenti null (in corso)
- * - dd = drawdown massimo dell’episodio (numero negativo, es. -0.127)
- */
-function findWorstDrawdownEpisodes(points, topN = 3) {
-  if (!Array.isArray(points) || points.length < 2) return [];
-
-  let peakVal = Number(points[0].y);
-  let peakDate = points[0].x;
-
-  let inDD = false;
-  let episode = null;
-
-  const episodes = [];
-
-  for (let i = 0; i < points.length; i++) {
-    const v = Number(points[i].y);
-    const dt = points[i].x;
-    if (!isFinite(v)) continue;
-
-    // nuovo massimo: aggiorna peak
-    if (v >= peakVal) {
-      // se eravamo in drawdown ed abbiamo recuperato il peak => chiudi episodio
-      if (inDD && episode) {
-        episode.endDate = dt;
-        episodes.push(episode);
-        inDD = false;
-        episode = null;
-      }
-      peakVal = v;
-      peakDate = dt;
-      continue;
-    }
-
-    // v < peakVal => siamo in drawdown
-    const dd = peakVal > 0 ? v / peakVal - 1 : 0; // negativo
-
-    if (!inDD) {
-      inDD = true;
-      episode = {
-        startDate: peakDate,
-        startValue: peakVal,
-        valleyDate: dt,
-        valleyValue: v,
-        endDate: null,
-        dd: dd,
-      };
-    } else if (episode) {
-      // aggiorna valley se peggiora
-      if (dd < episode.dd) {
-        episode.dd = dd;
-        episode.valleyDate = dt;
-        episode.valleyValue = v;
-      }
-    }
-  }
-
-  // se finisce ancora in drawdown => episodio "in corso"
-  if (inDD && episode) {
-    episodes.push(episode);
-  }
-
-  // ordina per drawdown più negativo
-  episodes.sort((a, b) => a.dd - b.dd);
-
-  // prendi topN
-  return episodes.slice(0, topN);
-}
-
-/* -----------------------------
-   Capital parsing
------------------------------ */
-function getCapitalValue() {
-  const el = document.getElementById("initial");
-  if (!el) return 10000;
-  const raw = (el.value || "").toString().replace(/\./g, "").replace(/[^\d]/g, "");
-  const n = Number(raw || "0");
-  return n > 0 ? n : 10000;
-}
-
-/* -----------------------------
-   Slider label + composition line
------------------------------ */
-function updateSliderLabelAndComposition(goldPct) {
-  const val = document.getElementById("w_gold_val");
-  if (val) val.textContent = `${goldPct}%`;
-
-  const comp = computeComposition(goldPct);
-
-  const line2 = document.getElementById("metrics_line2");
-  if (line2) {
-    line2.textContent = `Composizione: Azionario ${comp.equity}% | Obbligazionario ${comp.bond}% | Oro ${comp.w_gold}%`;
-  }
-
-  return comp;
-}
-
-/* -----------------------------
-   Main load + charts
------------------------------ */
+// -----------------------------
+// Data load
+// -----------------------------
 async function loadData() {
-  const slider = document.getElementById("w_gold");
-  const goldPct = Number(slider ? slider.value : 0);
-
-  const capital = getCapitalValue();
-  const comp = updateSliderLabelAndComposition(goldPct);
-
-  const url =
-    `/api/compute?w_ls80=${encodeURIComponent(comp.w_ls80)}` +
-    `&w_gold=${encodeURIComponent(comp.w_gold)}` +
-    `&capital=${encodeURIComponent(capital)}` +
-    `&t=${Date.now()}`;
-
-  let res;
-  let data;
+  btnUpdate.disabled = true;
+  btnUpdate.textContent = "Aggiorna…";
 
   try {
-    res = await fetch(url, { cache: "no-store" });
-    const ct = (res.headers.get("content-type") || "").toLowerCase();
-    data = ct.includes("application/json") ? await res.json() : { error: await res.text() };
-  } catch (e) {
-    console.error(e);
-    setAskStatus(`Errore rete: ${String(e).slice(0, 240)}`, "err");
-    return;
-  }
+    const wGold = clampGold(elWG.value);
+    const wGold01 = wGold / 100;
+    const capital = parseCapital();
 
-  if (!res.ok || data.error) {
-    console.error(data.error || res.statusText);
-    setAskStatus(`Errore: ${(data.error || res.statusText).toString().slice(0, 240)}`, "err");
-    return;
-  }
+    updateSliderLabelAndComposition(wGold01);
 
-  const m = data.metrics || {};
+    const url = `/api/compute?w_gold=${encodeURIComponent(wGold01)}&capital=${encodeURIComponent(capital)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Errore API");
 
-  const line1 = document.getElementById("metrics_line1");
-  const line3 = document.getElementById("metrics_line3");
+    // Summary numbers
+    const m = data.metrics || {};
+    elFinal.textContent = formatEuro(m.final_portfolio);
+    elYears.textContent = (m.final_years ?? "—").toFixed ? Number(m.final_years).toFixed(1) : "—";
+    elCagr.textContent = formatPct(m.cagr_portfolio);
+    elMaxDD.textContent = formatPct(m.max_dd_portfolio);
+    elDbl.textContent = (m.doubling_years_portfolio ?? "—").toFixed ? Number(m.doubling_years_portfolio).toFixed(1) : "—";
 
-  if (line1) {
-    line1.textContent =
-      `Portafoglio (ETF Azion-Obblig + ETC Oro): ` +
-      `Rendimento annualizzato ${pct(m.cagr_portfolio)} | ` +
-      `Max Ribasso nel periodo ${pct(m.max_dd_portfolio)}`;
-  }
-  if (line3) {
-    line3.textContent = `Raddoppio del portafoglio in anni: ${years1(m.doubling_years_portfolio)}`;
-  }
+    // Serie per chart (Portafoglio + World)
+    const dates = Array.isArray(data.dates) ? data.dates : [];
+    const valuesP = Array.isArray(data.portfolio) ? data.portfolio : [];
+    const valuesW = Array.isArray(data.world) ? data.world : [];
 
-  const finalValue = document.getElementById("final_value");
-  const finalYears = document.getElementById("final_years");
-  if (finalValue) finalValue.textContent = euro(m.final_portfolio);
-  if (finalYears) finalYears.textContent = years1(m.final_years);
+    const pointsP = [];
+    const pointsW = [];
+    const n = Math.min(dates.length, valuesP.length);
+    for (let i = 0; i < n; i++) pointsP.push({ x: dates[i], y: valuesP[i] });
 
-  const dates = Array.isArray(data.dates) ? data.dates : [];
-  const values = Array.isArray(data.portfolio) ? data.portfolio : [];
+    const nw = Math.min(dates.length, valuesW.length);
+    for (let i = 0; i < nw; i++) pointsW.push({ x: dates[i], y: valuesW[i] });
 
-  const points = [];
-  const n = Math.min(dates.length, values.length);
-  for (let i = 0; i < n; i++) {
-    const iso = normalizeDateToISO(dates[i]);
-    if (!iso) continue;
-    points.push({ x: iso, y: Number(values[i]) });
-  }
+    // Drawdown (%)
+    const ddP = Array.isArray(data.drawdown_portfolio_pct) ? data.drawdown_portfolio_pct : [];
+    const ddW = Array.isArray(data.drawdown_world_pct) ? data.drawdown_world_pct : [];
+    const ddPointsP = [];
+    const ddPointsW = [];
+    const ndp = Math.min(dates.length, ddP.length);
+    for (let i = 0; i < ndp; i++) ddPointsP.push({ x: dates[i], y: ddP[i] });
+    const ndw = Math.min(dates.length, ddW.length);
+    for (let i = 0; i < ndw; i++) ddPointsW.push({ x: dates[i], y: ddW[i] });
 
-  if (points.length < 2) {
-    setAskStatus(
-      "Errore dati: non riesco a leggere le date. Controlla i CSV (Date: YYYY-MM-DD o DD/MM/YYYY).",
-      "err"
-    );
-    return;
-  }
-
-  try {
-    const canvas = document.getElementById("chart");
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
+    // (ri)crea chart principale
+    const ctx = document.getElementById("chart_main").getContext("2d");
     if (chart) chart.destroy();
 
-    chart = new Chart(ctx, {
-      type: "line",
-      data: {
-        datasets: [
-          {
-            label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
-            data: points,
-            borderWidth: 2,
-            tension: 0.15,
-            pointRadius: 0,
-          },
-        ],
+    const datasetsMain = [
+      {
+        label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
+        data: pointsP,
+        borderWidth: 2,
+        tension: 0.15,
+        pointRadius: 0,
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          tooltip: {
-            callbacks: {
-              label: (context) => `${context.dataset.label}: ${euro(context.parsed.y)}`,
-            },
-          },
-          legend: { display: true },
-        },
-        scales: {
-          x: {
-            type: "time",
-            time: {
-              unit: "year",
-              tooltipFormat: "dd/MM/yyyy",
-              displayFormats: { year: "yyyy" },
-            },
-            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 40 },
-          },
-          y: { ticks: { callback: (value) => euro(value) } },
-        },
-      },
-    });
+    ];
 
-    // ---- Drawdown chart + summary ----
-    const ddCanvas = document.getElementById("dd_chart");
-    const ddSummary = document.getElementById("dd_summary");
-
-    if (ddCanvas) {
-      const ddPoints = computeDrawdownPoints(points);
-
-      // Periodi "iconici"
-      const ddSubprime = minDrawdownInRange(ddPoints, "2007-10-01", "2009-03-31");
-      const ddCovid = minDrawdownInRange(ddPoints, "2020-02-15", "2020-04-30");
-
-      // ✅ Dazi Trump = 2025 (metto tutto il 2025 così cattura il minimo di quell’anno)
-      const ddTrump2025 = minDrawdownInRange(ddPoints, "2025-01-01", "2025-12-31");
-
-      // ✅ Top 3 discese reali della serie
-      const top3 = findWorstDrawdownEpisodes(points, 3);
-
-      if (ddSummary) {
-        let html =
-          `<b>Ribassi massimi (drawdown) nei periodi:</b> ` +
-          `Subprime ${pct(ddSubprime)} · Covid ${pct(ddCovid)} · Dazi Trump (2025) ${pct(ddTrump2025)}`;
-
-        html += `<br><b>Le 3 discese peggiori della serie:</b>`;
-
-        if (!top3.length) {
-          html += ` n.d.`;
-        } else {
-          html += `<ol style="margin:6px 0 0 18px; padding:0;">`;
-          for (const ep of top3) {
-            const start = formatDateIT(ep.startDate);
-            const valley = formatDateIT(ep.valleyDate);
-            const end = ep.endDate ? formatDateIT(ep.endDate) : "in corso";
-            html +=
-              `<li>` +
-              `<b>${pct(ep.dd)}</b>` +
-              ` (inizio ${start} → fondo ${valley} → fine ${end})` +
-              `</li>`;
-          }
-          html += `</ol>`;
-        }
-
-        ddSummary.innerHTML = html;
-      }
-
-      const ddCtx = ddCanvas.getContext("2d");
-      if (ddChart) ddChart.destroy();
-
-      ddChart = new Chart(ddCtx, {
-        type: "line",
-        data: {
-          datasets: [
-            {
-              label: "Drawdown (ribasso da massimo)",
-              data: ddPoints,
-              borderWidth: 2,
-              tension: 0.15,
-              pointRadius: 0,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            tooltip: {
-              callbacks: {
-                label: (context) => `${context.dataset.label}: ${pct(context.parsed.y)}`,
-              },
-            },
-            legend: { display: true },
-          },
-          scales: {
-            x: {
-              type: "time",
-              time: {
-                unit: "year",
-                tooltipFormat: "dd/MM/yyyy",
-                displayFormats: { year: "yyyy" },
-              },
-              ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 40 },
-            },
-            y: {
-              suggestedMin: -0.6,
-              suggestedMax: 0,
-              ticks: { callback: (value) => pct(value) },
-            },
-          },
-        },
+    if (pointsW.length > 0) {
+      datasetsMain.push({
+        label: "MSCI World (SMSWLD) - normalizzato",
+        data: pointsW,
+        borderWidth: 2,
+        tension: 0.15,
+        pointRadius: 0,
       });
     }
 
-    setAskStatus("", "info");
-  } catch (e) {
-    console.error(e);
-    setAskStatus(`Errore grafico: ${String(e).slice(0, 240)}`, "err");
-  }
-}
-
-/* -----------------------------
-   Capital field formatting
------------------------------ */
-function formatCapitalField() {
-  const el = document.getElementById("initial");
-  if (!el) return;
-
-  el.addEventListener("blur", () => {
-    const raw = (el.value || "").toString().replace(/\./g, "").replace(/[^\d]/g, "");
-    const n = Number(raw || "0");
-    el.value = n ? num0(n) : "10.000";
-  });
-
-  el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      loadData();
-    }
-  });
-}
-
-/* -----------------------------
-   Controls wiring
------------------------------ */
-function wireControls() {
-  const btn = document.getElementById("btn_update");
-  if (btn) btn.addEventListener("click", (e) => { e.preventDefault(); loadData(); });
-
-  const slider = document.getElementById("w_gold");
-  if (slider) {
-    slider.addEventListener("input", () => {
-      updateSliderLabelAndComposition(Number(slider.value));
+    chart = new Chart(ctx, {
+      type: "line",
+      data: { datasets: datasetsMain },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        parsing: false,
+        scales: {
+          x: {
+            type: "time",
+            time: { unit: "year" },
+            ticks: { maxRotation: 0, autoSkip: true },
+          },
+          y: {
+            ticks: {
+              callback: (v) => formatEuro(v),
+            },
+          },
+        },
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.dataset.label}: ${formatEuro(ctx.parsed.y)}`,
+            },
+          },
+        },
+      },
     });
-    slider.addEventListener("change", () => loadData());
+
+    // (ri)crea chart drawdown
+    const ddCanvas = document.getElementById("chart_dd");
+    if (ddCanvas) {
+      const ctxDD = ddCanvas.getContext("2d");
+      if (chartDD) chartDD.destroy();
+
+      const datasetsDD = [
+        {
+          label: "Drawdown Portafoglio (%)",
+          data: ddPointsP,
+          borderWidth: 2,
+          tension: 0.15,
+          pointRadius: 0,
+        },
+      ];
+      if (ddPointsW.length > 0) {
+        datasetsDD.push({
+          label: "Drawdown MSCI World (%)",
+          data: ddPointsW,
+          borderWidth: 2,
+          tension: 0.15,
+          pointRadius: 0,
+        });
+      }
+
+      chartDD = new Chart(ctxDD, {
+        type: "line",
+        data: { datasets: datasetsDD },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          parsing: false,
+          scales: {
+            x: {
+              type: "time",
+              time: { unit: "year" },
+              ticks: { maxRotation: 0, autoSkip: true },
+            },
+            y: {
+              ticks: { callback: (v) => `${Number(v).toFixed(0)}%` },
+              suggestedMin: -60,
+              suggestedMax: 0,
+            },
+          },
+          plugins: { legend: { display: true } },
+        },
+      });
+
+      // Testo riassunto drawdown
+      const ddBox = document.getElementById("dd_summary");
+      if (ddBox && data.metrics) {
+        const m = data.metrics;
+
+        const fmtPct1 = (x) => {
+          if (x === null || x === undefined || Number.isNaN(Number(x))) return "n/d";
+          return `${(Number(x) * 100).toFixed(1)}%`;
+        };
+
+        const fmtEpisode = (ep) => `${ep.start} → ${ep.bottom} → ${ep.end} : ${Number(ep.depth_pct).toFixed(1)}%`;
+
+        const epsP = Array.isArray(m.worst_episodes_portfolio) ? m.worst_episodes_portfolio : [];
+        const epsW = Array.isArray(m.worst_episodes_world) ? m.worst_episodes_world : [];
+
+        let html = `<b>Drawdown 2025 ("Dazi Trump")</b>: Portafoglio ${fmtPct1(m.dd_2025_portfolio)} | MSCI World ${fmtPct1(m.dd_2025_world)}<br/>`;
+
+        if (epsP.length) {
+          html += `<b>3 discese peggiori (Portafoglio)</b><br/>`;
+          html += epsP.map((e) => `• ${fmtEpisode(e)}`).join("<br/>") + "<br/>";
+        }
+        if (epsW.length) {
+          html += `<b>3 discese peggiori (MSCI World)</b><br/>`;
+          html += epsW.map((e) => `• ${fmtEpisode(e)}`).join("<br/>");
+        }
+        ddBox.innerHTML = html;
+      }
+    }
+
+  } catch (err) {
+    alert("Errore: " + (err?.message || err));
+  } finally {
+    btnUpdate.disabled = false;
+    btnUpdate.textContent = "Aggiorna";
   }
-
-  const pdf = document.getElementById("btn_pdf");
-  if (pdf) pdf.addEventListener("click", (e) => { e.preventDefault(); window.print(); });
 }
 
-/* -----------------------------
-   Init
------------------------------ */
-function init() {
-  formatCapitalField();
-  wireControls();
-  loadData();
-}
+// -----------------------------
+// Buttons
+// -----------------------------
+btnUpdate.addEventListener("click", loadData);
+elWG.addEventListener("input", () => {
+  const wGold = clampGold(elWG.value);
+  elWG.value = String(wGold);
+  updateSliderLabelAndComposition(wGold / 100);
+});
 
-window.addEventListener("DOMContentLoaded", init);
+btnPdf.addEventListener("click", () => {
+  // usa i valori in pagina (se disponibili)
+  const cagr = elCagr.textContent || "";
+  const maxdd = elMaxDD.textContent || "";
+  const finalv = elFinal.textContent || "";
+  const years = elYears.textContent || "";
+  const url = `/api/pdf?title=${encodeURIComponent("Gloob - Metodo Pigro")}&cagr=${encodeURIComponent(cagr)}&maxdd=${encodeURIComponent(maxdd)}&final=${encodeURIComponent(finalv)}&years=${encodeURIComponent(years)}`;
+  window.open(url, "_blank");
+});
+
+btnFax?.addEventListener("click", () => {
+  // qui puoi puntare al tuo PDF faxsimile quando vuoi (endpoint dedicato)
+  // per ora: scarica PDF generico
+  btnPdf.click();
+});
+
+btnCons?.addEventListener("click", () => {
+  // se già hai popup/contatti in altra versione, qui puoi richiamare quella logica
+  alert("Funzione da collegare ai contatti consulenti (popup).");
+});
+
+btnLibro?.addEventListener("click", () => {
+  window.open("https://www.amazon.it/dp/B0GQM925QR/ref=sr", "_blank");
+});
+
+// FAQ toggles
+document.querySelectorAll(".faqItem").forEach((item) => {
+  item.addEventListener("click", () => item.classList.toggle("open"));
+});
+
+// Ask (se hai endpoint /api/ask nel tuo app.py completo precedente, qui lo richiami; altrimenti resta inattivo)
+btnAsk?.addEventListener("click", async () => {
+  const q = (askText?.value || "").trim();
+  if (!q) return;
+
+  try {
+    btnAsk.disabled = true;
+    btnAsk.textContent = "Invio…";
+
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q }),
+    });
+
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Errore ask");
+
+    askAnswer.style.display = "block";
+    askAnswer.textContent = data.answer || "";
+  } catch (e) {
+    alert("Errore: " + (e?.message || e));
+  } finally {
+    btnAsk.disabled = false;
+    btnAsk.textContent = "Chiedi all’assistente";
+  }
+});
+
+// Init
+updateSliderLabelAndComposition(clampGold(elWG.value) / 100);
+loadData();
