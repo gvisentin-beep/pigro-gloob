@@ -1,122 +1,79 @@
 from __future__ import annotations
 
 import os
-import json
-import math
-import traceback
-from datetime import datetime, date
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from datetime import datetime, timezone
+from typing import Any, Dict, Tuple, Optional, List
 
-import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, request, render_template, send_file  # ✅ aggiunto send_file
-
-# OpenAI SDK 1.x
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None  # gestiamo sotto
-
+from flask import Flask, jsonify, request, send_file, render_template
+import yfinance as yf
 
 # ----------------------------
-# App / Paths / Env
+# Flask app
 # ----------------------------
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
+DATA_DIR = BASE_DIR / "data"
+TEMPLATES_DIR = BASE_DIR / "templates"
+
+# ----------------------------
+# Config & env
+# ----------------------------
+UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
+ASK_DAILY_LIMIT = int(os.getenv("ASK_DAILY_LIMIT", "10"))
+
+LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
+GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
+WORLD_TICKER = os.getenv("WORLD_TICKER", "SMSWLD.MI").strip()
 
 LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
-
-ASK_DAILY_LIMIT = int(os.getenv("ASK_DAILY_LIMIT", "10"))
-ASK_STORE_FILE = DATA_DIR / "ask_limits.json"
-
-UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
-
-# default corretti (se su Render sono presenti env, prevalgono)
-LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
-GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
-
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
-
-# ✅ Firma build: controllala da /api/diag o /api/build_id
-BUILD_ID = os.getenv("BUILD_ID", "2026-03-04_outer_ffill_alignment_v1").strip()
-
+WORLD_FILE = DATA_DIR / "world.csv"
 
 # ----------------------------
 # Helpers
 # ----------------------------
 def _now_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-def _safe_float(x) -> Optional[float]:
-    try:
-        if x is None:
-            return None
-        return float(x)
-    except Exception:
-        return None
+def _json_error(msg: str, status: int = 400, **extra: Any):
+    payload = {"ok": False, "error": msg}
+    if extra:
+        payload.update(extra)
+    return jsonify(payload), status
 
 
-def _detect_sep(file_path: Path) -> str:
-    try:
-        with file_path.open("r", encoding="utf-8", errors="ignore") as f:
-            head = f.readline()
-        if ";" in head and "," not in head:
-            return ";"
-        if "," in head and ";" not in head:
-            return ","
-        return ";" if head.count(";") >= head.count(",") else ","
-    except Exception:
-        return ";"
+def _read_price_csv(path: Path) -> pd.DataFrame:
+    """
+    CSV formato: date;close
+    date in dd/mm/YYYY
+    """
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+    df = pd.read_csv(path, sep=";", dtype=str)
+    if "date" not in df.columns or "close" not in df.columns:
+        raise ValueError(f"CSV non valido (mancano colonne date/close): {path}")
+
+    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+    df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    return df[["date", "close"]].copy()
 
 
-def _read_price_csv(file_path: Path) -> pd.DataFrame:
-    if not file_path.exists():
-        raise FileNotFoundError(f"File non trovato: {file_path}")
-
-    sep = _detect_sep(file_path)
-    df = pd.read_csv(file_path, sep=sep)
-    df.columns = [c.strip() for c in df.columns]
-
-    cols = {c.lower(): c for c in df.columns}
-    if "date" not in cols or "close" not in cols:
-        raise ValueError(
-            f"CSV {file_path.name}: colonne attese 'Date' e 'Close'. Trovate: {list(df.columns)}"
-        )
-
-    dcol = cols["date"]
-    ccol = cols["close"]
-
-    dates = pd.to_datetime(df[dcol], errors="coerce", dayfirst=True)
-    close = pd.to_numeric(df[ccol], errors="coerce")
-
-    out = pd.DataFrame({"date": dates, "close": close}).dropna()
-    out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
-
-    if len(out) < 10:
-        raise ValueError(f"CSV {file_path.name}: troppo poche righe valide ({len(out)}).")
-
-    try:
-        out["date"] = out["date"].dt.tz_localize(None)
-    except Exception:
-        pass
-
-    return out
+def _merge_on_date(df1: pd.DataFrame, df2: pd.DataFrame, how: str = "inner") -> pd.DataFrame:
+    return df1.merge(df2, on="date", how=how)
 
 
-def _write_price_csv(file_path: Path, df: pd.DataFrame) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    save = pd.DataFrame(
-        {
-            "Date": pd.to_datetime(df["date"]).dt.strftime("%d/%m/%Y"),
-            "Close": pd.to_numeric(df["close"]).map(lambda x: f"{float(x):.2f}"),
-        }
-    )
-    save.to_csv(file_path, sep=";", index=False)
+def _compute_cagr(series: pd.Series, dates: pd.Series) -> float:
+    if len(series) < 2:
+        return 0.0
+    years = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
+    if years <= 0:
+        return 0.0
+    return float((series.iloc[-1] / series.iloc[0]) ** (1 / years) - 1.0)
 
 
 def _compute_drawdown(series: pd.Series) -> float:
@@ -125,412 +82,356 @@ def _compute_drawdown(series: pd.Series) -> float:
     return float(dd.min())
 
 
-def _compute_cagr(values: pd.Series, dates: pd.Series) -> Optional[float]:
-    if len(values) < 2:
-        return None
-    t_years = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
-    if t_years <= 0:
-        return None
-    v0 = float(values.iloc[0])
-    v1 = float(values.iloc[-1])
-    if v0 <= 0 or v1 <= 0:
-        return None
-    return (v1 / v0) ** (1.0 / t_years) - 1.0
+def _compute_drawdown_series_pct(series: pd.Series) -> pd.Series:
+    """Drawdown in percent (negative), indexed like input series."""
+    peak = series.cummax()
+    dd = (series / peak) - 1.0
+    return dd * 100.0
 
 
-def _doubling_years(cagr: Optional[float]) -> Optional[float]:
-    if cagr is None or cagr <= 0:
-        return None
-    return math.log(2.0) / math.log(1.0 + cagr)
+def _worst_drawdown_episodes(series: pd.Series, dates: pd.Series, top_n: int = 3) -> list[dict]:
+    """Return top-N worst drawdown episodes with start/bottom/end dates and depth_pct (negative)."""
+    if len(series) < 3:
+        return []
+
+    values = pd.Series(series).reset_index(drop=True)
+    dts = pd.to_datetime(dates).reset_index(drop=True)
+
+    peak = values.cummax()
+    dd = (values / peak) - 1.0  # negative or 0
+    dd = dd.fillna(0.0)
+
+    episodes: list[dict] = []
+    in_dd = False
+    start_idx = 0
+
+    def _close_episode(s_idx: int, e_idx: int):
+        sub = dd.iloc[s_idx : e_idx + 1]
+        if sub.empty:
+            return
+        bottom_rel = int(sub.values.argmin())
+        bottom_idx = s_idx + bottom_rel
+        depth = float(sub.min() * 100.0)  # percent (negative)
+        episodes.append(
+            {
+                "start": dts.iloc[s_idx].strftime("%Y-%m-%d"),
+                "bottom": dts.iloc[bottom_idx].strftime("%Y-%m-%d"),
+                "end": dts.iloc[e_idx].strftime("%Y-%m-%d"),
+                "depth_pct": depth,
+            }
+        )
+
+    for i in range(1, len(dd)):
+        if not in_dd and dd.iloc[i] < 0:
+            start_idx = i - 1
+            while start_idx > 0 and dd.iloc[start_idx] != 0:
+                start_idx -= 1
+            in_dd = True
+        elif in_dd and dd.iloc[i] == 0:
+            _close_episode(start_idx, i)
+            in_dd = False
+
+    if in_dd:
+        _close_episode(start_idx, len(dd) - 1)
+
+    if not episodes:
+        return []
+
+    episodes.sort(key=lambda x: x["depth_pct"])  # più negativo prima
+    return episodes[:top_n]
 
 
-def _first_trading_day_each_year(dates: pd.Series) -> pd.Series:
-    years = dates.dt.year
-    first_idx = dates.groupby(years).head(1).index
-    flags = dates.index.isin(first_idx)
-    return pd.Series(flags, index=dates.index)
+def _doubling_years(cagr: float) -> float:
+    if cagr <= 0:
+        return float("inf")
+    # ln(2)/ln(1+r)
+    import math
+    return float(math.log(2.0) / math.log(1.0 + cagr))
 
 
-def _annual_rebalance_portfolio(
-    ls80_close: pd.Series,
-    gold_close: pd.Series,
-    dates: pd.Series,
-    w_gold: float,
-    capital: float,
-) -> pd.Series:
-    w_gold = float(np.clip(w_gold, 0.0, 1.0))
+def _annual_rebalance_portfolio(ls80: pd.Series, gold: pd.Series, dates: pd.Series, w_gold: float, capital: float) -> pd.Series:
+    """
+    Ribilanciamento annuale (a fine anno / primo giorno del nuovo anno disponibile).
+    """
+    w_gold = float(max(0.0, min(0.5, w_gold)))
     w_ls80 = 1.0 - w_gold
 
-    v0 = float(capital)
-    ls80_shares = (v0 * w_ls80) / float(ls80_close.iloc[0])
-    gold_shares = (v0 * w_gold) / float(gold_close.iloc[0])
+    # Start: investo capital secondo pesi
+    shares_ls = (capital * w_ls80) / float(ls80.iloc[0])
+    shares_gd = (capital * w_gold) / float(gold.iloc[0])
 
-    rebalance_flags = _first_trading_day_each_year(dates)
+    out = []
+    last_year = pd.to_datetime(dates.iloc[0]).year
 
-    values = []
     for i in range(len(dates)):
-        v = ls80_shares * float(ls80_close.iloc[i]) + gold_shares * float(gold_close.iloc[i])
-        values.append(v)
+        d = pd.to_datetime(dates.iloc[i])
+        value = shares_ls * float(ls80.iloc[i]) + shares_gd * float(gold.iloc[i])
+        out.append(value)
 
-        if i != 0 and bool(rebalance_flags.iloc[i]):
-            v_now = v
-            ls80_shares = (v_now * w_ls80) / float(ls80_close.iloc[i])
-            gold_shares = (v_now * w_gold) / float(gold_close.iloc[i])
+        # se cambia anno, ribilancio al primo giorno dell'anno nuovo (cioè qui)
+        if d.year != last_year:
+            # ribilancio a questa data (i)
+            value_now = value
+            shares_ls = (value_now * w_ls80) / float(ls80.iloc[i])
+            shares_gd = (value_now * w_gold) / float(gold.iloc[i])
+            last_year = d.year
 
-    return pd.Series(values)
-
-
-def _client_ip() -> str:
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.remote_addr or "unknown"
+    return pd.Series(out)
 
 
-def _load_ask_store() -> Dict[str, Any]:
+def _write_csv(path: Path, df: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out = df.copy().sort_values("date")
+    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
+    out = out[["date", "close"]]
+    out.to_csv(path, sep=";", index=False, float_format="%.6g")
+
+
+def _update_one_asset(yf_mod, ticker: str, out_file: Path) -> Dict[str, Any]:
+    """
+    Scarica dati recenti (60d) e li fonde con lo storico locale.
+    """
+    result = {"asset": ticker, "file": str(out_file), "updated": False, "reason": ""}
+
     try:
-        if ASK_STORE_FILE.exists():
-            return json.loads(ASK_STORE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return {}
+        raw = yf_mod.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=False)
+        if raw is None or raw.empty:
+            result["reason"] = "no_data_from_yahoo"
+            return result
 
+        if isinstance(raw.index, pd.DatetimeIndex):
+            raw = raw.reset_index()
 
-def _save_ask_store(store: Dict[str, Any]) -> None:
-    try:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        ASK_STORE_FILE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+        if "Adj Close" in raw.columns:
+            raw["close"] = raw["Adj Close"]
+        elif "Close" in raw.columns:
+            raw["close"] = raw["Close"]
+        else:
+            result["reason"] = "no_close_column"
+            return result
 
+        tmp = raw[["Date", "close"]].rename(columns={"Date": "date"}).copy()
+        tmp["date"] = pd.to_datetime(tmp["date"]).dt.normalize()
+        tmp["close"] = pd.to_numeric(tmp["close"], errors="coerce")
+        tmp = tmp.dropna(subset=["date", "close"]).sort_values("date")
 
-def _check_and_consume_quota(ip: str) -> Tuple[int, int]:
-    limit = ASK_DAILY_LIMIT
-    today = date.today().isoformat()
-    store = _load_ask_store()
+        if out_file.exists():
+            old = _read_price_csv(out_file)
+            merged = pd.concat([old, tmp[["date", "close"]]], ignore_index=True)
+            merged = merged.drop_duplicates(subset=["date"], keep="last").sort_values("date")
+        else:
+            merged = tmp[["date", "close"]]
 
-    key = f"{today}:{ip}"
-    used = int(store.get(key, 0))
+        _write_csv(out_file, merged)
+        result["updated"] = True
+        return result
 
-    if used >= limit:
-        return 0, limit
-
-    used += 1
-    store[key] = used
-    _save_ask_store(store)
-
-    remaining = max(0, limit - used)
-    return remaining, limit
-
-
-def _openai_client() -> Optional[Any]:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key or OpenAI is None:
-        return None
-    try:
-        return OpenAI(api_key=api_key)
-    except Exception:
-        return None
-
-
-def _pkg_version(name: str) -> Optional[str]:
-    try:
-        from importlib.metadata import version
-        return version(name)
-    except Exception:
-        return None
-
-
-def _routes_list() -> list[dict[str, str]]:
-    routes = []
-    for r in app.url_map.iter_rules():
-        methods = ",".join(sorted(m for m in r.methods if m not in {"HEAD", "OPTIONS"}))
-        routes.append({"rule": str(r), "methods": methods, "endpoint": r.endpoint})
-    routes.sort(key=lambda x: (x["rule"], x["methods"]))
-    return routes
-
-
-def _json_error(message: str, status: int = 500, **extra: Any):
-    payload = {"ok": False, "error": message, **extra}
-    return jsonify(payload), status
-
-
-# --- yfinance helpers (robusto per .MI) ---
-def _history_to_df(hist: pd.DataFrame) -> pd.DataFrame:
-    if hist is None or hist.empty or "Close" not in hist.columns:
-        return pd.DataFrame(columns=["date", "close"])
-    tmp = hist[["Close"]].rename(columns={"Close": "close"}).copy()
-    tmp["date"] = pd.to_datetime(tmp.index, errors="coerce")
-    try:
-        tmp["date"] = tmp["date"].dt.tz_localize(None)
-    except Exception:
-        pass
-    tmp["close"] = pd.to_numeric(tmp["close"], errors="coerce")
-    tmp = tmp.dropna().sort_values("date")
-    return tmp[["date", "close"]]
-
-
-def _update_one_asset(yf, ticker: str, file_path: Path) -> Dict[str, Any]:
-    info: Dict[str, Any] = {
-        "asset": file_path.stem,
-        "ticker_used": ticker,
-        "file": str(file_path),
-        "updated": False,
-    }
-
-    df_local = _read_price_csv(file_path)
-    last_local = df_local["date"].iloc[-1].date()
-    info["last_local_date"] = str(last_local)
-
-    hist = pd.DataFrame(columns=["date", "close"])
-    try:
-        tkr = yf.Ticker(ticker)
-        hist_raw = tkr.history(period="6mo", interval="1d", auto_adjust=False)
-        hist = _history_to_df(hist_raw)
-        info["method"] = "Ticker.history(6mo)"
     except Exception as e:
-        info["method_error"] = f"{type(e).__name__}: {e}"
-
-    if hist.empty:
-        try:
-            tkr = yf.Ticker(ticker)
-            hist_raw = tkr.history(period="1y", interval="1d", auto_adjust=False)
-            hist = _history_to_df(hist_raw)
-            info["fallback"] = "Ticker.history(1y)"
-        except Exception as e:
-            info["fallback_error"] = f"{type(e).__name__}: {e}"
-
-    if hist.empty:
-        info["reason"] = "no_data_from_yahoo"
-        return info
-
-    new_rows = hist[hist["date"].dt.date > last_local]
-    if new_rows.empty:
-        info["reason"] = "already_up_to_date"
-        info["last_yahoo_date"] = str(hist["date"].iloc[-1].date())
-        return info
-
-    out = pd.concat([df_local, new_rows], ignore_index=True)
-    out = out.sort_values("date").drop_duplicates(subset=["date"], keep="last")
-
-    _write_price_csv(file_path, out)
-
-    info["updated"] = True
-    info["added_rows"] = int(len(new_rows))
-    info["last_date"] = str(out["date"].iloc[-1].date())
-    info["last_value"] = float(out["close"].iloc[-1])
-    return info
-
-
-def _require_token() -> Optional[Tuple[Any, int]]:
-    if not UPDATE_TOKEN:
-        return None
-    token = (request.args.get("token") or "").strip()
-    if token != UPDATE_TOKEN:
-        return _json_error("Token non valido.", 401)
-    return None
+        result["reason"] = f"exception: {type(e).__name__}: {e}"
+        return result
 
 
 # ----------------------------
-# Pages
+# Web: homepage
 # ----------------------------
 @app.get("/")
 def home():
     return render_template("index.html")
 
 
-@app.get("/health")
-def health():
-    return jsonify({"ok": True, "time_utc": _now_iso()})
-
-
-# ✅ endpoint leggero per verificare subito il deploy
-@app.get("/api/build_id")
-def api_build_id():
-    return jsonify({"ok": True, "build_id": BUILD_ID, "time_utc": _now_iso()})
-
-
 # ----------------------------
-# ✅ Faxsimile PDF (execution only)
+# API: diag
 # ----------------------------
-@app.get("/faxsimile_execution_only.pdf")
-def faxsimile_execution_only_pdf():
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-
-    static_pdf = BASE_DIR / "static" / "faxsimile_execution_only.pdf"
-    if static_pdf.exists():
-        return send_file(static_pdf, mimetype="application/pdf")
-
-    buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-
-    y = height - 70
-    lines = [
-        "FACSIMILE — Richiesta ordine in modalità 'execution only'",
-        "",
-        "Spett.le [BANCA]",
-        "",
-        "Oggetto: Richiesta esecuzione ordine in modalità 'execution only'",
-        "",
-        "Con la presente richiedo l’esecuzione dell’ordine di acquisto dei seguenti strumenti",
-        "in modalità 'execution only', senza consulenza né raccomandazioni personalizzate.",
-        "",
-        "Strumento 1: [INSERIRE ISIN / Ticker]   Quantità/Importo: [____]",
-        "Strumento 2: [INSERIRE ISIN / Ticker]   Quantità/Importo: [____]",
-        "",
-        "Dichiaro di aver compreso che l’operazione potrebbe non essere coerente con il mio profilo",
-        "MIFID e che la banca si limita alla sola esecuzione dell’ordine.",
-        "",
-        "Data: ____/____/______",
-        "Firma: __________________________",
-    ]
-
-    c.setFont("Helvetica-Bold", 13)
-    c.drawString(60, y, lines[0])
-    y -= 28
-
-    c.setFont("Helvetica", 11)
-    for line in lines[1:]:
-        c.drawString(60, y, line)
-        y -= 16
-        if y < 70:
-            c.showPage()
-            c.setFont("Helvetica", 11)
-            y = height - 70
-
-    c.showPage()
-    c.save()
-    buf.seek(0)
-    return send_file(buf, mimetype="application/pdf", download_name="faxsimile_execution_only.pdf")
-
-
-# ----------------------------
-# Diagnostics
-# ----------------------------
-@app.get("/api/diag/routes")
-def api_diag_routes():
-    return jsonify({"ok": True, "routes": _routes_list(), "time_utc": _now_iso()})
-
-
 @app.get("/api/diag")
 def api_diag():
     diag: Dict[str, Any] = {
-        "ok": True,
-        "time_utc": _now_iso(),
-        "build_id": BUILD_ID,
         "base_dir": str(BASE_DIR),
+        "build_id": os.getenv("RENDER_GIT_COMMIT", "") or os.getenv("BUILD_ID", "") or "local",
         "data_dir": str(DATA_DIR),
         "env": {
-            "LS80_TICKER": LS80_TICKER,
-            "GOLD_TICKER": GOLD_TICKER,
-            "OPENAI_API_KEY_present": bool(os.getenv("OPENAI_API_KEY", "").strip()),
-            "OPENAI_MODEL": OPENAI_MODEL,
-            "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
             "ASK_DAILY_LIMIT": ASK_DAILY_LIMIT,
-        },
-        "versions": {
-            "python": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
-            "flask": _pkg_version("flask"),
-            "gunicorn": _pkg_version("gunicorn"),
-            "pandas": _pkg_version("pandas"),
-            "numpy": _pkg_version("numpy"),
-            "openai": _pkg_version("openai"),
-            "yfinance": _pkg_version("yfinance"),
-            "requests": _pkg_version("requests"),
+            "GOLD_TICKER": GOLD_TICKER,
+            "WORLD_TICKER": WORLD_TICKER,
+            "LS80_TICKER": LS80_TICKER,
+            "OPENAI_API_KEY_present": bool(os.getenv("OPENAI_API_KEY")),
+            "OPENAI_MODEL": os.getenv("OPENAI_MODEL", ""),
+            "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
         },
         "files": {},
-        "merge": {},
-        "routes_count": len(_routes_list()),
+        "ok": True,
+        "time_utc": _now_iso(),
+        "versions": {
+            "python": os.getenv("PYTHON_VERSION", ""),
+        },
     }
 
-    def file_info(fp: Path) -> Dict[str, Any]:
-        info: Dict[str, Any] = {"exists": fp.exists(), "file": str(fp)}
-        if not fp.exists():
-            return info
+    def file_info(p: Path) -> Dict[str, Any]:
+        if not p.exists():
+            return {"exists": False, "file": str(p)}
         try:
-            df = _read_price_csv(fp)
-            info.update(
-                {
-                    "rows": int(len(df)),
-                    "sep_detected": _detect_sep(fp),
-                    "first_date": str(df["date"].iloc[0].date()),
-                    "last_date": str(df["date"].iloc[-1].date()),
-                    "first_value": float(df["close"].iloc[0]),
-                    "last_value": float(df["close"].iloc[-1]),
-                }
-            )
+            df = _read_price_csv(p)
+            return {
+                "exists": True,
+                "file": str(p),
+                "first_date": str(df["date"].iloc[0].date()),
+                "last_date": str(df["date"].iloc[-1].date()),
+                "first_value": float(df["close"].iloc[0]),
+                "last_value": float(df["close"].iloc[-1]),
+                "rows": int(len(df)),
+            }
         except Exception as e:
-            info["error"] = f"{type(e).__name__}: {e}"
-        return info
+            return {"exists": True, "file": str(p), "error": f"{type(e).__name__}: {e}"}
 
-    diag["files"]["ls80"] = file_info(LS80_FILE)
     diag["files"]["gold"] = file_info(GOLD_FILE)
+    diag["files"]["world"] = file_info(WORLD_FILE)
+    diag["files"]["ls80"] = file_info(LS80_FILE)
 
     try:
         ls = _read_price_csv(LS80_FILE)
         gd = _read_price_csv(GOLD_FILE)
-        merged = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
+        wd = _read_price_csv(WORLD_FILE)
+
+        merged_lg = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold"))
+        merged_all = merged_lg.merge(wd, on="date", how="inner")
+
         diag["merge"] = {
-            "rows_inner": int(len(merged)),
-            "first_date": str(merged["date"].iloc[0].date()) if len(merged) else None,
-            "last_date": str(merged["date"].iloc[-1].date()) if len(merged) else None,
+            "rows_inner_ls80_gold": int(len(merged_lg)),
+            "rows_inner_all3": int(len(merged_all)),
+            "first_date": str(merged_all["date"].iloc[0].date()) if len(merged_all) else (str(merged_lg["date"].iloc[0].date()) if len(merged_lg) else None),
+            "last_date": str(merged_all["date"].iloc[-1].date()) if len(merged_all) else (str(merged_lg["date"].iloc[-1].date()) if len(merged_lg) else None),
         }
     except Exception as e:
-        diag["merge"] = {"error": f"{type(e).__name__}: {e}"}
+        diag["merge_error"] = f"{type(e).__name__}: {e}"
 
     return jsonify(diag)
 
 
 # ----------------------------
-# API: compute (grafico + metriche)
-# Allineamento "outer + ffill": evita blocco quando uno dei due ETF aggiorna 1 giorno dopo
+# API: update data (Render endpoint)
+# ----------------------------
+@app.get("/api/update_data")
+def api_update_data():
+    token = request.args.get("token", "").strip()
+    if not UPDATE_TOKEN or token != UPDATE_TOKEN:
+        return _json_error("Token non valido.", 403)
+
+    try:
+        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
+        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
+        res_wd = _update_one_asset(yf, WORLD_TICKER, WORLD_FILE)
+        return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "world": res_wd, "time_utc": _now_iso()})
+    except Exception as e:
+        return _json_error(f"Errore update_data: {type(e).__name__}: {e}", 500)
+
+
+@app.get("/api/force_update")
+def api_force_update():
+    token = request.args.get("token", "").strip()
+    if not UPDATE_TOKEN or token != UPDATE_TOKEN:
+        return _json_error("Token non valido.", 403)
+
+    try:
+        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
+        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
+        res_wd = _update_one_asset(yf, WORLD_TICKER, WORLD_FILE)
+
+        after = {}
+        for name, p in [("ls80", LS80_FILE), ("gold", GOLD_FILE), ("world", WORLD_FILE)]:
+            if p.exists():
+                df = _read_price_csv(p)
+                after[name] = {
+                    "rows": int(len(df)),
+                    "last_date": str(df["date"].iloc[-1].date()),
+                    "last_value": float(df["close"].iloc[-1]),
+                }
+            else:
+                after[name] = {"exists": False}
+
+        return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "world": res_wd, "after_file": after, "time_utc": _now_iso()})
+    except Exception as e:
+        return _json_error(f"Errore force_update: {type(e).__name__}: {e}", 500)
+
+
+# ----------------------------
+# API: compute portfolio & world
 # ----------------------------
 @app.get("/api/compute")
 def api_compute():
     try:
-        w_gold = _safe_float(request.args.get("w_gold"))
-        if w_gold is None:
-            w_ls80 = _safe_float(request.args.get("w_ls80"))
-            if w_ls80 is None:
-                w_gold = 0.20
-            else:
-                w_gold = 1.0 - float(w_ls80)
+        w_gold = float(request.args.get("w_gold", "0.20"))
+        w_gold = max(0.0, min(0.50, w_gold))
 
-        if w_gold > 1.0:
-            w_gold = w_gold / 100.0
-
-        w_gold = float(np.clip(w_gold, 0.0, 0.50))
-
-        capital = _safe_float(request.args.get("capital")) or _safe_float(request.args.get("initial")) or 10000.0
+        capital = float(request.args.get("capital", "10000"))
         if capital <= 0:
-            capital = 10000.0
+            return _json_error("Capitale non valido.", 400)
 
         ls = _read_price_csv(LS80_FILE)
         gd = _read_price_csv(GOLD_FILE)
+        wd = _read_price_csv(WORLD_FILE)
 
-        # ✅ MODIFICA (3 righe): outer + forward-fill + dropna (allineamento robusto)
-        df = ls.merge(gd, on="date", how="outer", suffixes=("_ls80", "_gold")).sort_values("date")
-        df[["close_ls80", "close_gold"]] = df[["close_ls80", "close_gold"]].ffill()
-        df = df.dropna(subset=["close_ls80", "close_gold"])
-
-        df = df.rename(columns={"close_ls80": "ls80", "close_gold": "gold"})
+        # ✅ A: rigoroso → solo date comuni tra LS80 e Oro
+        df = ls.merge(gd, on="date", how="inner", suffixes=("_ls80", "_gold")).rename(
+            columns={"close_ls80": "ls80", "close_gold": "gold"}
+        )
 
         if len(df) < 20:
             return _json_error(
-                "Poche date utili dopo allineamento dati tra LS80 e Oro.",
+                "Poche date in comune tra LS80 e Oro (merge troppo corto).",
                 400,
-                rows=int(len(df)),
+                rows_inner=int(len(df)),
             )
 
         dates = df["date"]
+
+        # World: allinea sullo stesso asse temporale del portafoglio (ffill sulle date mancanti)
+        wd2 = wd.rename(columns={"close": "world"}).copy()
+        wd2 = wd2[["date", "world"]].sort_values("date")
+        base = pd.DataFrame({"date": dates})
+        world_aligned = base.merge(wd2, on="date", how="left").sort_values("date")
+        world_aligned["world"] = world_aligned["world"].ffill()
+        world_aligned = world_aligned.dropna(subset=["world"])
+
+        # Se per qualche ragione l'allineamento taglia troppo, ricalibra su date comuni
+        if len(world_aligned) < 20:
+            df_all = df.merge(wd2, on="date", how="inner")
+            dates = df_all["date"]
+            df = df_all[["date", "ls80", "gold"]]
+            world_series = df_all["world"]
+        else:
+            # Mantieni le date del portafoglio, ma taglia l'inizio fino a quando World è disponibile
+            first_ok = int(world_aligned.index.min())
+            df = df.iloc[first_ok:].reset_index(drop=True)
+            dates = df["date"]
+            world_series = world_aligned["world"].iloc[first_ok:].reset_index(drop=True)
+
+        # Portafoglio ribilanciamento annuale
         port = _annual_rebalance_portfolio(df["ls80"], df["gold"], dates, w_gold=w_gold, capital=float(capital))
+
+        # World normalizzato sul capitale iniziale (buy&hold)
+        world_scaled = float(capital) * (world_series / float(world_series.iloc[0]))
 
         cagr = _compute_cagr(port, dates)
         max_dd = _compute_drawdown(port)
         dbl = _doubling_years(cagr)
+
+        cagr_w = _compute_cagr(world_scaled, dates)
+        max_dd_w = _compute_drawdown(world_scaled)
+
+        # Drawdown serie (%)
+        dd_port_pct = _compute_drawdown_series_pct(port)
+        dd_world_pct = _compute_drawdown_series_pct(world_scaled)
+
+        # "Dazi Trump 2025" = peggiore drawdown dentro il 2025
+        try:
+            mask_2025 = pd.to_datetime(dates).dt.year == 2025
+            dd_2025_port = float((dd_port_pct[mask_2025] / 100.0).min()) if mask_2025.any() else None
+            dd_2025_world = float((dd_world_pct[mask_2025] / 100.0).min()) if mask_2025.any() else None
+        except Exception:
+            dd_2025_port = None
+            dd_2025_world = None
+
+        worst3_port = _worst_drawdown_episodes(port, dates, top_n=3)
+        worst3_world = _worst_drawdown_episodes(world_scaled, dates, top_n=3)
 
         w_ls80 = 1.0 - w_gold
         az = 0.80 * w_ls80
@@ -547,137 +448,77 @@ def api_compute():
             "final_years": years_period,
             "weights": {"gold": w_gold, "ls80": w_ls80, "equity": az, "bond": ob},
             "last_data_date": str(dates.iloc[-1].date()),
+            # World
+            "cagr_world": cagr_w,
+            "max_dd_world": max_dd_w,
+            "dd_2025_portfolio": dd_2025_port,
+            "dd_2025_world": dd_2025_world,
+            "worst_episodes_portfolio": worst3_port,
+            "worst_episodes_world": worst3_world,
         }
 
         payload: Dict[str, Any] = {
             "ok": True,
             "dates": [d.strftime("%Y-%m-%d") for d in dates],
             "portfolio": [float(x) for x in port],
+            "world": [float(x) for x in world_scaled],
+            "drawdown_portfolio_pct": [float(x) for x in dd_port_pct],
+            "drawdown_world_pct": [float(x) for x in dd_world_pct],
             "metrics": metrics,
             "composition": {"azionario": az, "obbligazionario": ob, "oro": w_gold},
         }
-
         return jsonify(payload)
 
     except Exception as e:
-        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
+        return _json_error(f"Errore compute: {type(e).__name__}: {e}", 500)
 
 
 # ----------------------------
-# API: ask (assistente)
+# PDF endpoint (grafico)
 # ----------------------------
-@app.post("/api/ask")
-def api_ask():
+@app.get("/api/pdf")
+def api_pdf():
+    # (mantengo la tua logica PDF già presente)
     try:
-        data = request.get_json(silent=True) or {}
-        question = (data.get("question") or data.get("q") or "").strip()
-        if not question:
-            return _json_error("Scrivi una domanda.", 400)
+        from io import BytesIO
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.pagesizes import A4
 
-        ip = _client_ip()
-        remaining, limit = _check_and_consume_quota(ip)
-        if remaining == 0 and limit > 0:
-            return jsonify({"ok": False, "error": "Limite giornaliero raggiunto.", "remaining": 0, "limit": limit}), 429
+        title = request.args.get("title", "Gloob - Metodo Pigro")
+        cagr = request.args.get("cagr", "")
+        maxdd = request.args.get("maxdd", "")
+        finalv = request.args.get("final", "")
+        years = request.args.get("years", "")
 
-        client = _openai_client()
-        if client is None:
-            return jsonify(
-                {
-                    "ok": True,
-                    "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render (Environment).",
-                    "remaining": remaining,
-                    "limit": limit,
-                }
-            )
+        buffer = BytesIO()
+        c = rl_canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
 
-        system_msg = (
-            "Rispondi in italiano, in modo semplice e pratico.\n"
-            "Contesto: sito 'Metodo Pigro' (ETF azion-obblig + oro). Informazione generale.\n"
-            "Non è consulenza finanziaria personalizzata.\n"
-            "Stile: breve, chiaro, con esempi pratici quando utile."
-        )
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, height - 60, title)
 
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": question},
-            ],
-        )
+        c.setFont("Helvetica", 12)
+        y = height - 100
+        for line in [
+            f"Rendimento annualizzato: {cagr}",
+            f"Max Ribasso nel periodo: {maxdd}",
+            f"Finale: {finalv} (in anni {years})",
+        ]:
+            c.drawString(50, y, line)
+            y -= 18
 
-        answer = ""
-        try:
-            if resp and resp.choices and resp.choices[0].message and resp.choices[0].message.content:
-                answer = resp.choices[0].message.content
-        except Exception:
-            answer = ""
+        c.setFont("Helvetica", 10)
+        c.drawString(50, 40, "Nota: documento informativo, non consulenza finanziaria.")
+        c.showPage()
+        c.save()
 
-        if not answer:
-            answer = "Nessuna risposta (vuoto). Riprova tra poco."
-
-        return jsonify({"ok": True, "answer": answer.strip(), "remaining": remaining, "limit": limit})
+        buffer.seek(0)
+        return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name="gloob_pigro.pdf")
 
     except Exception as e:
-        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
+        return _json_error(f"Errore pdf: {type(e).__name__}: {e}", 500)
 
 
-# ----------------------------
-# API: update data (token) - usa history() per .MI
-# ----------------------------
-@app.get("/api/update_data")
-def api_update_data():
-    err = _require_token()
-    if err is not None:
-        return err
-
-    try:
-        import yfinance as yf
-    except Exception as e:
-        return _json_error(f"yfinance non disponibile. {type(e).__name__}: {e}", 500)
-
-    try:
-        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
-        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
-        return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "time_utc": _now_iso()})
-    except Exception as e:
-        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
-
-
-# ----------------------------
-# ✅ API: force update (token)
-# ----------------------------
-@app.get("/api/force_update")
-def api_force_update():
-    err = _require_token()
-    if err is not None:
-        return err
-
-    try:
-        import yfinance as yf
-    except Exception as e:
-        return _json_error(f"yfinance non disponibile. {type(e).__name__}: {e}", 500)
-
-    try:
-        res_ls = _update_one_asset(yf, LS80_TICKER, LS80_FILE)
-        res_gd = _update_one_asset(yf, GOLD_TICKER, GOLD_FILE)
-
-        after = {}
-        try:
-            after["ls80_last_date_file"] = str(_read_price_csv(LS80_FILE)["date"].iloc[-1].date())
-        except Exception as e:
-            after["ls80_last_date_file_error"] = f"{type(e).__name__}: {e}"
-        try:
-            after["gold_last_date_file"] = str(_read_price_csv(GOLD_FILE)["date"].iloc[-1].date())
-        except Exception as e:
-            after["gold_last_date_file_error"] = f"{type(e).__name__}: {e}"
-
-        return jsonify({"ok": True, "ls80": res_ls, "gold": res_gd, "after_file": after, "time_utc": _now_iso()})
-    except Exception as e:
-        return _json_error(f"{type(e).__name__}: {e}", 500, traceback=traceback.format_exc())
-
-
-# ----------------------------
-# Main (local)
-# ----------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "10000")), debug=True)
+    # Local debug
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
