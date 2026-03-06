@@ -3,7 +3,6 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch: {}
   schedule:
-    # Ogni notte dopo chiusura mercati (UTC). Regola qui se vuoi.
     - cron: "45 21 * * 1-5"
 
 permissions:
@@ -44,11 +43,11 @@ jobs:
 
       - name: Show last rows (diagnostica)
         run: |
-          echo "---- data/ls80.csv (tail) ----"
+          echo "---- data/ls80.csv ----"
           tail -n 8 data/ls80.csv || true
-          echo "---- data/gold.csv (tail) ----"
+          echo "---- data/gold.csv ----"
           tail -n 8 data/gold.csv || true
-          echo "---- data/world.csv (tail) ----"
+          echo "---- data/world.csv ----"
           tail -n 8 data/world.csv || true
 
       - name: Commit and push if data changed
