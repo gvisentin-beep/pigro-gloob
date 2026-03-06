@@ -1,167 +1,193 @@
 <!doctype html>
 <html lang="it">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Gloob — Metodo Pigro</title>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gloob — Metodo Pigro</title>
 
-    <link rel="icon" type="image/png" href="/static/logo.png" />
-    <link rel="stylesheet" href="/static/style_4.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
 
-    <!-- Chart.js + time adapter -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.30.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+  <style>
+    body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
+    .wrap{max-width:1100px; margin:0 auto; padding:20px;}
+    h1{margin:0; font-size:34px; color:#173a8a;}
+    h2{margin-top:22px; color:#173a8a;}
+    .topRow{display:flex; gap:16px; align-items:center;}
+    .logo{width:52px; height:52px; border-radius:10px;}
+    .sub{color:#333; font-size:13px; margin-top:2px;}
+    ul{margin-top:10px;}
 
-    <style>
-      /* layout charts */
-      #chartWrap { height: 520px; }
-      @media (max-width: 680px) { #chartWrap { height: 420px; } }
+    .controlsRow{
+      display:flex;
+      gap:16px;
+      margin:16px 0 10px;
+      align-items:flex-end;
+    }
+    .ctrl{flex:1 1 320px;}
+    .ctrl label{display:block; font-size:13px; color:#111; margin-bottom:4px;}
+    .ctrl input[type="range"]{width:100%;}
+    .ctrl input[type="text"]{width:160px; padding:6px 8px;}
 
-      #ddWrap { height: 220px; }
-      @media (max-width: 680px) { #ddWrap { height: 180px; } }
+    .btn{background:#132c74; color:#fff; border:none; border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:700;}
+    .btn:disabled{opacity:.6; cursor:not-allowed;}
+    .btnRow{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
 
-      .brand { display: flex; align-items: center; gap: 12px; margin: 18px 0 6px; }
-      .brand img { width: 42px; height: 42px; }
-      .brand h1 { margin: 0; font-size: 40px; line-height: 1; }
-      .brand .sub { margin: 0; font-size: 18px; font-weight: 700; opacity: .85; }
+    #chart_main{width:100% !important; height:430px !important;}
+    #chart_dd{width:100% !important; height:220px !important;}
 
-      .controlsRow { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
-      .ctrl { min-width: 220px; }
+    .summary{margin-top:8px; font-size:13px;}
+    .summary b{font-size:15px;}
+    .smallText{font-size:12px; color:#333; margin-top:8px;}
 
-      .finalBox { margin-left: auto; font-weight: 700; padding-bottom: 4px; }
+    .cols{display:grid; grid-template-columns: 1fr 1fr; gap:26px; margin-top:26px;}
+    @media(max-width:900px){ .cols{grid-template-columns:1fr;} }
 
-      .muted { opacity: .75; font-size: 13px; }
+    .faqItem{padding:6px 0; cursor:pointer;}
+    .faqQ{font-weight:700;}
+    .faqA{display:none; margin-top:4px; color:#333;}
+    .faqItem.open .faqA{display:block;}
 
-      .inlineBtns { display: inline-flex; flex-wrap: wrap; gap: 10px; margin-left: 10px; }
-    </style>
-  </head>
+    /* Layout controlli: evita sovrapposizioni su schermi stretti */
+    .controlsRow{
+      flex-wrap:wrap;
+    }
+    .ctrl{
+      flex:0 0 auto;
+    }
+  </style>
+</head>
 
-  <body>
-    <div class="container">
-      <div class="brand">
-        <img src="/static/logo.png" />
-        <div>
-          <h1>Gloob</h1>
-          <p class="sub">Metodo Pigro</p>
-        </div>
-      </div>
+<body>
+  <div class="wrap">
 
-      <p>Due strumenti globali. Nessuna previsione. Solo disciplina.</p>
-
-      <ul>
-        <li><b>Pochi strumenti</b>: due mattoni globali</li>
-        <li><b>Costi bassi</b>: struttura semplice</li>
-        <li><b>Regole chiare</b>: ribilanciamento una volta l’anno</li>
-        <li><b>Struttura > Previsioni</b></li>
-      </ul>
-
-      <div class="card noPrint">
-        <div class="controlsRow">
-          <div class="ctrl" style="flex: 1 1 320px">
-            <label for="w_gold"><b>Oro (%) (0–50, step 5)</b> <span id="w_gold_val">20%</span></label><br />
-            <input id="w_gold" type="range" min="0" max="50" step="5" value="20" style="width: 100%" />
-          </div>
-
-          <div class="ctrl">
-            <label for="initial"><b>Capitale (€)</b></label><br />
-            <input id="initial" type="text" value="10.000" inputmode="numeric" />
-          </div>
-
-          <div class="ctrl">
-            <button id="btn_update" class="btn">Aggiorna</button>
-          </div>
-
-          <div class="ctrl">
-            <button id="btn_pdf" class="btn">PDF</button>
-          </div>
-
-          <div class="finalBox">
-            Finale: <span id="final_value">—</span>
-            <span class="muted">(in anni <span id="final_years">—</span>)</span>
-          </div>
-        </div>
-
-        <p class="muted">Il grafico include andamento e riepilogo.</p>
-      </div>
-
-      <div class="card">
-        <div><b id="metrics_line1">Portafoglio (ETF Azion-Obblig + ETC Oro): …</b></div>
-        <div id="metrics_line2">Composizione: …</div>
-        <div id="metrics_line3">Raddoppio del portafoglio in anni: …</div>
-      </div>
-
-      <!-- GRAFICO PRINCIPALE -->
-      <div class="card" id="chartWrap">
-        <canvas id="chart"></canvas>
-      </div>
-
-      <!-- DRAW DOWN (ribassi) -->
-      <div class="card" id="ddWrap">
-        <canvas id="dd_chart"></canvas>
-      </div>
-
-      <div class="muted" style="margin-top: 8px">
-        <span id="dd_summary"></span>
-      </div>
-
-      <!-- (se vuoi tenerla, resta; se vuoi eliminarla del tutto dimmelo) -->
-      <div class="muted" style="margin-top: 8px">
-        <span id="data_updated">Dati aggiornati al —</span>
-      </div>
-
-      <div class="card">
-        <b>Messaggio chiave:</b><br />
-        La differenza non è indovinare il mercato.<br />
-        È avere una struttura semplice e ribilanciarla una volta l’anno.
-      </div>
-
-      <div class="card">
-        <h2>Come applicarlo concretamente</h2>
-
-        <ol>
-          <li>Scegli le percentuali (es. 80% ETF Azion-Obblig – 20% Oro).</li>
-
-          <li>
-            Investi nei due strumenti attraverso la tua banca con “execution only”.
-            <span class="inlineBtns noPrint">
-              <a class="btn" href="/faxsimile_execution_only.pdf" target="_blank" rel="noopener noreferrer">Faxsimile PDF</a>
-              <button id="btn_consulenti" class="btn">Richiedi Consulente</button>
-            </span>
-          </li>
-
-          <li>Non intervenire durante l’anno.</li>
-          <li>A dicembre ribilancia ai pesi originali.</li>
-        </ol>
-
-        <p class="muted" style="margin-top: 10px">
-          Nota: Gloob fornisce solo informazione e analisi generica; non è consulenza finanziaria personalizzata.
-        </p>
-      </div>
-
-      <!-- LIBRO -->
-      <div class="card" style="text-align: center; margin-top: 32px">
-        <h2>Per saperne di più</h2>
-
-        <p class="muted" style="max-width: 720px; margin: 0 auto 18px">
-          La filosofia del “Metodo Pigro” si basa su semplicità, disciplina e diversificazione globale.
-        </p>
-
-        <a href="https://www.amazon.it/dp/B0GQM925QR/ref=sr" target="_blank">
-          <img
-            src="https://m.media-amazon.com/images/I/41k6L1Q1z-L._SX331_BO1,204,203,200_.jpg"
-            style="width: 180px; border-radius: 10px"
-          />
-        </a>
-
-        <br /><br />
-
-        <a href="https://www.amazon.it/dp/B0GQM925QR/ref=sr" target="_blank" class="btn">
-          📘 Per saperne di più su "Il Vantaggio del Pigro"
-        </a>
+    <div class="topRow">
+      <img class="logo" src="/static/logo.png" alt="Gloob">
+      <div>
+        <h1>Gloob</h1>
+        <div class="sub"><b>Metodo Pigro</b><br/>Due strumenti globali. Nessuna previsione. Solo disciplina.</div>
       </div>
     </div>
 
-    <script src="/static/app.js"></script>
-  </body>
+    <ul>
+      <li><b>Pochi strumenti</b>: due mattoni globali</li>
+      <li><b>Costi bassi</b>: struttura semplice</li>
+      <li><b>Regole chiare</b>: ribilanciamento una volta l’anno</li>
+      <li><b>Struttura &gt; Previsioni</b></li>
+    </ul>
+
+    <div class="controlsRow">
+      <div class="ctrl" style="min-width:340px;">
+        <label><b>Oro (%)</b> (0–50, step 5) <span id="w_gold_label">20%</span></label>
+        <input id="w_gold" type="range" min="0" max="50" step="5" value="20">
+      </div>
+
+      <div class="ctrl" style="min-width:220px;">
+        <label><b>Capitale (€)</b></label>
+        <input id="capital" type="text" value="10000">
+      </div>
+
+      <div class="btnRow">
+        <button id="btn_update" class="btn">Aggiorna</button>
+        <button id="btn_pdf" class="btn">PDF</button>
+      </div>
+
+      <div style="margin-left:auto; font-weight:700;">
+        Finale: <span id="final_value">—</span> <span class="sub">(in anni <span id="final_years">—</span>)</span>
+      </div>
+    </div>
+
+    <div class="smallText">Il grafico include andamento e riepilogo.</div>
+
+    <div class="summary">
+      <b>Portafoglio (ETF Azion-Obblig + ETC Oro):</b>
+      Rendimento annualizzato <b><span id="cagr">—</span></b> |
+      <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
+      Composizione: Azionario <span id="w_equity">—</span> | Obbligazionario <span id="w_bond">—</span> | Oro <span id="w_gold2">—</span><br/>
+      Raddoppio del portafoglio in anni: <span id="dbl">—</span>
+    </div>
+
+    <div class="card">
+      <canvas id="chart_main"></canvas>
+    </div>
+
+    <!-- DRAWDOWN (ribasso) -->
+    <div class="card">
+      <canvas id="chart_dd"></canvas>
+      <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- Scritta sotto grafico -->
+    <div class="smallText">
+      <b>Messaggio chiave:</b><br/>
+      La differenza non è indovinare il mercato.<br/>
+      È avere una struttura semplice e ribilanciarla una volta l’anno.
+    </div>
+
+    <h2>Come applicarlo concretamente</h2>
+    <ol>
+      <li>Scegli le percentuali (es. 80% ETF Azion-Obblig → 20% Oro).</li>
+      <li>Investi nei due strumenti attraverso la tua banca con “execution only”.</li>
+      <li>Non intervenire durante l’anno.</li>
+      <li>A dicembre ribilancia ai pesi originali.</li>
+    </ol>
+
+    <div class="btnRow">
+      <button class="btn" id="btn_faxsimile">Faxsimile PDF</button>
+      <button class="btn" id="btn_consulente">Richiedi Consulente</button>
+      <button class="btn" id="btn_libro">Per saperne di più</button>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h2>Domande libere</h2>
+        <div class="smallText">
+          Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).<br/>
+          Tip: su PC invia con Ctrl+Invio
+        </div>
+        <textarea id="ask_text" style="width:100%; height:110px; padding:8px; margin-top:8px;" placeholder="Scrivi qui la tua domanda..."></textarea>
+        <div style="margin-top:8px;">
+          <button class="btn" id="btn_ask">Chiedi all’assistente</button>
+        </div>
+        <div class="smallText" style="margin-top:10px;">Nota: risposta informativa, non consulenza finanziaria.</div>
+        <div id="ask_answer" class="card" style="display:none;"></div>
+      </div>
+
+      <div>
+        <h2>FAQ (passa il mouse)</h2>
+
+        <div class="faqItem">
+          <div class="faqQ">1) Perché solo due strumenti?</div>
+          <div class="faqA">Perché la semplicità riduce gli errori e i costi: pochi strumenti ben scelti battono spesso soluzioni complesse.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">2) Cos’è l’ETF Azion-Obblig?</div>
+          <div class="faqA">È un ETF multi-asset (azioni + obbligazioni) globale. Nel tuo caso, LS80 è un esempio noto.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">3) Perché aggiungere oro?</div>
+          <div class="faqA">Perché spesso riduce la volatilità e può aiutare nei periodi inflattivi o di shock.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">4) Quando ribilanciare?</div>
+          <div class="faqA">Una volta l’anno: è una regola semplice e disciplinata.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">5) Devo “indovinare” il momento giusto?</div>
+          <div class="faqA">No. La strategia punta su struttura e disciplina, non su timing.</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
 </html>
