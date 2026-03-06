@@ -1,139 +1,98 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
 import os
+from pathlib import Path
 from datetime import datetime, timezone
+from typing import Optional
+
 import pandas as pd
 import yfinance as yf
 
-DATA_DIR = "data"
 
-def log(msg: str):
-    print(msg, flush=True)
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
 
-def ensure_data_dir():
-    os.makedirs(DATA_DIR, exist_ok=True)
+LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
+GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
+WORLD_TICKER = os.getenv("WORLD_TICKER", "SMSWLD.MI").strip()
 
-def detect_sep(file_path: str) -> str:
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            head = f.readline()
-        if ";" in head and "," not in head:
-            return ";"
-        if "," in head and ";" not in head:
-            return ","
-        return ";" if head.count(";") >= head.count(",") else ","
-    except Exception:
-        return ";"
+LS80_FILE = DATA_DIR / "ls80.csv"
+GOLD_FILE = DATA_DIR / "gold.csv"
+WORLD_FILE = DATA_DIR / "world.csv"
 
-def safe_read_csv(file_path: str) -> pd.DataFrame:
-    if not os.path.exists(file_path):
-        log(f"File non trovato, creo vuoto: {file_path}")
-        return pd.DataFrame(columns=["date", "price"])
 
-    try:
-        sep = detect_sep(file_path)
-        df = pd.read_csv(file_path, sep=sep)
-        df.columns = [c.strip().lower() for c in df.columns]
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-        # accetta Date/Close (formato del tuo progetto)
-        if "date" in df.columns and "close" in df.columns:
-            df = df.rename(columns={"close": "price"})
-        elif "date" in df.columns and "price" in df.columns:
-            pass
-        else:
-            log(f"CSV {file_path}: colonne non riconosciute {list(df.columns)}")
-            return pd.DataFrame(columns=["date", "price"])
 
-        df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-        df["price"] = pd.to_numeric(df["price"], errors="coerce")
-        df = df.dropna(subset=["date", "price"])
-        df = df.sort_values("date").drop_duplicates(subset="date", keep="last")
-        return df[["date", "price"]]
-    except Exception as e:
-        log(f"Errore lettura CSV {file_path}: {type(e).__name__}: {e}")
-        return pd.DataFrame(columns=["date", "price"])
-
-def download_data(ticker: str) -> pd.DataFrame | None:
-    try:
-        log(f"Download {ticker}...")
-        df = yf.download(
-            ticker,
-            period="1y",
-            interval="1d",
-            progress=False,
-            auto_adjust=True,
-            threads=False,
-        )
-        if df is None or df.empty:
-            return None
-
+def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    if isinstance(df.index, pd.DatetimeIndex):
         df = df.reset_index()
+        df.rename(columns={"Date": "date"}, inplace=True)
 
-        # yfinance può restituire Date o Datetime a seconda degli asset
-        if "Date" in df.columns:
-            df = df.rename(columns={"Date": "date"})
-        elif "Datetime" in df.columns:
-            df = df.rename(columns={"Datetime": "date"})
-        else:
-            return None
+    if "Adj Close" in df.columns:
+        df["close"] = df["Adj Close"]
+    elif "Close" in df.columns:
+        df["close"] = df["Close"]
+    elif "close" not in df.columns:
+        raise ValueError("yfinance returned no Close/Adj Close column")
 
-        if "Close" not in df.columns:
-            return None
+    out = df[["date", "close"]].copy()
+    out["date"] = pd.to_datetime(out["date"]).dt.normalize()
+    out["close"] = pd.to_numeric(out["close"], errors="coerce")
+    out = out.dropna(subset=["date", "close"]).sort_values("date")
+    out["date_str"] = out["date"].dt.strftime("%d/%m/%Y")
+    return out[["date", "date_str", "close"]]
 
-        df = df.rename(columns={"Close": "price"})
-        df = df[["date", "price"]]
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["price"] = pd.to_numeric(df["price"], errors="coerce")
-        df = df.dropna(subset=["date", "price"])
-        df = df.sort_values("date").drop_duplicates(subset="date", keep="last")
-        return df
-    except Exception as e:
-        log(f"Errore download {ticker}: {type(e).__name__}: {e}")
+
+def _read_existing(path: Path) -> Optional[pd.DataFrame]:
+    if not path.exists():
         return None
+    df = pd.read_csv(path, sep=";", dtype=str)
+    if "date" not in df.columns or "close" not in df.columns:
+        return None
+    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+    df = df.dropna(subset=["date", "close"]).sort_values("date")
+    df["date_str"] = df["date"].dt.strftime("%d/%m/%Y")
+    return df[["date", "date_str", "close"]]
 
-def save_csv(df: pd.DataFrame, file_path: str):
-    df = df.sort_values("date").drop_duplicates(subset="date", keep="last")
-    out = pd.DataFrame(
-        {
-            "Date": df["date"].dt.strftime("%d/%m/%Y"),
-            "Close": df["price"].round(4),
-        }
-    )
-    out.to_csv(file_path, sep=";", index=False)
-    log(f"Salvato {file_path} ({len(out)} righe)")
 
-def update_one(ticker: str, file_path: str):
-    log(f"\n=== Aggiornamento {ticker} ===")
-    old_df = safe_read_csv(file_path)
-    new_df = download_data(ticker)
+def _write_csv(path: Path, df: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out = df.copy().sort_values("date")
+    out2 = out[["date_str", "close"]].rename(columns={"date_str": "date"})
+    out2.to_csv(path, sep=";", index=False, float_format="%.6g")
 
-    if new_df is None or new_df.empty:
-        log(f"Nessun dato nuovo per {ticker} (skip)")
-        if not old_df.empty:
-            log(f"Ultima data locale {ticker}: {old_df['date'].iloc[-1].date()}")
-        return
 
-    df = pd.concat([old_df, new_df], ignore_index=True)
-    df = df.drop_duplicates(subset="date", keep="last").sort_values("date")
+def _update_one(ticker: str, path: Path) -> bool:
+    raw = yf.download(ticker, period="60d", interval="1d", auto_adjust=False, progress=False)
+    if raw is None or raw.empty:
+        return False
 
-    save_csv(df, file_path)
-    log(f"Ultima data aggiornata {ticker}: {df['date'].iloc[-1].date()}")
+    new_df = _normalize_df(raw)
+    old_df = _read_existing(path)
 
-def main():
-    # ✅ usa gli stessi ticker del tuo Render, se presenti
-    ls80_ticker = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
-    gold_ticker = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
+    if old_df is not None:
+        merged = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        merged = new_df
 
-    ls80_file = os.path.join(DATA_DIR, "ls80.csv")
-    gold_file = os.path.join(DATA_DIR, "gold.csv")
+    merged = merged.drop_duplicates(subset=["date"], keep="last").sort_values("date")
+    _write_csv(path, merged)
+    return True
 
-    log("Aggiornamento automatico dati Gloob")
-    log(f"UTC: {datetime.now(timezone.utc)}")
-    log(f"Tickers: LS80={ls80_ticker} | GOLD={gold_ticker}")
 
-    ensure_data_dir()
-    update_one(ls80_ticker, ls80_file)
-    update_one(gold_ticker, gold_file)
+def main() -> int:
+    ok_ls = _update_one(LS80_TICKER, LS80_FILE)
+    ok_gd = _update_one(GOLD_TICKER, GOLD_FILE)
+    ok_wd = _update_one(WORLD_TICKER, WORLD_FILE)
 
-    log("Aggiornamento completato con successo.")
+    print(f"[{_now_iso()}] updated ls80={ok_ls} gold={ok_gd} world={ok_wd}")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
