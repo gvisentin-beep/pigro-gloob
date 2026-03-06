@@ -3,7 +3,8 @@ name: Aggiornamento automatico dati Gloob
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "15 23 * * *"  # ogni giorno 23:15 UTC (~00:15 Italia)
+    # Ogni notte dopo chiusura mercati (UTC). Regola qui se vuoi.
+    - cron: "45 21 * * 1-5"
 
 permissions:
   contents: write
@@ -15,6 +16,11 @@ concurrency:
 jobs:
   update-data:
     runs-on: ubuntu-latest
+
+    env:
+      LS80_TICKER: VNGA80.MI
+      GOLD_TICKER: SGLD.MI
+      WORLD_TICKER: SMSWLD.MI
 
     steps:
       - name: Checkout repository
@@ -30,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy yfinance requests
+          pip install -r requirements.txt
 
       - name: Run update script
         run: |
@@ -38,32 +44,21 @@ jobs:
 
       - name: Show last rows (diagnostica)
         run: |
-          echo "LS80 last rows:"
-          tail -n 5 data/ls80.csv || true
-          echo "GOLD last rows:"
-          tail -n 5 data/gold.csv || true
+          echo "---- data/ls80.csv (tail) ----"
+          tail -n 8 data/ls80.csv || true
+          echo "---- data/gold.csv (tail) ----"
+          tail -n 8 data/gold.csv || true
+          echo "---- data/world.csv (tail) ----"
+          tail -n 8 data/world.csv || true
 
       - name: Commit and push if data changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.csv
-          if git diff --cached --quiet; then
-            echo "Nessun aggiornamento dati"
-            exit 0
+          if git status --porcelain | grep -qE 'data/ls80.csv|data/gold.csv|data/world.csv'; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/ls80.csv data/gold.csv data/world.csv
+            git commit -m "Aggiorna dati (ls80/gold/world)"
+            git push
+          else
+            echo "Nessuna modifica ai dati."
           fi
-          git commit -m "Auto-update dati Gloob (ls80/gold)"
-          git pull --rebase
-          git push
-
-      - name: Trigger Render Deploy Hook (non bloccare se fallisce)
-        continue-on-error: true
-        run: |
-          if [ -z "${RENDER_DEPLOY_HOOK}" ]; then
-            echo "RENDER_DEPLOY_HOOK non presente: skip"
-            exit 0
-          fi
-          echo "Chiamo Deploy Hook Render..."
-          curl -sS -X POST "${RENDER_DEPLOY_HOOK}" || true
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
