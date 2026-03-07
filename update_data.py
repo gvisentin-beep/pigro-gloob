@@ -11,6 +11,9 @@ import requests
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
+# ================================
+# MODALITA' DEFINITIVA: TWELVE DATA
+# ================================
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 
@@ -63,13 +66,14 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         )
 
         df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+
         if df.empty:
             return None
 
         return df[["date", "close"]].copy()
 
     except Exception as e:
-        log(f"Errore lettura CSV {path.name}: {e}")
+        log(f"ERRORE lettura {path.name}: {type(e).__name__}: {e}")
         return None
 
 
@@ -90,8 +94,8 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
         "interval": "1day",
         "outputsize": 5000,
         "format": "JSON",
-        "apikey": TWELVE_DATA_API_KEY,
         "order": "ASC",
+        "apikey": TWELVE_DATA_API_KEY,
     }
 
     try:
@@ -102,8 +106,11 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
         if not isinstance(data, dict):
             return None, "Risposta Twelve Data non valida"
 
+        # Errori API espliciti
         if data.get("status") == "error":
-            return None, f"{data.get('code', '')} {data.get('message', 'errore sconosciuto')}"
+            code = data.get("code", "")
+            message = data.get("message", "errore sconosciuto")
+            return None, f"{code} {message}".strip()
 
         values = data.get("values")
         if not values:
@@ -118,6 +125,7 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
         df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+
         if df.empty:
             return None, "Serie vuota dopo pulizia"
 
@@ -140,6 +148,11 @@ def update_one_asset(name: str, symbol: str, path: Path) -> dict:
 
     if new_df is None or new_df.empty:
         result["reason"] = err or "no_data_from_twelve_data"
+        if old_df is not None and not old_df.empty:
+            result["fallback_rows"] = int(len(old_df))
+            result["fallback_first_date"] = str(old_df["date"].iloc[0].date())
+            result["fallback_last_date"] = str(old_df["date"].iloc[-1].date())
+            result["fallback_last_value"] = float(old_df["close"].iloc[-1])
         return result
 
     if old_df is not None and not old_df.empty:
@@ -165,18 +178,28 @@ def update_one_asset(name: str, symbol: str, path: Path) -> dict:
 
 
 def main() -> None:
-    log(f"[{now_utc()}] Aggiornamento dati con Twelve Data...")
+    log("=" * 70)
+    log("MODALITA' DEFINITIVA: UPDATE DATI CON TWELVE DATA")
+    log(f"UTC: {now_utc()}")
+    log(f"Cartella dati: {DATA_DIR}")
+    log(f"TWELVE_DATA_API_KEY presente: {bool(TWELVE_DATA_API_KEY)}")
+    log("=" * 70)
 
     all_ok = True
 
     for name, cfg in ASSETS.items():
+        log(f"--> Aggiorno {name} ({cfg['symbol']})")
         res = update_one_asset(name, cfg["symbol"], cfg["path"])
         log(str(res))
         if not res.get("updated"):
             all_ok = False
 
-    log(f"[{now_utc()}] Fine aggiornamento.")
+    log("=" * 70)
+    log(f"Fine aggiornamento: {now_utc()}")
+    log("=" * 70)
 
+    # Se almeno un asset non si aggiorna, faccio fallire il job
+    # così non dà una falsa impressione di successo.
     if not all_ok:
         raise SystemExit(1)
 
