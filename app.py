@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import math
 import os
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
-import math
 import pandas as pd
-from flask import Flask, jsonify, render_template, request
+import requests
+from flask import Flask, jsonify, render_template, request, send_file
 
 app = Flask(__name__)
 
@@ -18,13 +20,26 @@ LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
-LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
-GOLD_TICKER = os.getenv("GOLD_TICKER", "SGLD.MI").strip()
-WORLD_TICKER = os.getenv("WORLD_TICKER", "SMSWLD.MI").strip()
+# CSV locali: il sito legge SEMPRE questi file
+LS80_TICKER = os.getenv("LS80_TICKER", "IWDA").strip()
+GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
+WORLD_TICKER = os.getenv("WORLD_TICKER", "URTH").strip()
+
+# Update lato server
+UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
+TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
+
+# Assistente
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
+
+# Limite semplice assistente
+ASK_DAILY_LIMIT = int(os.getenv("ASK_DAILY_LIMIT", "10"))
 
 
 # ----------------------------------------------------------
-# Helpers
+# Helpers generali
 # ----------------------------------------------------------
 
 def _now_iso() -> str:
@@ -37,27 +52,39 @@ def _json_error(msg: str, status: int = 400, **extra: Any):
     return jsonify(payload), status
 
 
+def _safe_float(x: Any) -> Optional[float]:
+    try:
+        if x is None:
+            return None
+        return float(str(x).replace(",", "."))
+    except Exception:
+        return None
+
+
+def _require_token() -> Optional[Tuple[Any, int]]:
+    if not UPDATE_TOKEN:
+        return None
+    token = (request.args.get("token") or "").strip()
+    if token != UPDATE_TOKEN:
+        return _json_error("Token non valido.", 401)
+    return None
+
+
 # ----------------------------------------------------------
-# CSV reader ROBUSTO
-# Supporta:
-# - separatore ;
-# - intestazione date;close
-# - spazi/maiuscole nelle colonne
-# - numeri con virgola o punto
+# CSV robusto
 # ----------------------------------------------------------
 
 def read_price_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(str(path))
 
-    # Prima prova: con intestazione
+    # Tentativo 1: con intestazione
     try:
         df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
         df.columns = [str(c).strip().lower() for c in df.columns]
 
         if "date" in df.columns and "close" in df.columns:
             df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-
             df["close"] = (
                 df["close"]
                 .astype(str)
@@ -65,15 +92,13 @@ def read_price_csv(path: Path) -> pd.DataFrame:
                 .str.replace(",", ".", regex=False)
             )
             df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
             df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
-
             if not df.empty:
                 return df[["date", "close"]].copy()
     except Exception:
         pass
 
-    # Seconda prova: senza intestazione
+    # Tentativo 2: senza intestazione
     df = pd.read_csv(
         path,
         sep=";",
@@ -100,6 +125,118 @@ def read_price_csv(path: Path) -> pd.DataFrame:
     return df[["date", "close"]].copy()
 
 
+def write_price_csv(path: Path, df: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    out = df.copy().sort_values("date").reset_index(drop=True)
+    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
+    out.to_csv(path, sep=";", index=False)
+
+
+# ----------------------------------------------------------
+# Twelve Data update
+# ----------------------------------------------------------
+
+def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    if not TWELVE_DATA_API_KEY:
+        return None, "TWELVE_DATA_API_KEY mancante"
+
+    params = {
+        "symbol": symbol,
+        "interval": "1day",
+        "outputsize": 5000,
+        "format": "JSON",
+        "order": "ASC",
+        "apikey": TWELVE_DATA_API_KEY,
+    }
+
+    try:
+        resp = requests.get(TWELVE_DATA_BASE_URL, params=params, timeout=40)
+        resp.raise_for_status()
+        data = resp.json()
+
+        if not isinstance(data, dict):
+            return None, "Risposta Twelve Data non valida"
+
+        if data.get("status") == "error":
+            code = data.get("code", "")
+            message = data.get("message", "errore sconosciuto")
+            return None, f"{code} {message}".strip()
+
+        values = data.get("values")
+        if not values:
+            return None, "Nessun valore restituito"
+
+        df = pd.DataFrame(values)
+
+        if "datetime" not in df.columns or "close" not in df.columns:
+            return None, f"Colonne inattese: {list(df.columns)}"
+
+        df["date"] = pd.to_datetime(df["datetime"], errors="coerce")
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+
+        df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+        if df.empty:
+            return None, "Serie vuota dopo pulizia"
+
+        return df[["date", "close"]].copy(), None
+
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "asset": path.stem,
+        "symbol": symbol,
+        "file": str(path),
+        "updated": False,
+        "usable": False,
+    }
+
+    old_df = None
+    try:
+        old_df = read_price_csv(path)
+    except Exception as e:
+        info["read_error"] = f"{type(e).__name__}: {e}"
+
+    new_df, err = fetch_twelve_data(symbol)
+
+    if new_df is None or new_df.empty:
+        info["reason"] = err or "no_data_from_twelve_data"
+
+        if old_df is not None and not old_df.empty:
+            info["usable"] = True
+            info["fallback_rows"] = int(len(old_df))
+            info["fallback_first_date"] = str(old_df["date"].iloc[0].date())
+            info["fallback_last_date"] = str(old_df["date"].iloc[-1].date())
+            info["fallback_last_value"] = float(old_df["close"].iloc[-1])
+
+        return info
+
+    if old_df is not None and not old_df.empty:
+        merged = pd.concat([old_df, new_df], ignore_index=True)
+    else:
+        merged = new_df
+
+    merged = (
+        merged.drop_duplicates(subset=["date"], keep="last")
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
+
+    write_price_csv(path, merged)
+
+    info["updated"] = True
+    info["usable"] = True
+    info["rows"] = int(len(merged))
+    info["first_date"] = str(merged["date"].iloc[0].date())
+    info["last_date"] = str(merged["date"].iloc[-1].date())
+    info["first_value"] = float(merged["close"].iloc[0])
+    info["last_value"] = float(merged["close"].iloc[-1])
+    return info
+
+
 # ----------------------------------------------------------
 # Metriche
 # ----------------------------------------------------------
@@ -114,7 +251,6 @@ def compute_cagr(series: pd.Series, dates: pd.Series) -> float:
 
     start = float(series.iloc[0])
     end = float(series.iloc[-1])
-
     if start <= 0:
         return 0.0
 
@@ -138,10 +274,6 @@ def doubling_years(cagr: float) -> Optional[float]:
         return None
     return math.log(2.0) / math.log(1.0 + cagr)
 
-
-# ----------------------------------------------------------
-# 3 peggiori drawdown reali
-# ----------------------------------------------------------
 
 def worst_drawdowns(series: pd.Series, dates: pd.Series, n: int = 3) -> list[dict]:
     peak = series.cummax()
@@ -184,13 +316,9 @@ def worst_drawdowns(series: pd.Series, dates: pd.Series, n: int = 3) -> list[dic
                 }
             )
 
-    events.sort(key=lambda x: x["depth_pct"])  # più negativo prima
+    events.sort(key=lambda x: x["depth_pct"])
     return events[:n]
 
-
-# ----------------------------------------------------------
-# Portafoglio
-# ----------------------------------------------------------
 
 def compute_portfolio(ls80: pd.Series, gold: pd.Series, w_gold: float, capital: float) -> pd.Series:
     w_gold = max(0.0, min(0.5, float(w_gold)))
@@ -203,13 +331,93 @@ def compute_portfolio(ls80: pd.Series, gold: pd.Series, w_gold: float, capital: 
 
 
 # ----------------------------------------------------------
-# Routes
+# Assistente minimale
+# ----------------------------------------------------------
+
+def _openai_client():
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        from openai import OpenAI
+        return OpenAI(api_key=OPENAI_API_KEY)
+    except Exception:
+        return None
+
+
+# ----------------------------------------------------------
+# Pages
 # ----------------------------------------------------------
 
 @app.get("/")
 def home():
     return render_template("index.html")
 
+
+@app.get("/health")
+def health():
+    return jsonify({"ok": True, "time_utc": _now_iso()})
+
+
+# ----------------------------------------------------------
+# PDF
+# ----------------------------------------------------------
+
+@app.get("/faxsimile_execution_only.pdf")
+def faxsimile_execution_only():
+    static_pdf = BASE_DIR / "static" / "faxsimile_execution_only.pdf"
+    if static_pdf.exists():
+        return send_file(static_pdf, mimetype="application/pdf")
+
+    return _json_error("PDF non trovato.", 404)
+
+
+@app.get("/api/pdf")
+def api_pdf():
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+
+        title = request.args.get("title", "Gloob - Metodo Pigro")
+        cagr = request.args.get("cagr", "")
+        maxdd = request.args.get("maxdd", "")
+        finalv = request.args.get("final", "")
+        years = request.args.get("years", "")
+
+        buf = BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        w, h = A4
+
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, h - 60, title)
+
+        c.setFont("Helvetica", 12)
+        y = h - 100
+        c.drawString(50, y, f"Rendimento annualizzato: {cagr}")
+        y -= 20
+        c.drawString(50, y, f"Max Ribasso: {maxdd}")
+        y -= 20
+        c.drawString(50, y, f"Finale: {finalv} (in anni {years})")
+
+        c.setFont("Helvetica", 10)
+        c.drawString(50, 40, "Documento informativo - non consulenza finanziaria.")
+        c.showPage()
+        c.save()
+
+        buf.seek(0)
+        return send_file(
+            buf,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="gloob_pigro.pdf",
+        )
+
+    except Exception as e:
+        return _json_error(f"Errore PDF: {type(e).__name__}: {e}", 500)
+
+
+# ----------------------------------------------------------
+# Diagnostics
+# ----------------------------------------------------------
 
 @app.get("/api/diag")
 def api_diag():
@@ -246,6 +454,10 @@ def api_diag():
             "LS80_TICKER": LS80_TICKER,
             "GOLD_TICKER": GOLD_TICKER,
             "WORLD_TICKER": WORLD_TICKER,
+            "TWELVE_DATA_API_KEY_present": bool(TWELVE_DATA_API_KEY),
+            "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
+            "OPENAI_API_KEY_present": bool(OPENAI_API_KEY),
+            "OPENAI_MODEL": OPENAI_MODEL,
         },
     }
 
@@ -268,6 +480,10 @@ def api_diag():
     return jsonify(payload)
 
 
+# ----------------------------------------------------------
+# Compute
+# ----------------------------------------------------------
+
 @app.get("/api/compute")
 def api_compute():
     try:
@@ -281,7 +497,6 @@ def api_compute():
         gold = read_price_csv(GOLD_FILE)
         world = read_price_csv(WORLD_FILE)
 
-        # Date comuni a tutti e tre
         df = ls80.merge(gold, on="date", how="inner", suffixes=("_ls80", "_gold"))
         df = df.merge(world, on="date", how="inner")
         df.columns = ["date", "ls80", "gold", "world"]
@@ -296,8 +511,6 @@ def api_compute():
         dates = df["date"].reset_index(drop=True)
 
         portfolio = compute_portfolio(df["ls80"], df["gold"], w_gold, capital).reset_index(drop=True)
-
-        # World normalizzato sullo stesso capitale iniziale
         world_scaled = (capital * (df["world"] / df["world"].iloc[0])).reset_index(drop=True)
 
         cagr_port = compute_cagr(portfolio, dates)
@@ -313,7 +526,6 @@ def api_compute():
         worst_port = worst_drawdowns(portfolio, dates, n=3)
         worst_world = worst_drawdowns(world_scaled, dates, n=3)
 
-        # Dazi Trump 2025 = peggior drawdown nel 2025
         mask_2025 = dates.dt.year == 2025
         dd_2025_port = float((dd_port[mask_2025] / 100.0).min()) if mask_2025.any() else None
         dd_2025_world = float((dd_world[mask_2025] / 100.0).min()) if mask_2025.any() else None
@@ -321,7 +533,6 @@ def api_compute():
         w_ls80 = 1.0 - w_gold
         az = 0.80 * w_ls80
         ob = 0.20 * w_ls80
-
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
 
         return jsonify(
@@ -354,15 +565,99 @@ def api_compute():
         )
 
     except Exception as e:
-        return jsonify(
-            {
-                "ok": False,
-                "error": f"Errore compute: {str(e)}",
-            }
-        )
+        return jsonify({"ok": False, "error": f"Errore compute: {str(e)}"})
 
 
 # ----------------------------------------------------------
+# Assistente
+# ----------------------------------------------------------
+
+@app.post("/api/ask")
+def api_ask():
+    try:
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or data.get("q") or "").strip()
+        if not question:
+            return _json_error("Scrivi una domanda.", 400)
+
+        client = _openai_client()
+        if client is None:
+            return jsonify(
+                {
+                    "ok": True,
+                    "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render.",
+                }
+            )
+
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Rispondi in italiano, in modo semplice e pratico. "
+                        "Contesto: sito Metodo Pigro. Informazione generale, non consulenza personalizzata."
+                    ),
+                },
+                {"role": "user", "content": question},
+            ],
+        )
+
+        answer = ""
+        try:
+            if resp and resp.choices and resp.choices[0].message and resp.choices[0].message.content:
+                answer = resp.choices[0].message.content
+        except Exception:
+            answer = ""
+
+        if not answer:
+            answer = "Nessuna risposta disponibile."
+
+        return jsonify({"ok": True, "answer": answer.strip()})
+
+    except Exception as e:
+        return _json_error(f"{type(e).__name__}: {e}", 500)
+
+
+# ----------------------------------------------------------
+# Update lato server con Twelve Data
+# ----------------------------------------------------------
+
+@app.get("/api/update_data")
+def api_update_data():
+    err = _require_token()
+    if err is not None:
+        return err
+
+    try:
+        res_ls = update_one_asset(LS80_FILE, LS80_TICKER)
+        res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
+        res_wd = update_one_asset(WORLD_FILE, WORLD_TICKER)
+
+        usable_all = all([
+            bool(res_ls.get("usable")),
+            bool(res_gd.get("usable")),
+            bool(res_wd.get("usable")),
+        ])
+
+        return jsonify(
+            {
+                "ok": usable_all,
+                "ls80": res_ls,
+                "gold": res_gd,
+                "world": res_wd,
+                "time_utc": _now_iso(),
+            }
+        )
+
+    except Exception as e:
+        return _json_error(f"{type(e).__name__}: {e}", 500)
+
+
+@app.get("/api/force_update")
+def api_force_update():
+    return api_update_data()
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
