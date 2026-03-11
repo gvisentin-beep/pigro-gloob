@@ -27,6 +27,26 @@ function parseCapital() {
   return v;
 }
 
+function formatDateLabel(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("it-IT");
+  } catch {
+    return dateStr;
+  }
+}
+
+function compactYearLabel(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    return String(d.getFullYear());
+  } catch {
+    return dateStr;
+  }
+}
+
 let chartMain = null;
 let chartDD = null;
 
@@ -94,6 +114,16 @@ function renderComparison(payload) {
   }
 }
 
+function buildSparseXTickCallback(labels) {
+  const total = labels.length;
+  const step = Math.max(1, Math.ceil(total / 8));
+
+  return function(value, index) {
+    if (index % step !== 0 && index !== total - 1) return "";
+    return compactYearLabel(labels[index]);
+  };
+}
+
 async function loadData() {
   btnUpdate.disabled = true;
   btnUpdate.textContent = "Aggiorna…";
@@ -119,9 +149,16 @@ async function loadData() {
     const ddW = data.drawdown_world_pct || [];
     const m = data.metrics || {};
 
+    if (!dates.length || !portfolio.length) {
+      alert("Errore: dati grafico non disponibili.");
+      return;
+    }
+
     document.getElementById("final_value").textContent = formatEuro(m.final_portfolio);
     document.getElementById("final_years").textContent =
-      m.final_years !== null && m.final_years !== undefined ? Number(m.final_years).toFixed(1).replace(".", ",") : "—";
+      m.final_years !== null && m.final_years !== undefined
+        ? Number(m.final_years).toFixed(1).replace(".", ",")
+        : "—";
 
     document.getElementById("cagr").textContent = formatPctFromDecimal(m.cagr_portfolio);
     document.getElementById("maxdd").textContent = formatPctFromDecimal(m.max_dd_portfolio);
@@ -133,62 +170,86 @@ async function loadData() {
     renderComparison(data);
     renderDrawdownSummary(m);
 
+    const labels = dates.slice();
+    const xTickCallback = buildSparseXTickCallback(labels);
+
     const mainDatasets = [
       {
         label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
-        data: dates.map((d, i) => ({ x: d, y: portfolio[i] })),
+        data: portfolio,
         borderWidth: 2,
         tension: 0.15,
-        pointRadius: 0,
+        pointRadius: 0
       }
     ];
 
     if (world.length) {
       mainDatasets.push({
-        label: "MSCI World (SMSWLD) - normalizzato",
-        data: dates.map((d, i) => ({ x: d, y: world[i] })),
+        label: "MSCI World (URTH) - normalizzato",
+        data: world,
         borderWidth: 2,
         tension: 0.15,
-        pointRadius: 0,
+        pointRadius: 0
       });
     }
 
     const ddDatasets = [
       {
         label: "Drawdown Portafoglio (%)",
-        data: dates.map((d, i) => ({ x: d, y: ddP[i] })),
+        data: ddP,
         borderWidth: 2,
         tension: 0.15,
-        pointRadius: 0,
+        pointRadius: 0
       }
     ];
 
     if (ddW.length) {
       ddDatasets.push({
         label: "Drawdown MSCI World (%)",
-        data: dates.map((d, i) => ({ x: d, y: ddW[i] })),
+        data: ddW,
         borderWidth: 2,
         tension: 0.15,
-        pointRadius: 0,
+        pointRadius: 0
       });
     }
 
     if (chartMain) chartMain.destroy();
     chartMain = new Chart(document.getElementById("chart_main").getContext("2d"), {
       type: "line",
-      data: { datasets: mainDatasets },
+      data: {
+        labels,
+        datasets: mainDatasets
+      },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        parsing: false,
         scales: {
-          x: { type: "time", time: { unit: "year" }, ticks: { maxRotation: 0, autoSkip: true } },
-          y: { ticks: { callback: (v) => formatEuro(v) } }
+          x: {
+            type: "category",
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: xTickCallback
+            },
+            grid: {
+              display: true
+            }
+          },
+          y: {
+            ticks: {
+              callback: (v) => formatEuro(v)
+            }
+          }
         },
         plugins: {
           legend: { display: true },
           tooltip: {
             callbacks: {
+              title: (items) => {
+                if (!items || !items.length) return "";
+                return formatDateLabel(labels[items[0].dataIndex]);
+              },
               label: (ctx) => `${ctx.dataset.label}: ${formatEuro(ctx.parsed.y)}`
             }
           }
@@ -199,20 +260,46 @@ async function loadData() {
     if (chartDD) chartDD.destroy();
     chartDD = new Chart(document.getElementById("chart_dd").getContext("2d"), {
       type: "line",
-      data: { datasets: ddDatasets },
+      data: {
+        labels,
+        datasets: ddDatasets
+      },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        parsing: false,
         scales: {
-          x: { type: "time", time: { unit: "year" }, ticks: { maxRotation: 0, autoSkip: true } },
+          x: {
+            type: "category",
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: xTickCallback
+            },
+            grid: {
+              display: true
+            }
+          },
           y: {
             suggestedMin: -60,
             suggestedMax: 0,
-            ticks: { callback: (v) => `${Number(v).toFixed(0)}%` }
+            ticks: {
+              callback: (v) => `${Number(v).toFixed(0)}%`
+            }
           }
         },
-        plugins: { legend: { display: true } }
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                if (!items || !items.length) return "";
+                return formatDateLabel(labels[items[0].dataIndex]);
+              },
+              label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)}%`
+            }
+          }
+        }
       }
     });
 
