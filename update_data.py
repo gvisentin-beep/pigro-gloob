@@ -16,7 +16,7 @@ TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 
 ASSETS = {
     "ls80": {
-        "symbol": "VNGA80.MI",
+        "symbol": "V80A.DE",
         "path": DATA_DIR / "ls80.csv",
     },
     "gold": {
@@ -24,7 +24,7 @@ ASSETS = {
         "path": DATA_DIR / "gold.csv",
     },
     "world": {
-        "symbol": "SMSWLD.MI",
+        "symbol": "URTH",
         "path": DATA_DIR / "world.csv",
     },
 }
