@@ -54,6 +54,28 @@ function buildYearTickCallback(labels) {
   };
 }
 
+function yearOnlyVerticalGrid(labels) {
+  return {
+    drawBorder: false,
+    color: function(context) {
+      const i = context.index;
+      if (i === undefined || i === null) return "transparent";
+
+      const current = labels[i];
+      const prev = labels[i - 1];
+
+      if (!current) return "transparent";
+
+      if (!prev) return "#e0e0e0";
+
+      const yearNow = current.slice(0, 4);
+      const yearPrev = prev.slice(0, 4);
+
+      return yearNow !== yearPrev ? "#e0e0e0" : "transparent";
+    }
+  };
+}
+
 let chartMain = null;
 let chartDD = null;
 
@@ -63,7 +85,9 @@ const btnUpdate = document.getElementById("btn_update");
 const btnPdf = document.getElementById("btn_pdf");
 
 function updateSliderLabelAndComposition(wGold01) {
-  elWGLabel.textContent = Math.round(wGold01 * 100) + "%";
+  if (elWGLabel) {
+    elWGLabel.textContent = Math.round(wGold01 * 100) + "%";
+  }
 
   const wLs80 = 1 - wGold01;
 
@@ -129,11 +153,13 @@ function renderDrawdownSummary(metrics) {
 }
 
 async function loadData() {
-  btnUpdate.disabled = true;
-  btnUpdate.textContent = "Aggiorna…";
+  if (btnUpdate) {
+    btnUpdate.disabled = true;
+    btnUpdate.textContent = "Aggiorna…";
+  }
 
   try {
-    const wGold = clampGold(elWG.value) / 100;
+    const wGold = clampGold(elWG ? elWG.value : 20) / 100;
     const capital = parseCapital();
 
     updateSliderLabelAndComposition(wGold);
@@ -161,6 +187,7 @@ async function loadData() {
       return;
     }
 
+    // Taglio serie dal 2021
     let startIndex = 0;
     for (let i = 0; i < dates.length; i++) {
       if (dates[i] >= "2021-01-01") {
@@ -229,7 +256,7 @@ async function loadData() {
         label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
         data: portfolioCut,
         borderWidth: 2,
-        tension: 0.15,
+        tension: 0.25,
         pointRadius: 0
       }
     ];
@@ -239,7 +266,7 @@ async function loadData() {
         label: "MSCI World (URTH)",
         data: worldCut,
         borderWidth: 2,
-        tension: 0.15,
+        tension: 0.25,
         pointRadius: 0
       });
     }
@@ -249,7 +276,7 @@ async function loadData() {
         label: "Drawdown Portafoglio (%)",
         data: ddPCut,
         borderWidth: 2,
-        tension: 0.15,
+        tension: 0.20,
         pointRadius: 0
       }
     ];
@@ -259,7 +286,7 @@ async function loadData() {
         label: "Drawdown MSCI World (%)",
         data: ddWCut,
         borderWidth: 2,
-        tension: 0.15,
+        tension: 0.20,
         pointRadius: 0
       });
     }
@@ -287,13 +314,15 @@ async function loadData() {
                 minRotation: 0,
                 padding: 6
               },
-              grid: {
-                display: true
-              }
+              grid: yearOnlyVerticalGrid(labels)
             },
             y: {
               ticks: {
                 callback: (v) => formatEuro(v)
+              },
+              grid: {
+                color: "#f0f0f0",
+                drawBorder: false
               }
             }
           },
@@ -336,15 +365,17 @@ async function loadData() {
                 minRotation: 0,
                 padding: 6
               },
-              grid: {
-                display: true
-              }
+              grid: yearOnlyVerticalGrid(labels)
             },
             y: {
               suggestedMin: -60,
               suggestedMax: 0,
               ticks: {
                 callback: (v) => `${Number(v).toFixed(0)}%`
+              },
+              grid: {
+                color: "#f0f0f0",
+                drawBorder: false
               }
             }
           },
@@ -367,8 +398,10 @@ async function loadData() {
   } catch (e) {
     alert("Errore: " + (e?.message || e));
   } finally {
-    btnUpdate.disabled = false;
-    btnUpdate.textContent = "Aggiorna";
+    if (btnUpdate) {
+      btnUpdate.disabled = false;
+      btnUpdate.textContent = "Aggiorna";
+    }
   }
 }
 
@@ -411,29 +444,35 @@ document.getElementById("btn_ask")?.addEventListener("click", async () => {
   }
 });
 
-elWG.addEventListener("input", () => {
-  const wGold = clampGold(elWG.value);
-  elWG.value = String(wGold);
-  updateSliderLabelAndComposition(wGold / 100);
-});
+if (elWG) {
+  elWG.addEventListener("input", () => {
+    const wGold = clampGold(elWG.value);
+    elWG.value = String(wGold);
+    updateSliderLabelAndComposition(wGold / 100);
+  });
+}
 
-btnUpdate.addEventListener("click", loadData);
+if (btnUpdate) {
+  btnUpdate.addEventListener("click", loadData);
+}
 
-btnPdf.addEventListener("click", () => {
-  const cagr = document.getElementById("cagr")?.textContent || "";
-  const maxdd = document.getElementById("maxdd")?.textContent || "";
-  const finalv = document.getElementById("final_value")?.textContent || "";
-  const years = document.getElementById("final_years")?.textContent || "";
+if (btnPdf) {
+  btnPdf.addEventListener("click", () => {
+    const cagr = document.getElementById("cagr")?.textContent || "";
+    const maxdd = document.getElementById("maxdd")?.textContent || "";
+    const finalv = document.getElementById("final_value")?.textContent || "";
+    const years = document.getElementById("final_years")?.textContent || "";
 
-  const url =
-    `/api/pdf?title=${encodeURIComponent("Gloob - Metodo Pigro")}` +
-    `&cagr=${encodeURIComponent(cagr)}` +
-    `&maxdd=${encodeURIComponent(maxdd)}` +
-    `&final=${encodeURIComponent(finalv)}` +
-    `&years=${encodeURIComponent(years)}`;
+    const url =
+      `/api/pdf?title=${encodeURIComponent("Gloob - Metodo Pigro")}` +
+      `&cagr=${encodeURIComponent(cagr)}` +
+      `&maxdd=${encodeURIComponent(maxdd)}` +
+      `&final=${encodeURIComponent(finalv)}` +
+      `&years=${encodeURIComponent(years)}`;
 
-  window.open(url, "_blank");
-});
+    window.open(url, "_blank");
+  });
+}
 
-updateSliderLabelAndComposition(clampGold(elWG.value) / 100);
+updateSliderLabelAndComposition(clampGold(elWG ? elWG.value : 20) / 100);
 loadData();
