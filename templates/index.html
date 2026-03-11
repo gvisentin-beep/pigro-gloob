@@ -6,8 +6,6 @@
   <title>Gloob — Metodo Pigro</title>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
 
   <style>
     body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
@@ -58,7 +56,7 @@
     .cols{display:grid; grid-template-columns: 1fr 1fr; gap:26px; margin-top:26px;}
     @media(max-width:900px){ .cols{grid-template-columns:1fr;} }
 
-    .faqItem{padding:6px 0; cursor:pointer;}
+    .faqItem{padding:6px 0; cursor:pointer; border-bottom:1px solid #efefef;}
     .faqQ{font-weight:700;}
     .faqA{display:none; margin-top:4px; color:#333;}
     .faqItem.open .faqA{display:block;}
@@ -114,6 +112,8 @@
       Raddoppio del portafoglio in anni: <span id="dbl">—</span>
     </div>
 
+    <h2 id="chart_title">Andamento negli ultimi anni</h2>
+
     <div class="card">
       <canvas id="chart_main"></canvas>
     </div>
@@ -166,7 +166,7 @@
       </div>
 
       <div>
-        <h2>FAQ (passa il mouse)</h2>
+        <h2>Domande frequenti sul Metodo Pigro</h2>
 
         <div class="faqItem">
           <div class="faqQ">1) Perché solo due strumenti?</div>
@@ -175,22 +175,47 @@
 
         <div class="faqItem">
           <div class="faqQ">2) Cos’è l’ETF Azion-Obblig?</div>
-          <div class="faqA">È un ETF multi-asset (azioni + obbligazioni) globale. Nel tuo caso, LS80 è un esempio noto.</div>
+          <div class="faqA">È un ETF multi-asset globale che combina azioni e obbligazioni in un solo strumento.</div>
         </div>
 
         <div class="faqItem">
           <div class="faqQ">3) Perché aggiungere oro?</div>
-          <div class="faqA">Perché spesso riduce la volatilità e può aiutare nei periodi inflattivi o di shock.</div>
+          <div class="faqA">Perché l’oro può aiutare a contenere il rischio nei periodi difficili e migliorare la stabilità complessiva del portafoglio.</div>
         </div>
 
         <div class="faqItem">
           <div class="faqQ">4) Quando ribilanciare?</div>
-          <div class="faqA">Una volta l’anno: è una regola semplice e disciplinata.</div>
+          <div class="faqA">Una volta l’anno è una regola semplice e disciplinata, spesso sufficiente per mantenere coerente la strategia.</div>
         </div>
 
         <div class="faqItem">
-          <div class="faqQ">5) Devo “indovinare” il momento giusto?</div>
-          <div class="faqA">No. La strategia punta su struttura e disciplina, non su timing.</div>
+          <div class="faqQ">5) Devo indovinare il momento giusto?</div>
+          <div class="faqA">No. Il metodo punta sulla struttura del portafoglio e sulla disciplina, non sulle previsioni di mercato.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">6) Cosa succede se il mercato scende molto?</div>
+          <div class="faqA">Il portafoglio può subire ribassi, ma la presenza di strumenti diversi riduce la dipendenza da un solo mercato.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">7) È un metodo adatto solo a chi investe molto?</div>
+          <div class="faqA">No. Può essere applicato anche a capitali più contenuti, purché si mantenga un orizzonte di medio-lungo periodo.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">8) Perché confrontarlo con MSCI World?</div>
+          <div class="faqA">Perché MSCI World è uno dei benchmark più usati per misurare la performance di un investimento globale azionario.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">9) Conta di più il rendimento o il drawdown?</div>
+          <div class="faqA">Entrambi, ma il drawdown mostra quanto si soffre davvero nei momenti peggiori. È una misura molto importante del rischio.</div>
+        </div>
+
+        <div class="faqItem">
+          <div class="faqQ">10) Questo sito dà consulenza finanziaria personalizzata?</div>
+          <div class="faqA">No. Fornisce solo informazione generale e strumenti di analisi. Le decisioni operative restano a carico dell’investitore.</div>
         </div>
       </div>
     </div>
