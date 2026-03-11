@@ -19,6 +19,18 @@ function clampGold(v) {
   return Math.round(v / 5) * 5;
 }
 
+function formatThousandsInput(el) {
+  let v = String(el.value || "").replace(/\./g, "").replace(",", ".");
+  v = v.replace(/[^0-9]/g, "");
+
+  if (!v) {
+    el.value = "";
+    return;
+  }
+
+  el.value = Number(v).toLocaleString("it-IT");
+}
+
 function parseCapital() {
   let s = String(document.getElementById("capital").value || "").trim();
   s = s.replace(/\./g, "").replace(",", ".");
@@ -65,7 +77,6 @@ function yearOnlyVerticalGrid(labels) {
       const prev = labels[i - 1];
 
       if (!current) return "transparent";
-
       if (!prev) return "#e0e0e0";
 
       const yearNow = current.slice(0, 4);
@@ -83,6 +94,7 @@ const elWG = document.getElementById("w_gold");
 const elWGLabel = document.getElementById("w_gold_label");
 const btnUpdate = document.getElementById("btn_update");
 const btnPdf = document.getElementById("btn_pdf");
+const capitalInput = document.getElementById("capital");
 
 function updateSliderLabelAndComposition(wGold01) {
   if (elWGLabel) {
@@ -187,7 +199,6 @@ async function loadData() {
       return;
     }
 
-    // Taglio serie dal 2021
     let startIndex = 0;
     for (let i = 0; i < dates.length; i++) {
       if (dates[i] >= "2021-01-01") {
@@ -444,6 +455,16 @@ document.getElementById("btn_ask")?.addEventListener("click", async () => {
   }
 });
 
+if (capitalInput) {
+  capitalInput.addEventListener("input", () => {
+    formatThousandsInput(capitalInput);
+  });
+
+  capitalInput.addEventListener("blur", () => {
+    formatThousandsInput(capitalInput);
+  });
+}
+
 if (elWG) {
   elWG.addEventListener("input", () => {
     const wGold = clampGold(elWG.value);
@@ -475,4 +496,9 @@ if (btnPdf) {
 }
 
 updateSliderLabelAndComposition(clampGold(elWG ? elWG.value : 20) / 100);
+
+if (capitalInput && capitalInput.value) {
+  formatThousandsInput(capitalInput);
+}
+
 loadData();
