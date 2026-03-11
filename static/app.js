@@ -28,23 +28,29 @@ function parseCapital() {
 }
 
 function formatDateLabel(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    if (Number.isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString("it-IT");
-  } catch {
-    return dateStr;
-  }
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("it-IT");
 }
 
-function compactYearLabel(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    if (Number.isNaN(d.getTime())) return dateStr;
-    return String(d.getFullYear());
-  } catch {
-    return dateStr;
-  }
+function buildYearTickCallback(labels) {
+  return function(value, index) {
+
+    const d = new Date(labels[index]);
+    if (isNaN(d)) return "";
+
+    const year = d.getFullYear();
+
+    if (index === 0) return year;
+
+    const prev = new Date(labels[index - 1]);
+
+    if (prev.getFullYear() !== year) {
+      return year;
+    }
+
+    return "";
+  };
 }
 
 let chartMain = null;
@@ -56,43 +62,23 @@ const btnUpdate = document.getElementById("btn_update");
 const btnPdf = document.getElementById("btn_pdf");
 
 function updateSliderLabelAndComposition(wGold01) {
+
   elWGLabel.textContent = Math.round(wGold01 * 100) + "%";
+
   const wLs80 = 1 - wGold01;
-  document.getElementById("w_equity").textContent = Math.round(0.8 * wLs80 * 100) + "%";
-  document.getElementById("w_bond").textContent = Math.round(0.2 * wLs80 * 100) + "%";
-  document.getElementById("w_gold2").textContent = Math.round(wGold01 * 100) + "%";
-}
 
-function renderDrawdownSummary(metrics) {
-  const box = document.getElementById("dd_summary");
-  if (!box) return;
+  document.getElementById("w_equity").textContent =
+    Math.round(0.8 * wLs80 * 100) + "%";
 
-  const fmtEpisode = (ep) => {
-    if (!ep) return "";
-    return `• ${ep.start} → ${ep.bottom} → ${ep.end} : ${Number(ep.depth_pct).toFixed(1)}%`;
-  };
+  document.getElementById("w_bond").textContent =
+    Math.round(0.2 * wLs80 * 100) + "%";
 
-  const p2025 = metrics.dd_2025_portfolio;
-  const w2025 = metrics.dd_2025_world;
-  const epP = Array.isArray(metrics.worst_episodes_portfolio) ? metrics.worst_episodes_portfolio : [];
-  const epW = Array.isArray(metrics.worst_episodes_world) ? metrics.worst_episodes_world : [];
-
-  let html = `<b>Drawdown 2025 ("Dazi Trump")</b>: Portafoglio ${formatPctFromDecimal(p2025)} | MSCI World ${formatPctFromDecimal(w2025)}<br/>`;
-
-  if (epP.length) {
-    html += `<b>3 discese peggiori (Portafoglio)</b><br/>`;
-    html += epP.map(fmtEpisode).join("<br/>") + "<br/>";
-  }
-
-  if (epW.length) {
-    html += `<b>3 discese peggiori (MSCI World)</b><br/>`;
-    html += epW.map(fmtEpisode).join("<br/>");
-  }
-
-  box.innerHTML = html;
+  document.getElementById("w_gold2").textContent =
+    Math.round(wGold01 * 100) + "%";
 }
 
 function renderComparison(payload) {
+
   const period = document.getElementById("compare_period");
   const pigro = document.getElementById("compare_pigro");
   const world = document.getElementById("compare_world");
@@ -102,39 +88,39 @@ function renderComparison(payload) {
   const worldArr = payload.world || [];
 
   if (dates.length && period) {
-    period.textContent = `10.000 € investiti dal ${dates[0]} al ${dates[dates.length - 1]}`;
+    period.textContent =
+      `10.000 € investiti dal ${dates[0]} al ${dates[dates.length - 1]}`;
   }
 
   if (pigro) {
-    pigro.textContent = portfolio.length ? formatEuro(portfolio[portfolio.length - 1]) : "—";
+    pigro.textContent = portfolio.length
+      ? formatEuro(portfolio[portfolio.length - 1])
+      : "—";
   }
 
   if (world) {
-    world.textContent = worldArr.length ? formatEuro(worldArr[worldArr.length - 1]) : "—";
+    world.textContent = worldArr.length
+      ? formatEuro(worldArr[worldArr.length - 1])
+      : "—";
   }
 }
 
-function buildSparseXTickCallback(labels) {
-  const total = labels.length;
-  const step = Math.max(1, Math.ceil(total / 8));
-
-  return function(value, index) {
-    if (index % step !== 0 && index !== total - 1) return "";
-    return compactYearLabel(labels[index]);
-  };
-}
-
 async function loadData() {
+
   btnUpdate.disabled = true;
   btnUpdate.textContent = "Aggiorna…";
 
   try {
+
     const wGold = clampGold(elWG.value) / 100;
     const capital = parseCapital();
 
     updateSliderLabelAndComposition(wGold);
 
-    const res = await fetch(`/api/compute?w_gold=${encodeURIComponent(wGold)}&capital=${encodeURIComponent(capital)}`);
+    const res = await fetch(
+      `/api/compute?w_gold=${encodeURIComponent(wGold)}&capital=${encodeURIComponent(capital)}`
+    );
+
     const data = await res.json();
 
     if (!data.ok) {
@@ -147,206 +133,174 @@ async function loadData() {
     const world = data.world || [];
     const ddP = data.drawdown_portfolio_pct || [];
     const ddW = data.drawdown_world_pct || [];
-    const m = data.metrics || {};
 
-    if (!dates.length || !portfolio.length) {
-      alert("Errore: dati grafico non disponibili.");
-      return;
-    }
+    // -----------------------
+    // taglio serie dal 2021
+    // -----------------------
 
-    document.getElementById("final_value").textContent = formatEuro(m.final_portfolio);
-    document.getElementById("final_years").textContent =
-      m.final_years !== null && m.final_years !== undefined
-        ? Number(m.final_years).toFixed(1).replace(".", ",")
-        : "—";
+    let startIndex = 0;
 
-    document.getElementById("cagr").textContent = formatPctFromDecimal(m.cagr_portfolio);
-    document.getElementById("maxdd").textContent = formatPctFromDecimal(m.max_dd_portfolio);
-    document.getElementById("dbl").textContent =
-      m.doubling_years_portfolio !== null && m.doubling_years_portfolio !== undefined
-        ? Number(m.doubling_years_portfolio).toFixed(1).replace(".", ",")
-        : "—";
-
-    renderComparison(data);
-    renderDrawdownSummary(m);
-
-    const labels = dates.slice();
-    const xTickCallback = buildSparseXTickCallback(labels);
-
-    const mainDatasets = [
-      {
-        label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
-        data: portfolio,
-        borderWidth: 2,
-        tension: 0.15,
-        pointRadius: 0
+    for (let i = 0; i < dates.length; i++) {
+      if (dates[i] >= "2021-01-01") {
+        startIndex = i;
+        break;
       }
-    ];
-
-    if (world.length) {
-      mainDatasets.push({
-        label: "MSCI World (URTH) - normalizzato",
-        data: world,
-        borderWidth: 2,
-        tension: 0.15,
-        pointRadius: 0
-      });
     }
 
-    const ddDatasets = [
-      {
-        label: "Drawdown Portafoglio (%)",
-        data: ddP,
-        borderWidth: 2,
-        tension: 0.15,
-        pointRadius: 0
-      }
-    ];
+    const datesCut = dates.slice(startIndex);
+    const portfolioCut = portfolio.slice(startIndex);
+    const worldCut = world.slice(startIndex);
+    const ddPCut = ddP.slice(startIndex);
+    const ddWCut = ddW.slice(startIndex);
 
-    if (ddW.length) {
-      ddDatasets.push({
-        label: "Drawdown MSCI World (%)",
-        data: ddW,
-        borderWidth: 2,
-        tension: 0.15,
-        pointRadius: 0
-      });
+    const labels = datesCut;
+
+    const xTickCallback = buildYearTickCallback(labels);
+
+    // titolo grafico
+
+    const titleBox = document.getElementById("chart_title");
+    if (titleBox) {
+      titleBox.textContent = "Andamento negli ultimi anni";
     }
+
+    // -----------------------
+    // GRAFICO PRINCIPALE
+    // -----------------------
 
     if (chartMain) chartMain.destroy();
-    chartMain = new Chart(document.getElementById("chart_main").getContext("2d"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: mainDatasets
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            type: "category",
-            ticks: {
-              autoSkip: false,
-              maxRotation: 0,
-              minRotation: 0,
-              callback: xTickCallback
+
+    chartMain = new Chart(
+      document.getElementById("chart_main").getContext("2d"),
+      {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Portafoglio (ETF Azion-Obblig + ETC Oro)",
+              data: portfolioCut,
+              borderWidth: 2,
+              tension: 0.15,
+              pointRadius: 0
             },
-            grid: {
-              display: true
+            {
+              label: "MSCI World (URTH)",
+              data: worldCut,
+              borderWidth: 2,
+              tension: 0.15,
+              pointRadius: 0
             }
-          },
-          y: {
-            ticks: {
-              callback: (v) => formatEuro(v)
-            }
-          }
+          ]
         },
-        plugins: {
-          legend: { display: true },
-          tooltip: {
-            callbacks: {
-              title: (items) => {
-                if (!items || !items.length) return "";
-                return formatDateLabel(labels[items[0].dataIndex]);
-              },
-              label: (ctx) => `${ctx.dataset.label}: ${formatEuro(ctx.parsed.y)}`
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+
+            x: {
+              type: "category",
+              ticks: {
+                callback: xTickCallback,
+                maxRotation: 0,
+                minRotation: 0
+              }
+            },
+
+            y: {
+              ticks: {
+                callback: (v) => formatEuro(v)
+              }
+            }
+
+          },
+          plugins: {
+            legend: { display: true },
+            tooltip: {
+              callbacks: {
+                title: (items) =>
+                  formatDateLabel(labels[items[0].dataIndex]),
+                label: (ctx) =>
+                  ctx.dataset.label + ": " + formatEuro(ctx.parsed.y)
+              }
             }
           }
         }
       }
-    });
+    );
+
+    // -----------------------
+    // GRAFICO DRAWDOWN
+    // -----------------------
 
     if (chartDD) chartDD.destroy();
-    chartDD = new Chart(document.getElementById("chart_dd").getContext("2d"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: ddDatasets
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            type: "category",
-            ticks: {
-              autoSkip: false,
-              maxRotation: 0,
-              minRotation: 0,
-              callback: xTickCallback
+
+    chartDD = new Chart(
+      document.getElementById("chart_dd").getContext("2d"),
+      {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Drawdown Portafoglio (%)",
+              data: ddPCut,
+              borderWidth: 2,
+              tension: 0.15,
+              pointRadius: 0
             },
-            grid: {
-              display: true
+            {
+              label: "Drawdown MSCI World (%)",
+              data: ddWCut,
+              borderWidth: 2,
+              tension: 0.15,
+              pointRadius: 0
             }
-          },
-          y: {
-            suggestedMin: -60,
-            suggestedMax: 0,
-            ticks: {
-              callback: (v) => `${Number(v).toFixed(0)}%`
-            }
-          }
+          ]
         },
-        plugins: {
-          legend: { display: true },
-          tooltip: {
-            callbacks: {
-              title: (items) => {
-                if (!items || !items.length) return "";
-                return formatDateLabel(labels[items[0].dataIndex]);
-              },
-              label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(1)}%`
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+
+            x: {
+              type: "category",
+              ticks: {
+                callback: xTickCallback,
+                maxRotation: 0,
+                minRotation: 0
+              }
+            },
+
+            y: {
+              suggestedMin: -60,
+              suggestedMax: 0,
+              ticks: {
+                callback: (v) => v.toFixed(0) + "%"
+              }
             }
+
+          },
+          plugins: {
+            legend: { display: true }
           }
         }
       }
-    });
+    );
+
+    renderComparison(data);
 
   } catch (e) {
+
     alert("Errore: " + (e?.message || e));
+
   } finally {
+
     btnUpdate.disabled = false;
     btnUpdate.textContent = "Aggiorna";
+
   }
 }
-
-document.querySelectorAll(".faqItem").forEach((item) => {
-  item.addEventListener("click", () => item.classList.toggle("open"));
-});
-
-document.getElementById("btn_faxsimile")?.addEventListener("click", () => {
-  window.open("/faxsimile_execution_only.pdf", "_blank");
-});
-
-document.getElementById("btn_consulente")?.addEventListener("click", () => {
-  alert("Funzione da collegare ai contatti consulenti.");
-});
-
-document.getElementById("btn_libro")?.addEventListener("click", () => {
-  window.open("https://www.amazon.it/dp/B0GQM925QR/ref=sr", "_blank");
-});
-
-document.getElementById("btn_ask")?.addEventListener("click", async () => {
-  const q = (document.getElementById("ask_text")?.value || "").trim();
-  if (!q) return;
-
-  try {
-    const res = await fetch("/api/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Errore ask");
-
-    const box = document.getElementById("ask_answer");
-    box.style.display = "block";
-    box.textContent = data.answer || "";
-  } catch (e) {
-    alert("Errore: " + (e?.message || e));
-  }
-});
 
 elWG.addEventListener("input", () => {
   const wGold = clampGold(elWG.value);
@@ -357,13 +311,23 @@ elWG.addEventListener("input", () => {
 btnUpdate.addEventListener("click", loadData);
 
 btnPdf.addEventListener("click", () => {
+
   const cagr = document.getElementById("cagr").textContent || "";
   const maxdd = document.getElementById("maxdd").textContent || "";
   const finalv = document.getElementById("final_value").textContent || "";
   const years = document.getElementById("final_years").textContent || "";
-  const url = `/api/pdf?title=${encodeURIComponent("Gloob - Metodo Pigro")}&cagr=${encodeURIComponent(cagr)}&maxdd=${encodeURIComponent(maxdd)}&final=${encodeURIComponent(finalv)}&years=${encodeURIComponent(years)}`;
+
+  const url =
+    `/api/pdf?title=${encodeURIComponent("Gloob - Metodo Pigro")}` +
+    `&cagr=${encodeURIComponent(cagr)}` +
+    `&maxdd=${encodeURIComponent(maxdd)}` +
+    `&final=${encodeURIComponent(finalv)}` +
+    `&years=${encodeURIComponent(years)}`;
+
   window.open(url, "_blank");
+
 });
 
 updateSliderLabelAndComposition(clampGold(elWG.value) / 100);
+
 loadData();
