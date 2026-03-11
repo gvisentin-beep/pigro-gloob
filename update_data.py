@@ -137,6 +137,7 @@ def update_one_asset(name: str, symbol: str, path: Path) -> dict:
         "symbol": symbol,
         "file": str(path),
         "updated": False,
+        "usable": False,
     }
 
     old_df = read_existing_csv(path)
@@ -144,11 +145,14 @@ def update_one_asset(name: str, symbol: str, path: Path) -> dict:
 
     if new_df is None or new_df.empty:
         result["reason"] = err or "no_data_from_twelve_data"
+
         if old_df is not None and not old_df.empty:
+            result["usable"] = True
             result["fallback_rows"] = int(len(old_df))
             result["fallback_first_date"] = str(old_df["date"].iloc[0].date())
             result["fallback_last_date"] = str(old_df["date"].iloc[-1].date())
             result["fallback_last_value"] = float(old_df["close"].iloc[-1])
+
         return result
 
     if old_df is not None and not old_df.empty:
@@ -165,6 +169,7 @@ def update_one_asset(name: str, symbol: str, path: Path) -> dict:
     write_csv(path, merged)
 
     result["updated"] = True
+    result["usable"] = True
     result["rows"] = int(len(merged))
     result["first_date"] = str(merged["date"].iloc[0].date())
     result["last_date"] = str(merged["date"].iloc[-1].date())
@@ -181,20 +186,21 @@ def main() -> None:
     log(f"TWELVE_DATA_API_KEY presente: {bool(TWELVE_DATA_API_KEY)}")
     log("=" * 70)
 
-    all_ok = True
+    results = []
 
     for name, cfg in ASSETS.items():
         log(f"--> Aggiorno {name} ({cfg['symbol']})")
         res = update_one_asset(name, cfg["symbol"], cfg["path"])
         log(str(res))
-        if not res.get("updated"):
-            all_ok = False
+        results.append(res)
 
     log("=" * 70)
     log(f"Fine aggiornamento: {now_utc()}")
     log("=" * 70)
 
-    if not all_ok:
+    # Fallisce solo se esiste almeno un asset NON utilizzabile
+    unusable = [r for r in results if not r.get("usable")]
+    if unusable:
         raise SystemExit(1)
 
 
