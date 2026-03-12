@@ -45,6 +45,8 @@ jobs:
           tail -n 8 data/ls80.csv || true
           echo "---- data/gold.csv ----"
           tail -n 8 data/gold.csv || true
+          echo "---- data/btc.csv ----"
+          tail -n 8 data/btc.csv || true
           echo "---- data/world.csv ----"
           tail -n 8 data/world.csv || true
 
@@ -57,5 +59,5 @@ jobs:
             echo "Nessun aggiornamento dati"
             exit 0
           fi
-          git commit -m "Aggiorna dati con Twelve Data (ls80/gold/world)"
+          git commit -m "Aggiorna dati variante Pigro 80-15-5 (ls80/gold/btc/world)"
           git push
