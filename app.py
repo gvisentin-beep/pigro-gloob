@@ -22,7 +22,7 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
-LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
+LS80_TICKER = os.getenv("LS80_TICKER", "IE00BMVB5R75.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
 WORLD_TICKER = os.getenv("WORLD_TICKER", "URTH").strip()
@@ -39,6 +39,16 @@ WEIGHT_GOLD = 0.15
 WEIGHT_BTC = 0.05
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
+
+LS80_FALLBACK_TICKERS = [
+    t.strip()
+    for t in [
+        os.getenv("LS80_TICKER", "IE00BMVB5R75.MI"),
+        "VNGA80.MI",
+        "V80A.MI",
+    ]
+    if t and t.strip()
+]
 
 
 def _now_utc() -> datetime:
@@ -169,10 +179,18 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
         )
         if df.empty:
             return None, "Serie vuota dopo pulizia"
-
         return df[["date", "close"]].copy(), None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
+
+
+def _flatten_yf_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [
+            "_".join([str(x) for x in tup if str(x) != ""]).strip("_")
+            for tup in df.columns.to_flat_index()
+        ]
+    return df
 
 
 def fetch_yahoo_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
@@ -180,34 +198,67 @@ def fetch_yahoo_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]
         return None, "Ticker vuoto"
 
     try:
-        df = yf.download(symbol, period="max", interval="1d", progress=False, auto_adjust=False)
+        df = yf.download(
+            symbol,
+            period="max",
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+            group_by="column",
+            threads=False,
+        )
 
         if df is None or df.empty:
-            return None, "Yahoo Finance non ha restituito dati"
+            return None, f"Yahoo Finance non ha restituito dati per {symbol}"
 
+        df = _flatten_yf_columns(df)
         df = df.reset_index()
 
-        if "Date" not in df.columns or "Close" not in df.columns:
-            return None, f"Colonne inattese da Yahoo: {list(df.columns)}"
+        date_col = None
+        for c in df.columns:
+            if str(c).lower() in ("date", "datetime"):
+                date_col = c
+                break
 
-        df = df[["Date", "Close"]].copy()
-        df.columns = ["date", "close"]
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        close_col = None
+        for c in df.columns:
+            if str(c).lower() == "close" or str(c).lower().startswith("close_"):
+                close_col = c
+                break
 
-        df = (
-            df.dropna(subset=["date", "close"])
+        if date_col is None or close_col is None:
+            return None, f"Colonne inattese da Yahoo per {symbol}: {list(df.columns)}"
+
+        out = df[[date_col, close_col]].copy()
+        out.columns = ["date", "close"]
+        out["date"] = pd.to_datetime(out["date"], errors="coerce")
+        out["close"] = pd.to_numeric(out["close"], errors="coerce")
+
+        out = (
+            out.dropna(subset=["date", "close"])
             .sort_values("date")
             .drop_duplicates(subset=["date"], keep="last")
             .reset_index(drop=True)
         )
 
-        if df.empty:
-            return None, "Serie Yahoo vuota dopo pulizia"
+        if out.empty:
+            return None, f"Serie Yahoo vuota dopo pulizia per {symbol}"
 
-        return df[["date", "close"]].copy(), None
+        return out[["date", "close"]].copy(), None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
+
+
+def fetch_ls80_with_fallback() -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[str]]:
+    errors: list[str] = []
+
+    for ticker in LS80_FALLBACK_TICKERS:
+        df, err = fetch_yahoo_data(ticker)
+        if df is not None and not df.empty:
+            return df, None, ticker
+        errors.append(f"{ticker}: {err}")
+
+    return None, " | ".join(errors) if errors else "nessun ticker LS80 disponibile", None
 
 
 def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
@@ -228,9 +279,13 @@ def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
         info["read_error"] = f"{type(e).__name__}: {e}"
 
     if path == LS80_FILE:
-        new_df, err = fetch_yahoo_data(symbol)
+        new_df, err, used_ticker = fetch_ls80_with_fallback()
+        info["source"] = "yahoo"
+        info["used_ticker"] = used_ticker or symbol
     else:
         new_df, err = fetch_twelve_data(symbol)
+        info["source"] = "twelve_data"
+        info["used_ticker"] = symbol
 
     if new_df is None or new_df.empty:
         info["reason"] = err or "nessun dato disponibile"
@@ -430,6 +485,7 @@ def api_diag():
         },
         "env": {
             "LS80_TICKER": LS80_TICKER,
+            "LS80_FALLBACK_TICKERS": LS80_FALLBACK_TICKERS,
             "GOLD_TICKER": GOLD_TICKER,
             "BTC_TICKER": BTC_TICKER,
             "WORLD_TICKER": WORLD_TICKER,
