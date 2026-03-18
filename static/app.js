@@ -51,9 +51,7 @@
 
   async function fetchJson(url) {
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   }
 
@@ -121,14 +119,14 @@
 
   function renderMain(labels, portfolioVals, worldVals) {
     const canvas = document.getElementById("chart_main");
-    if (!canvas) return;
+    if (!canvas || typeof Chart === "undefined") return;
 
     const ctx = canvas.getContext("2d");
 
     chartMain = new Chart(ctx, {
       type: "line",
       data: {
-        labels: labels,
+        labels,
         datasets: [
           {
             label: "Metodo Pigro 80/15/5",
@@ -155,9 +153,7 @@
           intersect: false
         },
         plugins: {
-          legend: {
-            display: true
-          },
+          legend: { display: true },
           tooltip: {
             callbacks: {
               label: function (ctx) {
@@ -167,11 +163,7 @@
           }
         },
         scales: {
-          x: {
-            ticks: {
-              maxTicksLimit: 10
-            }
-          },
+          x: { ticks: { maxTicksLimit: 10 } },
           y: {
             ticks: {
               callback: function (value) {
@@ -186,14 +178,14 @@
 
   function renderDD(labels, ddVals) {
     const canvas = document.getElementById("chart_dd");
-    if (!canvas) return;
+    if (!canvas || typeof Chart === "undefined") return;
 
     const ctx = canvas.getContext("2d");
 
     chartDD = new Chart(ctx, {
       type: "line",
       data: {
-        labels: labels,
+        labels,
         datasets: [
           {
             label: "Drawdown portafoglio",
@@ -209,9 +201,7 @@
         maintainAspectRatio: false,
         animation: false,
         plugins: {
-          legend: {
-            display: true
-          },
+          legend: { display: true },
           tooltip: {
             callbacks: {
               label: function (ctx) {
@@ -221,11 +211,7 @@
           }
         },
         scales: {
-          x: {
-            ticks: {
-              maxTicksLimit: 10
-            }
-          },
+          x: { ticks: { maxTicksLimit: 10 } },
           y: {
             ticks: {
               callback: function (value) {
@@ -260,21 +246,15 @@
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ question: question })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
       });
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const payload = await res.json();
       output.textContent =
-        payload.answer ||
-        payload.response ||
-        "Nessuna risposta disponibile.";
+        payload.answer || payload.response || "Nessuna risposta disponibile.";
     } catch (err) {
       console.error("Errore assistente:", err);
       output.textContent =
@@ -366,60 +346,40 @@
       setText("compare_pigro", "—");
       setText("compare_world", "—");
       setText("dd_summary", "Impossibile caricare i dati del grafico.");
-
-      alert("Impossibile caricare il grafico. Controlla la console del browser.");
     }
   }
 
   function wireButtons() {
     const btnUpdate = document.getElementById("btn_update");
-    if (btnUpdate) {
-      btnUpdate.addEventListener("click", loadCharts);
-    }
+    if (btnUpdate) btnUpdate.addEventListener("click", loadCharts);
 
     const btnPdf = document.getElementById("btn_pdf");
-    if (btnPdf) {
-      btnPdf.addEventListener("click", function () {
-        window.print();
-      });
-    }
+    if (btnPdf) btnPdf.addEventListener("click", function () {
+      window.print();
+    });
 
     const btnAsk = document.getElementById("btn_ask");
-    if (btnAsk) {
-      btnAsk.addEventListener("click", askAssistant);
-    }
+    if (btnAsk) btnAsk.addEventListener("click", askAssistant);
 
     const btnLibro = document.getElementById("btn_libro");
-    if (btnLibro) {
-      btnLibro.addEventListener("click", function () {
-        window.open(
-          "https://www.amazon.it/dp/B0GQM925QR/ref=sr",
-          "_blank",
-          "noopener"
-        );
-      });
-    }
+    if (btnLibro) btnLibro.addEventListener("click", function () {
+      window.open("https://www.amazon.it/dp/B0GQM925QR/ref=sr", "_blank", "noopener");
+    });
 
     const btnFax = document.getElementById("btn_faxsimile");
-    if (btnFax) {
-      btnFax.addEventListener("click", function () {
-        window.location.href = "/static/faxsimile_execution_only.pdf";
-      });
-    }
+    if (btnFax) btnFax.addEventListener("click", function () {
+      window.location.href = "/faxsimile_execution_only.pdf";
+    });
 
     const btnCons = document.getElementById("btn_consulente");
-    if (btnCons) {
-      btnCons.addEventListener("click", function () {
-        alert("Qui puoi collegare la finestra popup o la pagina con i consulenti OCF.");
-      });
-    }
+    if (btnCons) btnCons.addEventListener("click", function () {
+      alert("Qui puoi collegare la finestra popup o la pagina con i consulenti OCF.");
+    });
 
     const capital = document.getElementById("capital");
     if (capital) {
       capital.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          loadCharts();
-        }
+        if (e.key === "Enter") loadCharts();
       });
     }
   }
