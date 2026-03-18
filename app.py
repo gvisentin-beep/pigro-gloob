@@ -191,7 +191,21 @@ def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
         info["previous_last_date"] = str(old_df["date"].iloc[-1].date())
     except Exception as e:
         info["read_error"] = f"{type(e).__name__}: {e}"
-
+    if path == LS80_FILE:
+    import yfinance as yf
+    try:
+        df = yf.download(symbol, period="max", interval="1d", progress=False)
+        if df is not None and not df.empty:
+            df = df.reset_index()[["Date", "Close"]]
+            df.columns = ["date", "close"]
+            df["date"] = pd.to_datetime(df["date"])
+            df["close"] = df["close"].astype(float)
+            new_df, err = df, None
+        else:
+            new_df, err = None, "Yahoo vuoto"
+    except Exception as e:
+        new_df, err = None, str(e)
+else:
     new_df, err = fetch_twelve_data(symbol)
     if new_df is None or new_df.empty:
         info["reason"] = err or "no_data_from_twelve_data"
