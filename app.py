@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 import requests
+import yfinance as yf
 from flask import Flask, jsonify, render_template, request, send_file
 
 app = Flask(__name__)
@@ -21,8 +22,6 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
-# Per LS80 conviene usare il CSV locale come fonte primaria.
-# Se vuoi tentare l'aggiornamento via API, imposta LS80_TICKER su Render.
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
@@ -170,6 +169,42 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
         )
         if df.empty:
             return None, "Serie vuota dopo pulizia"
+
+        return df[["date", "close"]].copy(), None
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def fetch_yahoo_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    if not symbol:
+        return None, "Ticker vuoto"
+
+    try:
+        df = yf.download(symbol, period="max", interval="1d", progress=False, auto_adjust=False)
+
+        if df is None or df.empty:
+            return None, "Yahoo Finance non ha restituito dati"
+
+        df = df.reset_index()
+
+        if "Date" not in df.columns or "Close" not in df.columns:
+            return None, f"Colonne inattese da Yahoo: {list(df.columns)}"
+
+        df = df[["Date", "Close"]].copy()
+        df.columns = ["date", "close"]
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+
+        df = (
+            df.dropna(subset=["date", "close"])
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
+
+        if df.empty:
+            return None, "Serie Yahoo vuota dopo pulizia"
+
         return df[["date", "close"]].copy(), None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
@@ -191,24 +226,14 @@ def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
         info["previous_last_date"] = str(old_df["date"].iloc[-1].date())
     except Exception as e:
         info["read_error"] = f"{type(e).__name__}: {e}"
+
     if path == LS80_FILE:
-    import yfinance as yf
-    try:
-        df = yf.download(symbol, period="max", interval="1d", progress=False)
-        if df is not None and not df.empty:
-            df = df.reset_index()[["Date", "Close"]]
-            df.columns = ["date", "close"]
-            df["date"] = pd.to_datetime(df["date"])
-            df["close"] = df["close"].astype(float)
-            new_df, err = df, None
-        else:
-            new_df, err = None, "Yahoo vuoto"
-    except Exception as e:
-        new_df, err = None, str(e)
-else:
-    new_df, err = fetch_twelve_data(symbol)
+        new_df, err = fetch_yahoo_data(symbol)
+    else:
+        new_df, err = fetch_twelve_data(symbol)
+
     if new_df is None or new_df.empty:
-        info["reason"] = err or "no_data_from_twelve_data"
+        info["reason"] = err or "nessun dato disponibile"
         if old_df is not None and not old_df.empty:
             info["usable"] = True
             info["fallback"] = True
@@ -262,9 +287,7 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = df.merge(world, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
-    # Usa l'ultimo dato noto disponibile per evitare che una serie più corta blocchi il grafico.
     df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
-    # Le righe iniziali prima che tutte le serie siano valorizzate vengono escluse.
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
     if df.empty:
@@ -540,7 +563,6 @@ def api_update_data():
         return err
 
     try:
-        # LS80 resta aggiornabile, ma se l'API non lo supporta il CSV locale rimane valido.
         res_ls = update_one_asset(LS80_FILE, LS80_TICKER)
         res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
