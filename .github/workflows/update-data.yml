@@ -24,11 +24,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests
+          pip install -r requirements.txt
 
       - name: Run updater
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          LS80_TICKER: ${{ secrets.LS80_TICKER }}
+          GOLD_TICKER: ${{ secrets.GOLD_TICKER }}
+          BTC_TICKER: ${{ secrets.BTC_TICKER }}
+          WORLD_TICKER: ${{ secrets.WORLD_TICKER }}
         run: |
           python update_data.py
 
