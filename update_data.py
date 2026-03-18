@@ -48,9 +48,23 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
         df.columns = [str(c).strip().lower() for c in df.columns]
         if "date" not in df.columns or "close" not in df.columns:
-            df = pd.read_csv(path, sep=";", header=None, names=["date", "close"], dtype=str, encoding="utf-8-sig")
+            df = pd.read_csv(
+                path,
+                sep=";",
+                header=None,
+                names=["date", "close"],
+                dtype=str,
+                encoding="utf-8-sig",
+            )
     except Exception:
-        df = pd.read_csv(path, sep=";", header=None, names=["date", "close"], dtype=str, encoding="utf-8-sig")
+        df = pd.read_csv(
+            path,
+            sep=";",
+            header=None,
+            names=["date", "close"],
+            dtype=str,
+            encoding="utf-8-sig",
+        )
 
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
     df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
@@ -66,12 +80,17 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
 
 def write_csv(path: Path, df: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    out = df.copy().sort_values("date").drop_duplicates(subset=["date"], keep="last").reset_index(drop=True)
+    out = (
+        df.copy()
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
     out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
     out.to_csv(path, sep=";", index=False)
 
 
-def fetch_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def fetch_twelve_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     if not symbol:
         return None, "Ticker vuoto"
     if not TWELVE_DATA_API_KEY:
@@ -114,6 +133,7 @@ def fetch_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         )
         if df.empty:
             return None, "Serie vuota dopo pulizia"
+
         return df[["date", "close"]].copy(), None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
@@ -128,7 +148,7 @@ def _flatten_yf_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def fetch_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def fetch_yahoo_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     if not symbol:
         return None, "Ticker vuoto"
 
@@ -157,7 +177,8 @@ def fetch_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
 
         close_col = None
         for c in df.columns:
-            if str(c).lower() == "close" or str(c).lower().startswith("close_"):
+            cl = str(c).lower()
+            if cl == "close" or cl.startswith("close_"):
                 close_col = c
                 break
 
@@ -174,8 +195,10 @@ def fetch_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
             .drop_duplicates(subset=["date"], keep="last")
             .reset_index(drop=True)
         )
+
         if out.empty:
             return None, f"Serie Yahoo vuota dopo pulizia per {symbol}"
+
         return out[["date", "close"]].copy(), None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
@@ -185,7 +208,7 @@ def fetch_ls80_with_fallback() -> Tuple[Optional[pd.DataFrame], Optional[str], O
     errors: list[str] = []
 
     for ticker in LS80_FALLBACK_TICKERS:
-        df, err = fetch_yahoo(ticker)
+        df, err = fetch_yahoo_series(ticker)
         if df is not None and not df.empty:
             return df, None, ticker
         errors.append(f"{ticker}: {err}")
@@ -206,7 +229,7 @@ def update_asset(name: str, symbol: str, path: Path) -> bool:
         fresh, err, used_ticker = fetch_ls80_with_fallback()
         log(f"  Fonte: Yahoo | ticker usato: {used_ticker or symbol}")
     else:
-        fresh, err = fetch_series(symbol)
+        fresh, err = fetch_twelve_series(symbol)
         log(f"  Fonte: Twelve Data | ticker usato: {symbol}")
 
     if fresh is None or fresh.empty:
