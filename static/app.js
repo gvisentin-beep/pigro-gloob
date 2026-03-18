@@ -68,6 +68,52 @@
     }
   }
 
+  function thinSeries(labels, a, b, c, maxPoints = 300) {
+    const len = labels.length;
+    if (len <= maxPoints) {
+      return { labels, a, b, c };
+    }
+
+    const step = Math.ceil(len / maxPoints);
+    return {
+      labels: labels.filter((_, i) => i % step === 0 || i === len - 1),
+      a: a.filter((_, i) => i % step === 0 || i === len - 1),
+      b: b.filter((_, i) => i % step === 0 || i === len - 1),
+      c: c.filter((_, i) => i % step === 0 || i === len - 1)
+    };
+  }
+
+  function sanitizeSeries(labels, pigroVals, worldVals, ddVals) {
+    const cleanLabels = [];
+    const cleanPigro = [];
+    const cleanWorld = [];
+    const cleanDd = [];
+
+    const n = Math.min(labels.length, pigroVals.length, worldVals.length, ddVals.length);
+
+    for (let i = 0; i < n; i += 1) {
+      const label = labels[i];
+      const p = Number(pigroVals[i]);
+      const w = Number(worldVals[i]);
+      const d = Number(ddVals[i]);
+
+      if (!label) continue;
+      if (!isFinite(p) || !isFinite(w) || !isFinite(d)) continue;
+
+      cleanLabels.push(label);
+      cleanPigro.push(p);
+      cleanWorld.push(w);
+      cleanDd.push(d);
+    }
+
+    return {
+      labels: cleanLabels,
+      pigro: cleanPigro,
+      world: cleanWorld,
+      dd: cleanDd
+    };
+  }
+
   function renderMain(labels, pigroVals, worldVals) {
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
@@ -96,6 +142,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         interaction: {
           mode: "index",
           intersect: false
@@ -151,6 +198,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: {
           legend: {
             display: true
@@ -234,27 +282,41 @@
       );
 
       if (!payload || payload.ok !== true) {
-        throw new Error(payload && payload.error ? payload.error : "Risposta backend non valida");
+        throw new Error(
+          payload && payload.error ? payload.error : "Risposta backend non valida"
+        );
       }
 
-      const labels = payload.dates || [];
-      const pigroVals = payload.portfolio || [];
-      const worldVals = payload.world || [];
-      const ddVals = payload.drawdown_portfolio_pct || [];
+      const rawLabels = Array.isArray(payload.dates) ? payload.dates : [];
+      const rawPigro = Array.isArray(payload.portfolio) ? payload.portfolio : [];
+      const rawWorld = Array.isArray(payload.world) ? payload.world : [];
+      const rawDd = Array.isArray(payload.drawdown_portfolio_pct)
+        ? payload.drawdown_portfolio_pct
+        : [];
       const metrics = payload.metrics || {};
 
-      if (!labels.length || !pigroVals.length || !worldVals.length) {
-        throw new Error("Dataset vuoto");
+      const cleaned = sanitizeSeries(rawLabels, rawPigro, rawWorld, rawDd);
+
+      if (!cleaned.labels.length || !cleaned.pigro.length || !cleaned.world.length) {
+        throw new Error("Dataset vuoto o non numerico");
       }
 
-      destroyCharts();
-      renderMain(labels, pigroVals, worldVals);
-      renderDd(labels, ddVals);
+      const thinned = thinSeries(
+        cleaned.labels,
+        cleaned.pigro,
+        cleaned.world,
+        cleaned.dd,
+        320
+      );
 
-      const last = pigroVals[pigroVals.length - 1];
-      const lastWorld = worldVals[worldVals.length - 1];
-      const firstDate = labels[0] || "inizio periodo";
-      const lastDate = labels[labels.length - 1] || "";
+      destroyCharts();
+      renderMain(thinned.labels, thinned.a, thinned.b);
+      renderDd(thinned.labels, thinned.c);
+
+      const last = cleaned.pigro[cleaned.pigro.length - 1];
+      const lastWorld = cleaned.world[cleaned.world.length - 1];
+      const firstDate = cleaned.labels[0] || "inizio periodo";
+      const lastDate = cleaned.labels[cleaned.labels.length - 1] || "";
 
       const years = Number(metrics.final_years);
       const cagr = Number(metrics.cagr_portfolio) * 100;
@@ -275,8 +337,16 @@
       setText("compare_world", euro(lastWorld, 0));
       setText(
         "dd_summary",
-        `Peggior ribasso del portafoglio nel periodo: ${isFinite(maxdd) ? pct(maxdd, 2) : "—"}`
+        `Peggior ribasso del portafoglio nel periodo: ${
+          isFinite(maxdd) ? pct(maxdd, 2) : "—"
+        }`
       );
+
+      console.log("Grafico caricato:", {
+        puntiOriginali: rawLabels.length,
+        puntiPuliti: cleaned.labels.length,
+        puntiDisegnati: thinned.labels.length
+      });
     } catch (err) {
       console.error("Errore caricamento grafici:", err);
       destroyCharts();
@@ -290,7 +360,7 @@
       setText("compare_world", "—");
       setText("dd_summary", "Impossibile caricare i dati del grafico.");
 
-      alert("Impossibile caricare il grafico. Controlla /api/compute.");
+      alert("Impossibile caricare il grafico. Controlla /api/compute e la console del browser.");
     }
   }
 
