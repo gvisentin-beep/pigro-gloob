@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import math
 import os
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
@@ -21,7 +21,9 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
-LS80_TICKER = os.getenv("LS80_TICKER", "IWDA").strip()
+# Per LS80 conviene usare il CSV locale come fonte primaria.
+# Se vuoi tentare l'aggiornamento via API, imposta LS80_TICKER su Render.
+LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
 WORLD_TICKER = os.getenv("WORLD_TICKER", "URTH").strip()
@@ -33,9 +35,19 @@ TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
+WEIGHT_LS80 = 0.80
+WEIGHT_GOLD = 0.15
+WEIGHT_BTC = 0.05
+MIN_ROWS_REQUIRED = 20
+STALE_WARNING_DAYS = 7
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return _now_utc().strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _json_error(msg: str, status: int = 400, **extra: Any):
@@ -53,6 +65,13 @@ def _require_token() -> Optional[Tuple[Any, int]]:
     return None
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def read_price_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(str(path))
@@ -60,14 +79,18 @@ def read_price_csv(path: Path) -> pd.DataFrame:
     try:
         df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
         df.columns = [str(c).strip().lower() for c in df.columns]
-
         if "date" in df.columns and "close" in df.columns:
             df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
             df["close"] = (
                 df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
             )
             df["close"] = pd.to_numeric(df["close"], errors="coerce")
-            df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+            df = (
+                df.dropna(subset=["date", "close"])
+                .sort_values("date")
+                .drop_duplicates(subset=["date"], keep="last")
+                .reset_index(drop=True)
+            )
             if not df.empty:
                 return df[["date", "close"]].copy()
     except Exception:
@@ -82,11 +105,14 @@ def read_price_csv(path: Path) -> pd.DataFrame:
         encoding="utf-8-sig",
     )
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = (
-        df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
-    )
+    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
-    df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+    df = (
+        df.dropna(subset=["date", "close"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
 
     if df.empty:
         raise ValueError(f"CSV non valido: {path}")
@@ -96,12 +122,14 @@ def read_price_csv(path: Path) -> pd.DataFrame:
 
 def write_price_csv(path: Path, df: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    out = df.copy().sort_values("date").reset_index(drop=True)
+    out = df.copy().sort_values("date").drop_duplicates(subset=["date"], keep="last")
     out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
     out.to_csv(path, sep=";", index=False)
 
 
 def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    if not symbol:
+        return None, "Ticker vuoto"
     if not TWELVE_DATA_API_KEY:
         return None, "TWELVE_DATA_API_KEY mancante"
 
@@ -121,11 +149,8 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
 
         if not isinstance(data, dict):
             return None, "Risposta Twelve Data non valida"
-
         if data.get("status") == "error":
-            code = data.get("code", "")
-            message = data.get("message", "errore sconosciuto")
-            return None, f"{code} {message}".strip()
+            return None, f"{data.get('code', '')} {data.get('message', 'errore sconosciuto')}".strip()
 
         values = data.get("values")
         if not values:
@@ -137,13 +162,15 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
 
         df["date"] = pd.to_datetime(df["datetime"], errors="coerce")
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
-        df = df.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
-
+        df = (
+            df.dropna(subset=["date", "close"])
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
         if df.empty:
             return None, "Serie vuota dopo pulizia"
-
         return df[["date", "close"]].copy(), None
-
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
 
@@ -157,47 +184,79 @@ def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
         "usable": False,
     }
 
-    old_df = None
+    old_df: Optional[pd.DataFrame] = None
     try:
         old_df = read_price_csv(path)
+        info["previous_rows"] = int(len(old_df))
+        info["previous_last_date"] = str(old_df["date"].iloc[-1].date())
     except Exception as e:
         info["read_error"] = f"{type(e).__name__}: {e}"
 
     new_df, err = fetch_twelve_data(symbol)
-
     if new_df is None or new_df.empty:
         info["reason"] = err or "no_data_from_twelve_data"
-
         if old_df is not None and not old_df.empty:
             info["usable"] = True
-            info["fallback_rows"] = int(len(old_df))
-            info["fallback_first_date"] = str(old_df["date"].iloc[0].date())
-            info["fallback_last_date"] = str(old_df["date"].iloc[-1].date())
-            info["fallback_last_value"] = float(old_df["close"].iloc[-1])
-
+            info["fallback"] = True
+            info["rows"] = int(len(old_df))
+            info["first_date"] = str(old_df["date"].iloc[0].date())
+            info["last_date"] = str(old_df["date"].iloc[-1].date())
+            info["last_value"] = float(old_df["close"].iloc[-1])
         return info
 
-    if old_df is not None and not old_df.empty:
-        merged = pd.concat([old_df, new_df], ignore_index=True)
-    else:
-        merged = new_df
-
+    merged = pd.concat([old_df, new_df], ignore_index=True) if old_df is not None and not old_df.empty else new_df
     merged = (
         merged.drop_duplicates(subset=["date"], keep="last")
         .sort_values("date")
         .reset_index(drop=True)
     )
-
     write_price_csv(path, merged)
 
     info["updated"] = True
     info["usable"] = True
+    info["fallback"] = False
     info["rows"] = int(len(merged))
     info["first_date"] = str(merged["date"].iloc[0].date())
     info["last_date"] = str(merged["date"].iloc[-1].date())
-    info["first_value"] = float(merged["close"].iloc[0])
     info["last_value"] = float(merged["close"].iloc[-1])
     return info
+
+
+def dataset_freshness_days(df: pd.DataFrame) -> Optional[int]:
+    if df.empty:
+        return None
+    last_date = pd.Timestamp(df["date"].iloc[-1]).tz_localize(None)
+    today = pd.Timestamp(_now_utc().date())
+    return int((today - last_date.normalize()).days)
+
+
+def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    ls80 = read_price_csv(LS80_FILE).rename(columns={"close": "ls80"})
+    gold = read_price_csv(GOLD_FILE).rename(columns={"close": "gold"})
+    btc = read_price_csv(BTC_FILE).rename(columns={"close": "btc"})
+    world = read_price_csv(WORLD_FILE).rename(columns={"close": "world"})
+
+    freshness = {
+        "ls80": dataset_freshness_days(ls80),
+        "gold": dataset_freshness_days(gold),
+        "btc": dataset_freshness_days(btc),
+        "world": dataset_freshness_days(world),
+    }
+
+    df = ls80.merge(gold, on="date", how="outer")
+    df = df.merge(btc, on="date", how="outer")
+    df = df.merge(world, on="date", how="outer")
+    df = df.sort_values("date").reset_index(drop=True)
+
+    # Usa l'ultimo dato noto disponibile per evitare che una serie più corta blocchi il grafico.
+    df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
+    # Le righe iniziali prima che tutte le serie siano valorizzate vengono escluse.
+    df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
+
+    if df.empty:
+        raise ValueError("Dataset vuoto dopo il merge dei quattro CSV")
+
+    return df, freshness
 
 
 def compute_cagr(series: pd.Series, dates: pd.Series) -> float:
@@ -208,7 +267,7 @@ def compute_cagr(series: pd.Series, dates: pd.Series) -> float:
         return 0.0
     start = float(series.iloc[0])
     end = float(series.iloc[-1])
-    if start <= 0:
+    if start <= 0 or end <= 0:
         return 0.0
     return (end / start) ** (1.0 / years) - 1.0
 
@@ -235,9 +294,9 @@ def worst_drawdowns(series: pd.Series, dates: pd.Series, n: int = 3) -> list[dic
     peak = series.cummax()
     dd = series / peak - 1.0
 
-    events = []
+    events: list[dict] = []
     in_dd = False
-    start_idx = None
+    start_idx: Optional[int] = None
 
     for i in range(1, len(series)):
         if not in_dd and dd.iloc[i] < 0:
@@ -246,7 +305,7 @@ def worst_drawdowns(series: pd.Series, dates: pd.Series, n: int = 3) -> list[dic
 
         if in_dd and dd.iloc[i] == 0:
             sub = dd.iloc[start_idx:i]
-            if len(sub) > 0:
+            if len(sub) > 0 and start_idx is not None:
                 bottom = sub.idxmin()
                 events.append(
                     {
@@ -277,14 +336,9 @@ def worst_drawdowns(series: pd.Series, dates: pd.Series, n: int = 3) -> list[dic
 
 
 def compute_portfolio_fixed(ls80: pd.Series, gold: pd.Series, btc: pd.Series, capital: float) -> pd.Series:
-    w_ls80 = 0.80
-    w_gold = 0.15
-    w_btc = 0.05
-
-    shares_ls80 = (capital * w_ls80) / float(ls80.iloc[0])
-    shares_gold = (capital * w_gold) / float(gold.iloc[0])
-    shares_btc = (capital * w_btc) / float(btc.iloc[0])
-
+    shares_ls80 = (capital * WEIGHT_LS80) / float(ls80.iloc[0])
+    shares_gold = (capital * WEIGHT_GOLD) / float(gold.iloc[0])
+    shares_btc = (capital * WEIGHT_BTC) / float(btc.iloc[0])
     return shares_ls80 * ls80 + shares_gold * gold + shares_btc * btc
 
 
@@ -323,6 +377,7 @@ def api_diag():
                 "last_date": str(df["date"].iloc[-1].date()),
                 "first_value": float(df["close"].iloc[0]),
                 "last_value": float(df["close"].iloc[-1]),
+                "stale_days": dataset_freshness_days(df),
             }
         except Exception as e:
             return {"exists": True, "file": str(path), "error": f"{type(e).__name__}: {e}"}
@@ -349,18 +404,12 @@ def api_diag():
     }
 
     try:
-        ls80 = read_price_csv(LS80_FILE)
-        gold = read_price_csv(GOLD_FILE)
-        btc = read_price_csv(BTC_FILE)
-        world = read_price_csv(WORLD_FILE)
-
-        merged = ls80.merge(gold, on="date", how="inner", suffixes=("_ls80", "_gold"))
-        merged = merged.merge(btc, on="date", how="inner")
-        merged = merged.merge(world, on="date", how="inner")
+        merged, freshness = build_merged_dataset()
         payload["merge"] = {
-            "rows_inner": int(len(merged)),
-            "first_date": str(merged["date"].iloc[0].date()) if len(merged) else None,
-            "last_date": str(merged["date"].iloc[-1].date()) if len(merged) else None,
+            "rows_after_outer_ffill": int(len(merged)),
+            "first_date": str(merged["date"].iloc[0].date()),
+            "last_date": str(merged["date"].iloc[-1].date()),
+            "freshness_days": freshness,
         }
     except Exception as e:
         payload["merge_error"] = f"{type(e).__name__}: {e}"
@@ -371,36 +420,25 @@ def api_diag():
 @app.get("/api/compute")
 def api_compute():
     try:
-        capital = float(request.args.get("capital", 10000))
+        capital = _safe_float(request.args.get("capital", 10000), 10000.0)
         if capital <= 0:
             return _json_error("Capitale non valido.", 400)
 
-        ls80 = read_price_csv(LS80_FILE)
-        gold = read_price_csv(GOLD_FILE)
-        btc = read_price_csv(BTC_FILE)
-        world = read_price_csv(WORLD_FILE)
-
-        df = ls80.merge(gold, on="date", how="inner", suffixes=("_ls80", "_gold"))
-        df = df.merge(btc, on="date", how="inner")
-        df = df.merge(world, on="date", how="inner")
-        df.columns = ["date", "ls80", "gold", "btc", "world"]
-
-        if len(df) < 20:
+        df, freshness = build_merged_dataset()
+        if len(df) < MIN_ROWS_REQUIRED:
             return _json_error(
                 "Serie troppo corta dopo il merge tra LS80, Oro, Bitcoin e MSCI World.",
                 400,
-                rows_inner=int(len(df)),
+                rows=int(len(df)),
             )
 
         dates = df["date"].reset_index(drop=True)
-
         portfolio = compute_portfolio_fixed(df["ls80"], df["gold"], df["btc"], capital).reset_index(drop=True)
         world_scaled = (capital * (df["world"] / df["world"].iloc[0])).reset_index(drop=True)
 
         cagr_port = compute_cagr(portfolio, dates)
         maxdd_port = compute_max_dd(portfolio)
         dbl_years = doubling_years(cagr_port)
-
         cagr_world = compute_cagr(world_scaled, dates)
         maxdd_world = compute_max_dd(world_scaled)
 
@@ -410,43 +448,39 @@ def api_compute():
         worst_port = worst_drawdowns(portfolio, dates, n=3)
         worst_world = worst_drawdowns(world_scaled, dates, n=3)
 
-        mask_2025 = dates.dt.year == 2025
-        dd_2025_port = float((dd_port[mask_2025] / 100.0).min()) if mask_2025.any() else None
-        dd_2025_world = float((dd_world[mask_2025] / 100.0).min()) if mask_2025.any() else None
-
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
+        warnings: list[str] = []
+        for name, stale_days in freshness.items():
+            if stale_days is not None and stale_days > STALE_WARNING_DAYS:
+                warnings.append(f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile")
 
         return jsonify(
             {
                 "ok": True,
                 "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
-                "portfolio": portfolio.tolist(),
-                "world": world_scaled.tolist(),
-                "drawdown_portfolio_pct": dd_port.tolist(),
-                "drawdown_world_pct": dd_world.tolist(),
-                "composition": {
-                    "ls80": 0.80,
-                    "gold": 0.15,
-                    "btc": 0.05,
-                },
+                "portfolio": [round(float(x), 6) for x in portfolio.tolist()],
+                "world": [round(float(x), 6) for x in world_scaled.tolist()],
+                "drawdown_portfolio_pct": [round(float(x), 6) for x in dd_port.tolist()],
+                "drawdown_world_pct": [round(float(x), 6) for x in dd_world.tolist()],
+                "composition": {"ls80": WEIGHT_LS80, "gold": WEIGHT_GOLD, "btc": WEIGHT_BTC},
+                "freshness_days": freshness,
+                "warnings": warnings,
                 "metrics": {
                     "final_portfolio": float(portfolio.iloc[-1]),
+                    "final_world": float(world_scaled.iloc[-1]),
                     "final_years": float(years_period),
                     "cagr_portfolio": float(cagr_port),
                     "max_dd_portfolio": float(maxdd_port),
                     "doubling_years_portfolio": float(dbl_years) if dbl_years is not None else None,
                     "cagr_world": float(cagr_world),
                     "max_dd_world": float(maxdd_world),
-                    "dd_2025_portfolio": dd_2025_port,
-                    "dd_2025_world": dd_2025_world,
                     "worst_episodes_portfolio": worst_port,
                     "worst_episodes_world": worst_world,
                 },
             }
         )
-
     except Exception as e:
-        return jsonify({"ok": False, "error": f"Errore compute: {str(e)}"})
+        return jsonify({"ok": False, "error": f"Errore compute: {type(e).__name__}: {e}"})
 
 
 @app.post("/api/ask")
@@ -459,12 +493,7 @@ def api_ask():
 
         client = _openai_client()
         if client is None:
-            return jsonify(
-                {
-                    "ok": True,
-                    "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render.",
-                }
-            )
+            return jsonify({"ok": True, "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render."})
 
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -485,9 +514,7 @@ def api_ask():
         answer = ""
         if resp and resp.choices and resp.choices[0].message and resp.choices[0].message.content:
             answer = resp.choices[0].message.content or ""
-
         return jsonify({"ok": True, "answer": answer.strip() or "Nessuna risposta disponibile."})
-
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
@@ -499,6 +526,7 @@ def api_update_data():
         return err
 
     try:
+        # LS80 resta aggiornabile, ma se l'API non lo supporta il CSV locale rimane valido.
         res_ls = update_one_asset(LS80_FILE, LS80_TICKER)
         res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
@@ -541,8 +569,8 @@ def faxsimile_execution_only():
 @app.get("/api/pdf")
 def api_pdf():
     try:
-        from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
 
         title = request.args.get("title", "Gloob - Metodo Pigro")
         cagr = request.args.get("cagr", "")
@@ -577,7 +605,6 @@ def api_pdf():
             as_attachment=True,
             download_name="gloob_pigro_8155.pdf",
         )
-
     except Exception as e:
         return _json_error(f"Errore PDF: {type(e).__name__}: {e}", 500)
 
