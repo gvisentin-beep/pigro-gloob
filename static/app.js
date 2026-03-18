@@ -20,6 +20,20 @@ function pct(v, d = 2) {
   }) + "%";
 }
 
+function yearTickCallback(value, index, ticks) {
+  const label = this.getLabelForValue(value);
+  if (!label) return "";
+
+  const year = String(label).slice(0, 4);
+
+  if (index === 0) return year;
+
+  const prevLabel = this.getLabelForValue(ticks[index - 1].value);
+  const prevYear = prevLabel ? String(prevLabel).slice(0, 4) : "";
+
+  return year !== prevYear ? year : "";
+}
+
 async function loadCharts() {
   try {
     const capitalEl = document.getElementById("capital");
@@ -95,7 +109,33 @@ async function loadCharts() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: false
+        animation: false,
+        interaction: {
+          mode: "index",
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: true
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: yearTickCallback
+            }
+          },
+          y: {
+            ticks: {
+              callback: function(value) {
+                return Number(value).toLocaleString("it-IT");
+              }
+            }
+          }
+        }
       }
     });
 
@@ -116,7 +156,33 @@ async function loadCharts() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: false
+        animation: false,
+        interaction: {
+          mode: "index",
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: true
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: yearTickCallback
+            }
+          },
+          y: {
+            ticks: {
+              callback: function(value) {
+                return value;
+              }
+            }
+          }
+        }
       }
     });
 
