@@ -1,195 +1,315 @@
-<!doctype html>
-<html lang="it">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Gloob — Metodo Pigro 80/15/5</title>
+(function () {
+  let mainChart = null;
+  let ddChart = null;
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  function euro(value, digits = 0) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("it-IT", {
+      style: "currency",
+      currency: "EUR",
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
 
-  <style>
-    body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
-    .wrap{max-width:1100px; margin:0 auto; padding:20px;}
-    h1{margin:0; font-size:34px; color:#173a8a;}
-    h2{margin-top:22px; color:#173a8a;}
-    .topRow{display:flex; gap:16px; align-items:center;}
-    .logo{width:52px; height:52px; border-radius:10px;}
-    .sub{color:#333; font-size:13px; margin-top:2px;}
-    ul{margin-top:10px;}
+  function pct(value, digits = 2) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("it-IT", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    }) + "%";
+  }
 
-    .controlsRow{
-      display:flex;
-      gap:16px;
-      margin:16px 0 10px;
-      align-items:flex-end;
-      flex-wrap:wrap;
+  function plain(value, digits = 2) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("it-IT", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function yearsToDouble(cagrPct) {
+    const r = Number(cagrPct) / 100;
+    if (!isFinite(r) || r <= 0) return null;
+    return Math.log(2) / Math.log(1 + r);
+  }
+
+  function getCapital() {
+    const el = document.getElementById("capital");
+    if (!el) return 10000;
+    const raw = String(el.value || "").replace(/\./g, "").replace(",", ".").trim();
+    const n = Number(raw);
+    return isFinite(n) && n > 0 ? n : 10000;
+  }
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function parseSeries(payload) {
+    if (!payload) return [];
+    if (Array.isArray(payload.series)) return payload.series;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.rows)) return payload.rows;
+    if (Array.isArray(payload)) return payload;
+    return [];
+  }
+
+  async function fetchJson(url) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  }
+
+  function destroyCharts() {
+    if (mainChart) {
+      mainChart.destroy();
+      mainChart = null;
     }
-    .ctrl{display:flex; flex-direction:column; gap:6px;}
-    .ctrl label{display:block; font-size:13px; color:#111; margin-bottom:4px;}
-    .ctrl input[type="text"]{width:160px; padding:6px 8px;}
-    .ctrl.capital{min-width:220px;}
+    if (ddChart) {
+      ddChart.destroy();
+      ddChart = null;
+    }
+  }
 
-    .allocBox{
-      border:1px solid #d9e2ff;
-      background:#f7f9ff;
-      border-radius:10px;
-      padding:10px 12px;
-      font-size:13px;
-      line-height:1.5;
-      min-width:210px;
+  function renderMain(labels, pigroVals, worldVals) {
+    const ctx = document.getElementById("chart_main");
+    if (!ctx) return;
+
+    mainChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Metodo Pigro 80/15/5",
+            data: pigroVals,
+            tension: 0.12,
+            pointRadius: 0,
+            borderWidth: 2
+          },
+          {
+            label: "MSCI World",
+            data: worldVals,
+            tension: 0.12,
+            pointRadius: 0,
+            borderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { maxTicksLimit: 10 }
+          },
+          y: {
+            ticks: {
+              callback: function (value) {
+                return euro(value, 0);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderDd(labels, ddVals) {
+    const ctx = document.getElementById("chart_dd");
+    if (!ctx) return;
+
+    ddChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Drawdown portafoglio",
+            data: ddVals,
+            tension: 0.1,
+            pointRadius: 0,
+            borderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                return `Drawdown: ${pct(ctx.parsed.y, 2)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { maxTicksLimit: 10 }
+          },
+          y: {
+            ticks: {
+              callback: function (value) {
+                return pct(value, 0);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderFaq() {
+    document.querySelectorAll(".faqItem").forEach((item) => {
+      item.addEventListener("click", () => item.classList.toggle("open"));
+    });
+  }
+
+  async function askAssistant() {
+    const box = document.getElementById("ask_text");
+    const out = document.getElementById("ask_answer");
+    if (!box || !out) return;
+
+    const question = String(box.value || "").trim();
+    if (!question) return;
+
+    out.style.display = "block";
+    out.textContent = "Attendi…";
+
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const payload = await res.json();
+      out.textContent = payload.answer || payload.response || "Nessuna risposta disponibile.";
+    } catch (err) {
+      out.textContent = "Non sono riuscito a contattare l’assistente. Riprova tra poco.";
+      console.error(err);
+    }
+  }
+
+  async function loadCharts() {
+    const capital = getCapital();
+
+    try {
+      const payload = await fetchJson(`/api/portfolio?capital=${encodeURIComponent(capital)}`);
+      const series = parseSeries(payload);
+
+      if (!series.length) throw new Error("Dataset vuoto");
+
+      const labels = series.map(r => r.date || r.label || "");
+      const pigroVals = series.map(r => Number(r.portfolio_value ?? r.portfolio ?? r.pigro_value ?? r.pigro));
+      const worldVals = series.map(r => Number(r.world_value ?? r.world ?? r.msci_world_value ?? r.msci_world));
+      const ddVals = series.map(r => Number(r.drawdown ?? r.portfolio_drawdown ?? 0));
+
+      const validPigro = pigroVals.filter(v => isFinite(v));
+      const validWorld = worldVals.filter(v => isFinite(v));
+      if (!validPigro.length || !validWorld.length) throw new Error("Serie dati non valide");
+
+      destroyCharts();
+      renderMain(labels, pigroVals, worldVals);
+      renderDd(labels, ddVals);
+
+      const last = validPigro[validPigro.length - 1];
+      const lastWorld = validWorld[validWorld.length - 1];
+      const firstDate = labels[0] || "inizio periodo";
+      const lastDate = labels[labels.length - 1] || "";
+      const years = payload.years ?? payload.summary?.years ?? null;
+      const cagr = payload.cagr ?? payload.summary?.cagr;
+      const maxdd = payload.max_drawdown ?? payload.maxdd ?? payload.summary?.max_drawdown ?? Math.min(...ddVals.filter(v => isFinite(v)));
+      const dbl = yearsToDouble(cagr);
+
+      setText("final_value", euro(last, 0));
+      setText("final_years", isFinite(years) ? plain(years, 1) : "—");
+      setText("cagr", pct(cagr, 2));
+      setText("maxdd", pct(maxdd, 2));
+      setText("dbl", dbl ? plain(dbl, 1) : "—");
+
+      setText("compare_period", `${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})`);
+      setText("compare_pigro", euro(last, 0));
+      setText("compare_world", euro(lastWorld, 0));
+      setText("dd_summary", `Peggior ribasso del portafoglio nel periodo: ${pct(maxdd, 2)}`);
+    } catch (err) {
+      console.error("Errore caricamento grafici:", err);
+      destroyCharts();
+      setText("final_value", "Errore");
+      setText("final_years", "—");
+      setText("cagr", "—");
+      setText("maxdd", "—");
+      setText("dbl", "—");
+      setText("compare_pigro", "—");
+      setText("compare_world", "—");
+      setText("dd_summary", "Impossibile caricare i dati del grafico.");
+      alert("Impossibile caricare il grafico. Controlla che /api/portfolio risponda correttamente.");
+    }
+  }
+
+  function wireButtons() {
+    const btnUpdate = document.getElementById("btn_update");
+    if (btnUpdate) btnUpdate.addEventListener("click", loadCharts);
+
+    const btnPdf = document.getElementById("btn_pdf");
+    if (btnPdf) btnPdf.addEventListener("click", () => window.print());
+
+    const btnAsk = document.getElementById("btn_ask");
+    if (btnAsk) btnAsk.addEventListener("click", askAssistant);
+
+    const btnLibro = document.getElementById("btn_libro");
+    if (btnLibro) {
+      btnLibro.addEventListener("click", () => {
+        window.open("https://www.amazon.it/dp/B0GQM925QR/ref=sr", "_blank", "noopener");
+      });
     }
 
-    .btn{background:#132c74; color:#fff; border:none; border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:700;}
-    .btn:disabled{opacity:.6; cursor:not-allowed;}
-    .btnRow{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
-    .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
-
-    #chart_main{width:100% !important; height:430px !important;}
-    #chart_dd{width:100% !important; height:220px !important;}
-
-    .summary{margin-top:8px; font-size:13px;}
-    .summary b{font-size:15px;}
-    .smallText{font-size:12px; color:#333; margin-top:8px;}
-    .bigCompare{
-      margin-top:10px;
-      padding:10px 12px;
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:10px;
-      font-size:14px;
-      line-height:1.45;
+    const btnFax = document.getElementById("btn_faxsimile");
+    if (btnFax) {
+      btnFax.addEventListener("click", () => {
+        window.location.href = "/static/faxsimile.pdf";
+      });
     }
-    .bigCompare strong{color:#173a8a;}
-    .cols{display:grid; grid-template-columns: 1fr 1fr; gap:26px; margin-top:26px;}
-    @media(max-width:900px){ .cols{grid-template-columns:1fr;} }
 
-    .faqItem{padding:6px 0; cursor:pointer; border-bottom:1px solid #efefef;}
-    .faqQ{font-weight:700;}
-    .faqA{display:none; margin-top:4px; color:#333;}
-    .faqItem.open .faqA{display:block;}
-  </style>
-</head>
+    const btnCons = document.getElementById("btn_consulente");
+    if (btnCons) {
+      btnCons.addEventListener("click", () => {
+        alert("Qui puoi collegare la finestra popup o la pagina con i consulenti OCF.");
+      });
+    }
 
-<body>
-  <div class="wrap">
+    const capital = document.getElementById("capital");
+    if (capital) {
+      capital.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") loadCharts();
+      });
+    }
+  }
 
-    <div class="topRow">
-      <img class="logo" src="/static/logo.png" alt="Gloob">
-      <div>
-        <h1>Gloob</h1>
-        <div class="sub"><b>Metodo Pigro — Variante 80/15/5</b><br/>Tre strumenti globali. Nessuna previsione. Solo disciplina.</div>
-      </div>
-    </div>
-
-    <ul>
-      <li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
-      <li><b>Controllo del rischio</b>: pesi fissi e struttura semplice</li>
-      <li><b>Regole chiare</b>: pesi senza interventi continui</li>
-      <li><b>Struttura &gt; Previsioni</b></li>
-    </ul>
-
-    <div class="controlsRow">
-      <div class="allocBox">
-        <b>Composizione fissa</b><br/>
-        LifeStrategy 80: <b>80%</b><br/>
-        Oro: <b>15%</b><br/>
-        Bitcoin: <b>5%</b>
-      </div>
-
-      <div class="ctrl capital">
-        <label><b>Capitale (€)</b></label>
-        <input id="capital" type="text" value="10000">
-      </div>
-
-      <div class="btnRow">
-        <button id="btn_update" class="btn">Aggiorna</button>
-        <button id="btn_pdf" class="btn">PDF</button>
-      </div>
-
-      <div style="margin-left:auto; font-weight:700;">
-        Finale: <span id="final_value">—</span> <span class="sub">(in anni <span id="final_years">—</span>)</span>
-      </div>
-    </div>
-
-    <div class="smallText">Il grafico include andamento e riepilogo.</div>
-
-    <div class="summary">
-      <b>Portafoglio “Pigro 80/15/5”:</b>
-      Rendimento annualizzato <b><span id="cagr">—</span></b> |
-      <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
-      Composizione: LS80 <b>80%</b> | Oro <b>15%</b> | Bitcoin <b>5%</b><br/>
-      Raddoppio del portafoglio in anni: <span id="dbl">—</span>
-    </div>
-
-    <h2 id="chart_title">Andamento negli ultimi anni</h2>
-
-    <div class="card">
-      <canvas id="chart_main"></canvas>
-    </div>
-
-    <div class="card">
-      <canvas id="chart_dd"></canvas>
-      <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
-    </div>
-
-    <div id="compare_box" class="bigCompare">
-      <strong>Confronto immediato</strong><br/>
-      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
-      Metodo Pigro → <b id="compare_pigro">—</b><br/>
-      MSCI World → <b id="compare_world">—</b>
-    </div>
-
-    <div class="smallText">
-      <b>Messaggio chiave:</b><br/>
-      La differenza non è indovinare il mercato.<br/>
-      È avere una struttura semplice e mantenerla nel tempo.
-    </div>
-
-    <h2>Come applicarlo concretamente</h2>
-    <ol>
-      <li>Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.</li>
-      <li>Evita interventi continui.</li>
-      <li>Controlla periodicamente il confronto con MSCI World.</li>
-      <li>Usa il portafoglio come struttura di lungo periodo.</li>
-    </ol>
-
-    <div class="btnRow">
-      <button class="btn" id="btn_faxsimile">Faxsimile PDF</button>
-      <button class="btn" id="btn_consulente">Richiedi Consulente</button>
-      <button class="btn" id="btn_libro">Per saperne di più</button>
-    </div>
-
-    <div class="cols">
-      <div>
-        <h2>Domande libere</h2>
-        <div class="smallText">
-          Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).
-        </div>
-        <textarea id="ask_text" style="width:100%; height:110px; padding:8px; margin-top:8px;" placeholder="Scrivi qui la tua domanda..."></textarea>
-        <div style="margin-top:8px;">
-          <button class="btn" id="btn_ask">Chiedi all’assistente</button>
-        </div>
-        <div class="smallText" style="margin-top:10px;">Nota: risposta informativa, non consulenza finanziaria.</div>
-        <div id="ask_answer" class="card" style="display:none;"></div>
-      </div>
-
-      <div>
-        <h2>FAQ</h2>
-
-        <div class="faqItem"><div class="faqQ">1) Perché inserire Bitcoin?</div><div class="faqA">Bitcoin può aggiungere una componente non correlata e una quota di crescita potenziale.</div></div>
-        <div class="faqItem"><div class="faqQ">2) Perché solo il 5%?</div><div class="faqA">Una quota contenuta permette di limitarne l’impatto sul rischio complessivo.</div></div>
-        <div class="faqItem"><div class="faqQ">3) Perché tenere oro e Bitcoin insieme?</div><div class="faqA">Hanno ruoli diversi: l’oro tende a difendere, il Bitcoin tende a spingere il rendimento.</div></div>
-        <div class="faqItem"><div class="faqQ">4) Perché confrontarlo con MSCI World?</div><div class="faqA">MSCI World è uno dei benchmark più usati per misurare i mercati azionari globali.</div></div>
-        <div class="faqItem"><div class="faqQ">5) Questo metodo prevede previsioni di mercato?</div><div class="faqA">No. Si basa sulla struttura del portafoglio e sulla disciplina.</div></div>
-        <div class="faqItem"><div class="faqQ">6) Quando ribilanciare?</div><div class="faqA">In genere una volta l’anno è una regola semplice ed efficace.</div></div>
-        <div class="faqItem"><div class="faqQ">7) Serve molto capitale?</div><div class="faqA">No. Anche capitali contenuti possono essere investiti con questa logica.</div></div>
-        <div class="faqItem"><div class="faqQ">8) Il drawdown perché è importante?</div><div class="faqA">Perché mostra quanto si perde davvero nei momenti peggiori.</div></div>
-        <div class="faqItem"><div class="faqQ">9) È una strategia di breve periodo?</div><div class="faqA">No. È pensata per il medio-lungo periodo.</div></div>
-        <div class="faqItem"><div class="faqQ">10) Il sito fornisce consulenza personalizzata?</div><div class="faqA">No. Fornisce solo strumenti informativi e simulazioni.</div></div>
-      </div>
-    </div>
-  </div>
-
-  <script src="/static/app.js"></script>
-</body>
-</html>
+  document.addEventListener("DOMContentLoaded", function () {
+    renderFaq();
+    wireButtons();
+    loadCharts();
+  });
+})();
