@@ -2,9 +2,6 @@
   let mainChart = null;
   let ddChart = null;
 
-  Chart.defaults.color = "#334155";
-  Chart.defaults.font.family = "Arial, sans-serif";
-
   function euro(value, digits = 0) {
     const n = Number(value);
     if (!isFinite(n)) return "—";
@@ -71,130 +68,120 @@
     }
   }
 
-  function yearTickCallback(value, index, ticks) {
-    const label = this.getLabelForValue(value);
-    if (!label) return "";
+  function computeDrawdownPct(values) {
+    if (!Array.isArray(values) || !values.length) return [];
 
-    const year = String(label).slice(0, 4);
+    let peak = Number(values[0]);
+    const out = [];
 
-    if (index === 0) return year;
+    for (let i = 0; i < values.length; i++) {
+      const v = Number(values[i]);
 
-    const prevLabel = this.getLabelForValue(ticks[index - 1].value);
-    const prevYear = prevLabel ? String(prevLabel).slice(0, 4) : "";
+      if (!isFinite(v)) {
+        out.push(null);
+        continue;
+      }
 
-    return year !== prevYear ? year : "";
+      if (!isFinite(peak) || v > peak) {
+        peak = v;
+      }
+
+      if (!isFinite(peak) || peak <= 0) {
+        out.push(0);
+      } else {
+        out.push(((v / peak) - 1) * 100);
+      }
+    }
+
+    return out;
   }
 
-  function makeGradient(ctx, area, colorTop, colorBottom) {
-    const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
-    gradient.addColorStop(0, colorTop);
-    gradient.addColorStop(1, colorBottom);
-    return gradient;
+  function minNumber(arr) {
+    const nums = (arr || []).filter(v => isFinite(Number(v))).map(Number);
+    return nums.length ? Math.min(...nums) : null;
   }
 
-  function commonGridColor() {
-    return "rgba(15, 23, 42, 0.06)";
+  function buildYearTicks(labels) {
+    if (!Array.isArray(labels) || !labels.length) return labels;
+
+    let lastYear = null;
+
+    return labels.map((label) => {
+      const txt = String(label || "");
+      const year = txt.slice(0, 4);
+
+      if (/^\d{4}$/.test(year) && year !== lastYear) {
+        lastYear = year;
+        return year;
+      }
+      return "";
+    });
   }
 
-  function commonBorderColor() {
-    return "rgba(15, 23, 42, 0.10)";
+  function commonChartOptions() {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
+      elements: {
+        line: {
+          tension: 0.14,
+          borderWidth: 2
+        },
+        point: {
+          radius: 0,
+          hoverRadius: 3
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            usePointStyle: true,
+            boxWidth: 10,
+            padding: 16,
+            font: {
+              size: 12,
+              weight: "600"
+            }
+          }
+        }
+      }
+    };
   }
 
   function renderMain(labels, pigroVals, worldVals) {
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
+    const xTickLabels = buildYearTicks(labels);
 
-    mainChart = new Chart(ctx, {
+    mainChart = new Chart(canvas, {
       type: "line",
       data: {
         labels: labels,
         datasets: [
           {
             label: "Metodo Pigro 80/15/5",
-            data: pigroVals,
-            borderColor: "#3b82f6",
-            backgroundColor: function (context) {
-              const chart = context.chart;
-              const { ctx, chartArea } = chart;
-              if (!chartArea) return "rgba(59,130,246,0.10)";
-              return makeGradient(
-                ctx,
-                chartArea,
-                "rgba(59,130,246,0.18)",
-                "rgba(59,130,246,0.02)"
-              );
-            },
-            fill: false,
-            tension: 0.22,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            borderWidth: 2.5
+            data: pigroVals
           },
           {
             label: "MSCI World",
-            data: worldVals,
-            borderColor: "#fb7185",
-            backgroundColor: function (context) {
-              const chart = context.chart;
-              const { ctx, chartArea } = chart;
-              if (!chartArea) return "rgba(251,113,133,0.08)";
-              return makeGradient(
-                ctx,
-                chartArea,
-                "rgba(251,113,133,0.12)",
-                "rgba(251,113,133,0.02)"
-              );
-            },
-            fill: false,
-            tension: 0.22,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            borderWidth: 2.2
+            data: worldVals
           }
         ]
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        interaction: {
-          mode: "index",
-          intersect: false
-        },
-        layout: {
-          padding: {
-            top: 8,
-            right: 12,
-            bottom: 0,
-            left: 6
-          }
-        },
+        ...commonChartOptions(),
         plugins: {
-          legend: {
-            display: true,
-            position: "top",
-            labels: {
-              boxWidth: 24,
-              boxHeight: 8,
-              usePointStyle: false,
-              color: "#475569",
-              padding: 14
-            }
-          },
+          ...commonChartOptions().plugins,
           tooltip: {
-            backgroundColor: "rgba(255,255,255,0.96)",
-            titleColor: "#0f172a",
-            bodyColor: "#334155",
-            borderColor: "rgba(15, 23, 42, 0.10)",
-            borderWidth: 1,
-            padding: 10,
-            displayColors: true,
             callbacks: {
               title: function (items) {
-                if (!items || !items.length) return "";
-                return items[0].label;
+                return items && items.length ? items[0].label : "";
               },
               label: function (ctx) {
                 return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
@@ -205,30 +192,22 @@
         scales: {
           x: {
             grid: {
-              color: commonGridColor(),
-              drawBorder: false
-            },
-            border: {
-              color: commonBorderColor()
+              display: false
             },
             ticks: {
               autoSkip: false,
               maxRotation: 0,
               minRotation: 0,
-              color: "#64748b",
-              callback: yearTickCallback
+              callback: function (value, index) {
+                return xTickLabels[index] || "";
+              }
             }
           },
           y: {
             grid: {
-              color: commonGridColor(),
-              drawBorder: false
-            },
-            border: {
-              color: commonBorderColor()
+              color: "rgba(0,0,0,0.06)"
             },
             ticks: {
-              color: "#64748b",
               callback: function (value) {
                 return euro(value, 0);
               }
@@ -239,81 +218,38 @@
     });
   }
 
-  function renderDd(labels, ddVals) {
+  function renderDd(labels, ddPigroVals, ddWorldVals) {
     const canvas = document.getElementById("chart_dd");
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d");
+    const xTickLabels = buildYearTicks(labels);
 
-    ddChart = new Chart(ctx, {
+    ddChart = new Chart(canvas, {
       type: "line",
       data: {
         labels: labels,
         datasets: [
           {
-            label: "Drawdown",
-            data: ddVals,
-            borderColor: "#38bdf8",
-            backgroundColor: function (context) {
-              const chart = context.chart;
-              const { ctx, chartArea } = chart;
-              if (!chartArea) return "rgba(56,189,248,0.14)";
-              return makeGradient(
-                ctx,
-                chartArea,
-                "rgba(56,189,248,0.18)",
-                "rgba(56,189,248,0.03)"
-              );
-            },
-            fill: true,
-            tension: 0.18,
-            pointRadius: 0,
-            pointHoverRadius: 3,
-            borderWidth: 2.2
+            label: "Drawdown Portafoglio Pigro",
+            data: ddPigroVals
+          },
+          {
+            label: "Drawdown MSCI World",
+            data: ddWorldVals
           }
         ]
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        interaction: {
-          mode: "index",
-          intersect: false
-        },
-        layout: {
-          padding: {
-            top: 6,
-            right: 12,
-            bottom: 0,
-            left: 6
-          }
-        },
+        ...commonChartOptions(),
         plugins: {
-          legend: {
-            display: true,
-            position: "top",
-            labels: {
-              boxWidth: 24,
-              boxHeight: 8,
-              color: "#475569",
-              padding: 12
-            }
-          },
+          ...commonChartOptions().plugins,
           tooltip: {
-            backgroundColor: "rgba(255,255,255,0.96)",
-            titleColor: "#0f172a",
-            bodyColor: "#334155",
-            borderColor: "rgba(15, 23, 42, 0.10)",
-            borderWidth: 1,
-            padding: 10,
             callbacks: {
               title: function (items) {
-                if (!items || !items.length) return "";
-                return items[0].label;
+                return items && items.length ? items[0].label : "";
               },
               label: function (ctx) {
-                return `Drawdown: ${pct(ctx.parsed.y, 2)}`;
+                return `${ctx.dataset.label}: ${pct(ctx.parsed.y, 2)}`;
               }
             }
           }
@@ -321,30 +257,22 @@
         scales: {
           x: {
             grid: {
-              color: commonGridColor(),
-              drawBorder: false
-            },
-            border: {
-              color: commonBorderColor()
+              display: false
             },
             ticks: {
               autoSkip: false,
               maxRotation: 0,
               minRotation: 0,
-              color: "#64748b",
-              callback: yearTickCallback
+              callback: function (value, index) {
+                return xTickLabels[index] || "";
+              }
             }
           },
           y: {
             grid: {
-              color: commonGridColor(),
-              drawBorder: false
-            },
-            border: {
-              color: commonBorderColor()
+              color: "rgba(0,0,0,0.06)"
             },
             ticks: {
-              color: "#64748b",
               callback: function (value) {
                 return pct(value, 0);
               }
@@ -408,64 +336,57 @@
       );
 
       if (!payload || payload.ok !== true) {
-        throw new Error(payload && payload.error ? payload.error : "Risposta backend non valida");
+        throw new Error(
+          payload && payload.error ? payload.error : "Risposta backend non valida"
+        );
       }
 
-      const labels = Array.isArray(payload.dates) ? payload.dates : [];
-      const pigroVals = Array.isArray(payload.portfolio) ? payload.portfolio.map(Number) : [];
-      const worldVals = Array.isArray(payload.world) ? payload.world.map(Number) : [];
-      const ddVals = Array.isArray(payload.drawdown_portfolio_pct)
-        ? payload.drawdown_portfolio_pct.map(Number)
-        : [];
+      const labels = payload.dates || [];
+      const pigroVals = payload.portfolio || [];
+      const worldVals = payload.world || [];
+      const ddPigroVals =
+        payload.drawdown_portfolio_pct && payload.drawdown_portfolio_pct.length
+          ? payload.drawdown_portfolio_pct
+          : computeDrawdownPct(pigroVals);
+
+      const ddWorldVals =
+        payload.drawdown_world_pct && payload.drawdown_world_pct.length
+          ? payload.drawdown_world_pct
+          : computeDrawdownPct(worldVals);
+
       const metrics = payload.metrics || {};
 
-      const n = Math.min(labels.length, pigroVals.length, worldVals.length, ddVals.length);
-      if (!n) {
+      if (!labels.length || !pigroVals.length || !worldVals.length) {
         throw new Error("Dataset vuoto");
       }
 
-      const cleanLabels = [];
-      const cleanPigro = [];
-      const cleanWorld = [];
-      const cleanDd = [];
-
-      for (let i = 0; i < n; i++) {
-        const lab = labels[i];
-        const p = pigroVals[i];
-        const w = worldVals[i];
-        const d = ddVals[i];
-
-        if (!lab) continue;
-        if (!isFinite(p) || !isFinite(w) || !isFinite(d)) continue;
-
-        cleanLabels.push(lab);
-        cleanPigro.push(p);
-        cleanWorld.push(w);
-        cleanDd.push(d);
-      }
-
-      if (!cleanLabels.length) {
-        throw new Error("Dati non validi per il grafico");
-      }
-
       destroyCharts();
-      renderMain(cleanLabels, cleanPigro, cleanWorld);
-      renderDd(cleanLabels, cleanDd);
+      renderMain(labels, pigroVals, worldVals);
+      renderDd(labels, ddPigroVals, ddWorldVals);
 
-      const last = cleanPigro[cleanPigro.length - 1];
-      const lastWorld = cleanWorld[cleanWorld.length - 1];
-      const firstDate = cleanLabels[0] || "inizio periodo";
-      const lastDate = cleanLabels[cleanLabels.length - 1] || "";
+      const last = pigroVals[pigroVals.length - 1];
+      const lastWorld = worldVals[worldVals.length - 1];
+      const firstDate = labels[0] || "inizio periodo";
+      const lastDate = labels[labels.length - 1] || "";
 
       const years = Number(metrics.final_years);
       const cagr = Number(metrics.cagr_portfolio) * 100;
-      const maxdd = Number(metrics.max_dd_portfolio) * 100;
+      const maxddPigroRaw = Number(metrics.max_dd_portfolio);
+      const maxddPigro = isFinite(maxddPigroRaw)
+        ? maxddPigroRaw * 100
+        : minNumber(ddPigroVals);
+
+      const maxddWorldRaw = Number(metrics.max_dd_world);
+      const maxddWorld = isFinite(maxddWorldRaw)
+        ? maxddWorldRaw * 100
+        : minNumber(ddWorldVals);
+
       const dbl = Number(metrics.doubling_years_portfolio);
 
       setText("final_value", euro(last, 0));
       setText("final_years", isFinite(years) ? plain(years, 1) : "—");
       setText("cagr", isFinite(cagr) ? pct(cagr, 2) : "—");
-      setText("maxdd", isFinite(maxdd) ? pct(maxdd, 2) : "—");
+      setText("maxdd", isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—");
       setText("dbl", isFinite(dbl) ? plain(dbl, 1) : "—");
 
       setText(
@@ -474,9 +395,13 @@
       );
       setText("compare_pigro", euro(last, 0));
       setText("compare_world", euro(lastWorld, 0));
+
+      const ddTextPigro = isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—";
+      const ddTextWorld = isFinite(maxddWorld) ? pct(maxddWorld, 2) : "—";
+
       setText(
         "dd_summary",
-        `Peggior ribasso del portafoglio nel periodo: ${isFinite(maxdd) ? pct(maxdd, 2) : "—"}`
+        `Peggior ribasso nel periodo — Portafoglio Pigro: ${ddTextPigro} | MSCI World: ${ddTextWorld}`
       );
     } catch (err) {
       console.error("Errore caricamento grafici:", err);
