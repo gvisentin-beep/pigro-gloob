@@ -3,11 +3,11 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-
 from typing import Optional, Tuple
 
 import pandas as pd
 import requests
+import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -20,7 +20,7 @@ ASSETS = {
     "btc": {"symbol": os.getenv("BTC_TICKER", "BTC/EUR").strip(), "path": DATA_DIR / "btc.csv"},
     "world": {"symbol": os.getenv("WORLD_TICKER", "URTH").strip(), "path": DATA_DIR / "world.csv"},
     "mib": {"symbol": "^FTSEMIB", "path": DATA_DIR / "mib.csv", "source": "yahoo"},
-     "sp500": {"symbol": os.getenv("SP500_TICKER", "CSSPX.MI").strip(), "path": DATA_DIR / "sp500.csv"},
+    "sp500": {"symbol": os.getenv("SP500_TICKER", "CSSPX").strip(), "path": DATA_DIR / "sp500.csv"},
 }
 
 
@@ -68,7 +68,7 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
     out.to_csv(path, sep=";", index=False)
 
 
-def fetch_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     if not symbol:
         return None, "Ticker vuoto"
     if not TWELVE_DATA_API_KEY:
@@ -116,7 +116,34 @@ def fetch_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         return None, f"{type(e).__name__}: {e}"
 
 
-def update_asset(name: str, symbol: str, path: Path) -> bool:
+def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    try:
+        data = yf.download(symbol, period="max", interval="1d", auto_adjust=False, progress=False)
+        if data is None or data.empty:
+            return None, "Yahoo: nessun dato restituito"
+
+        df = data.reset_index()[["Date", "Close"]].copy()
+        df.columns = ["date", "close"]
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        df = (
+            df.dropna(subset=["date", "close"])
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
+        if df.empty:
+            return None, "Yahoo: serie vuota dopo pulizia"
+        return df, None
+    except Exception as e:
+        return None, f"Yahoo {type(e).__name__}: {e}"
+
+
+def update_asset(name: str, cfg: dict) -> bool:
+    symbol = cfg["symbol"]
+    path = cfg["path"]
+    source = cfg.get("source", "twelve")
+
     log(f"\n[{name.upper()}] {symbol} -> {path}")
 
     existing = read_existing_csv(path)
@@ -125,7 +152,11 @@ def update_asset(name: str, symbol: str, path: Path) -> bool:
     else:
         log("  CSV locale assente o vuoto")
 
-    fresh, err = fetch_series(symbol)
+    if source == "yahoo":
+        fresh, err = fetch_series_yahoo(symbol)
+    else:
+        fresh, err = fetch_series_twelve(symbol)
+
     if fresh is None or fresh.empty:
         log(f"  API non disponibile: {err}")
         if existing is not None and not existing.empty:
@@ -152,7 +183,7 @@ def main() -> None:
 
     results = []
     for name, cfg in ASSETS.items():
-        ok = update_asset(name, cfg["symbol"], cfg["path"])
+        ok = update_asset(name, cfg)
         results.append(ok)
 
     log("=" * 72)
