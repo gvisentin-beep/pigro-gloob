@@ -49,6 +49,11 @@
     if (el) el.textContent = value;
   }
 
+  function setHtml(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = value;
+  }
+
   async function fetchJson(url) {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
@@ -116,6 +121,98 @@
       }
       return "";
     });
+  }
+
+  function formatDateIt(isoDate) {
+    if (!isoDate || typeof isoDate !== "string") return "—";
+
+    const parts = isoDate.split("-");
+    if (parts.length !== 3) return isoDate;
+
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+
+  function extractWorstEpisodes(labels, ddSeries, topN = 2) {
+    if (!Array.isArray(labels) || !Array.isArray(ddSeries) || !labels.length || !ddSeries.length) {
+      return [];
+    }
+
+    const episodes = [];
+    let inDrawdown = false;
+    let startIdx = null;
+    let troughIdx = null;
+    let troughValue = 0;
+
+    function closeEpisode(endIdx) {
+      if (startIdx === null || troughIdx === null) return;
+
+      episodes.push({
+        startIdx,
+        troughIdx,
+        endIdx,
+        startDate: labels[startIdx] || "",
+        troughDate: labels[troughIdx] || "",
+        endDate: labels[endIdx] || "",
+        depth: troughValue
+      });
+    }
+
+    for (let i = 0; i < ddSeries.length; i++) {
+      const raw = ddSeries[i];
+      const dd = Number(raw);
+
+      if (!isFinite(dd)) continue;
+
+      if (!inDrawdown) {
+        if (dd < 0) {
+          inDrawdown = true;
+          startIdx = Math.max(0, i - 1);
+          troughIdx = i;
+          troughValue = dd;
+        }
+      } else {
+        if (dd < troughValue) {
+          troughValue = dd;
+          troughIdx = i;
+        }
+
+        if (dd >= -0.000001) {
+          closeEpisode(i);
+          inDrawdown = false;
+          startIdx = null;
+          troughIdx = null;
+          troughValue = 0;
+        }
+      }
+    }
+
+    if (inDrawdown) {
+      closeEpisode(ddSeries.length - 1);
+    }
+
+    return episodes
+      .sort((a, b) => a.depth - b.depth)
+      .slice(0, topN);
+  }
+
+  function buildEpisodesComparisonHtml(pigroEpisodes, worldEpisodes) {
+    function line(rank, pigro, world) {
+      const left = pigro
+        ? `Pigro: <b>${pct(pigro.depth, 2)}</b> <span style="opacity:.9;">(${formatDateIt(pigro.startDate)} → minimo ${formatDateIt(pigro.troughDate)})</span>`
+        : `Pigro: —`;
+
+      const right = world
+        ? `MSCI World: <b>${pct(world.depth, 2)}</b> <span style="opacity:.9;">(${formatDateIt(world.startDate)} → minimo ${formatDateIt(world.troughDate)})</span>`
+        : `MSCI World: —`;
+
+      return `<div style="margin-top:4px;"><b>${rank}ª peggiore discesa</b> — ${left} | ${right}</div>`;
+    }
+
+    return `
+      <div><b>Confronto delle 2 peggiori discese complete</b></div>
+      ${line(1, pigroEpisodes[0], worldEpisodes[0])}
+      ${line(2, pigroEpisodes[1], worldEpisodes[1])}
+    `;
   }
 
   function commonChartOptions() {
@@ -396,12 +493,12 @@
       setText("compare_pigro", euro(last, 0));
       setText("compare_world", euro(lastWorld, 0));
 
-      const ddTextPigro = isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—";
-      const ddTextWorld = isFinite(maxddWorld) ? pct(maxddWorld, 2) : "—";
+      const pigroEpisodes = extractWorstEpisodes(labels, ddPigroVals, 2);
+      const worldEpisodes = extractWorstEpisodes(labels, ddWorldVals, 2);
 
-      setText(
+      setHtml(
         "dd_summary",
-        `Peggior ribasso nel periodo — Portafoglio Pigro: ${ddTextPigro} | MSCI World: ${ddTextWorld}`
+        buildEpisodesComparisonHtml(pigroEpisodes, worldEpisodes)
       );
     } catch (err) {
       console.error("Errore caricamento grafici:", err);
