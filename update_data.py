@@ -7,28 +7,19 @@ from typing import Optional, Tuple
 
 import pandas as pd
 import requests
-import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 
-LS80_FALLBACK_TICKERS = [
-    t.strip()
-    for t in [
-        os.getenv("LS80_TICKER", "IE00BMVB5R75.MI"),
-        "VNGA80.MI",
-        "V80A.MI",
-    ]
-    if t and t.strip()
-]
-
 ASSETS = {
-    "ls80": {"symbol": os.getenv("LS80_TICKER", "IE00BMVB5R75.MI").strip(), "path": DATA_DIR / "ls80.csv"},
+    "ls80": {"symbol": os.getenv("LS80_TICKER", "VNGA80.MI").strip(), "path": DATA_DIR / "ls80.csv"},
     "gold": {"symbol": os.getenv("GOLD_TICKER", "GLD").strip(), "path": DATA_DIR / "gold.csv"},
     "btc": {"symbol": os.getenv("BTC_TICKER", "BTC/EUR").strip(), "path": DATA_DIR / "btc.csv"},
     "world": {"symbol": os.getenv("WORLD_TICKER", "URTH").strip(), "path": DATA_DIR / "world.csv"},
+    "mib": {"symbol": os.getenv("MIB_TICKER", "CSMIB.MI").strip(), "path": DATA_DIR / "mib.csv"},
+    "sp500": {"symbol": os.getenv("SP500_TICKER", "CSSPX.MI").strip(), "path": DATA_DIR / "sp500.csv"},
 }
 
 
@@ -48,23 +39,9 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
         df.columns = [str(c).strip().lower() for c in df.columns]
         if "date" not in df.columns or "close" not in df.columns:
-            df = pd.read_csv(
-                path,
-                sep=";",
-                header=None,
-                names=["date", "close"],
-                dtype=str,
-                encoding="utf-8-sig",
-            )
+            df = pd.read_csv(path, sep=";", header=None, names=["date", "close"], dtype=str, encoding="utf-8-sig")
     except Exception:
-        df = pd.read_csv(
-            path,
-            sep=";",
-            header=None,
-            names=["date", "close"],
-            dtype=str,
-            encoding="utf-8-sig",
-        )
+        df = pd.read_csv(path, sep=";", header=None, names=["date", "close"], dtype=str, encoding="utf-8-sig")
 
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
     df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
@@ -90,7 +67,7 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
     out.to_csv(path, sep=";", index=False)
 
 
-def fetch_twelve_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def fetch_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     if not symbol:
         return None, "Ticker vuoto"
     if not TWELVE_DATA_API_KEY:
@@ -133,87 +110,9 @@ def fetch_twelve_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
         )
         if df.empty:
             return None, "Serie vuota dopo pulizia"
-
         return df[["date", "close"]].copy(), None
     except Exception as e:
         return None, f"{type(e).__name__}: {e}"
-
-
-def _flatten_yf_columns(df: pd.DataFrame) -> pd.DataFrame:
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [
-            "_".join([str(x) for x in tup if str(x) != ""]).strip("_")
-            for tup in df.columns.to_flat_index()
-        ]
-    return df
-
-
-def fetch_yahoo_series(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    if not symbol:
-        return None, "Ticker vuoto"
-
-    try:
-        df = yf.download(
-            symbol,
-            period="max",
-            interval="1d",
-            progress=False,
-            auto_adjust=False,
-            group_by="column",
-            threads=False,
-        )
-
-        if df is None or df.empty:
-            return None, f"Yahoo vuoto per {symbol}"
-
-        df = _flatten_yf_columns(df)
-        df = df.reset_index()
-
-        date_col = None
-        for c in df.columns:
-            if str(c).lower() in ("date", "datetime"):
-                date_col = c
-                break
-
-        close_col = None
-        for c in df.columns:
-            cl = str(c).lower()
-            if cl == "close" or cl.startswith("close_"):
-                close_col = c
-                break
-
-        if date_col is None or close_col is None:
-            return None, f"Colonne Yahoo inattese per {symbol}: {list(df.columns)}"
-
-        out = df[[date_col, close_col]].copy()
-        out.columns = ["date", "close"]
-        out["date"] = pd.to_datetime(out["date"], errors="coerce")
-        out["close"] = pd.to_numeric(out["close"], errors="coerce")
-        out = (
-            out.dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
-
-        if out.empty:
-            return None, f"Serie Yahoo vuota dopo pulizia per {symbol}"
-
-        return out[["date", "close"]].copy(), None
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
-
-
-def fetch_ls80_with_fallback() -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[str]]:
-    errors: list[str] = []
-
-    for ticker in LS80_FALLBACK_TICKERS:
-        df, err = fetch_yahoo_series(ticker)
-        if df is not None and not df.empty:
-            return df, None, ticker
-        errors.append(f"{ticker}: {err}")
-
-    return None, " | ".join(errors) if errors else "nessun ticker LS80 disponibile", None
 
 
 def update_asset(name: str, symbol: str, path: Path) -> bool:
@@ -225,13 +124,7 @@ def update_asset(name: str, symbol: str, path: Path) -> bool:
     else:
         log("  CSV locale assente o vuoto")
 
-    if name == "ls80":
-        fresh, err, used_ticker = fetch_ls80_with_fallback()
-        log(f"  Fonte: Yahoo | ticker usato: {used_ticker or symbol}")
-    else:
-        fresh, err = fetch_twelve_series(symbol)
-        log(f"  Fonte: Twelve Data | ticker usato: {symbol}")
-
+    fresh, err = fetch_series(symbol)
     if fresh is None or fresh.empty:
         log(f"  API non disponibile: {err}")
         if existing is not None and not existing.empty:
