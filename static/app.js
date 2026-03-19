@@ -31,16 +31,27 @@
     });
   }
 
+  function formatIntegerInput(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) return "";
+    return Number(digits).toLocaleString("it-IT", {
+      maximumFractionDigits: 0
+    });
+  }
+
+  function normalizeCapitalInput() {
+    const el = document.getElementById("capital");
+    if (!el) return;
+    el.value = formatIntegerInput(el.value || "10000");
+  }
+
   function getCapital() {
     const el = document.getElementById("capital");
     if (!el) return 10000;
 
-    const raw = String(el.value || "")
-      .replace(/\./g, "")
-      .replace(",", ".")
-      .trim();
+    const rawDigits = String(el.value || "").replace(/\D/g, "");
+    const n = Number(rawDigits);
 
-    const n = Number(raw);
     return isFinite(n) && n > 0 ? n : 10000;
   }
 
@@ -425,6 +436,7 @@
   }
 
   async function loadCharts() {
+    normalizeCapitalInput();
     const capital = getCapital();
 
     try {
@@ -472,11 +484,6 @@
       const maxddPigro = isFinite(maxddPigroRaw)
         ? maxddPigroRaw * 100
         : minNumber(ddPigroVals);
-
-      const maxddWorldRaw = Number(metrics.max_dd_world);
-      const maxddWorld = isFinite(maxddWorldRaw)
-        ? maxddWorldRaw * 100
-        : minNumber(ddWorldVals);
 
       const dbl = Number(metrics.doubling_years_portfolio);
 
@@ -562,6 +569,18 @@
 
     const capital = document.getElementById("capital");
     if (capital) {
+      capital.addEventListener("input", function () {
+        const cursorAtEnd = capital.selectionStart === capital.value.length;
+        capital.value = formatIntegerInput(capital.value);
+        if (cursorAtEnd) {
+          capital.setSelectionRange(capital.value.length, capital.value.length);
+        }
+      });
+
+      capital.addEventListener("blur", function () {
+        normalizeCapitalInput();
+      });
+
       capital.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           loadCharts();
@@ -571,6 +590,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    normalizeCapitalInput();
     renderFaq();
     wireButtons();
     loadCharts();
