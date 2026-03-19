@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+
 from typing import Optional, Tuple
 
 import pandas as pd
@@ -18,8 +19,8 @@ ASSETS = {
     "gold": {"symbol": os.getenv("GOLD_TICKER", "GLD").strip(), "path": DATA_DIR / "gold.csv"},
     "btc": {"symbol": os.getenv("BTC_TICKER", "BTC/EUR").strip(), "path": DATA_DIR / "btc.csv"},
     "world": {"symbol": os.getenv("WORLD_TICKER", "URTH").strip(), "path": DATA_DIR / "world.csv"},
-    "mib": {"symbol": os.getenv("MIB_TICKER", "CSMIB.MI").strip(), "path": DATA_DIR / "mib.csv"},
-    "sp500": {"symbol": os.getenv("SP500_TICKER", "CSSPX.MI").strip(), "path": DATA_DIR / "sp500.csv"},
+    "mib": {"symbol": "^FTSEMIB", "path": DATA_DIR / "mib.csv", "source": "yahoo"},
+     "sp500": {"symbol": os.getenv("SP500_TICKER", "CSSPX.MI").strip(), "path": DATA_DIR / "sp500.csv"},
 }
 
 
