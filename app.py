@@ -11,7 +11,6 @@ import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 
@@ -86,27 +85,23 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
     df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
     df = (
         df.dropna(subset=["date", "close"])
         .sort_values("date")
         .drop_duplicates(subset=["date"], keep="last")
         .reset_index(drop=True)
     )
-
     return df if not df.empty else None
 
 
 def write_csv(path: Path, df: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-
     out = (
         df.copy()
         .sort_values("date")
         .drop_duplicates(subset=["date"], keep="last")
         .reset_index(drop=True)
     )
-
     out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
     out.to_csv(path, sep=";", index=False)
 
@@ -114,7 +109,6 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
 def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     if not symbol:
         return None, "Ticker vuoto"
-
     if not TWELVE_DATA_API_KEY:
         return None, "TWELVE_DATA_API_KEY mancante"
 
@@ -148,7 +142,6 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
 
         df["date"] = pd.to_datetime(df["datetime"], errors="coerce")
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
         df = (
             df.dropna(subset=["date", "close"])
             .sort_values("date")
@@ -179,20 +172,8 @@ def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[st
         if data is None or data.empty:
             return None, "Yahoo: nessun dato restituito"
 
-        df = data.reset_index()
-
-        date_col = None
-        for candidate in ["Date", "Datetime"]:
-            if candidate in df.columns:
-                date_col = candidate
-                break
-
-        if date_col is None or "Close" not in df.columns:
-            return None, f"Yahoo: colonne inattese {list(df.columns)}"
-
-        df = df[[date_col, "Close"]].copy()
+        df = data.reset_index()[["Date", "Close"]].copy()
         df.columns = ["date", "close"]
-
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
@@ -220,13 +201,14 @@ def update_asset(name: str, cfg: dict) -> bool:
     log(f"\n[{name.upper()}] {symbol} -> {path}")
 
     existing = read_existing_csv(path)
-    if existing is not None and not existing.empty:
+    if existing is not None:
         log(f"  CSV locale: {len(existing)} righe | ultima data {existing['date'].iloc[-1].date()}")
     else:
         log("  CSV locale assente o vuoto")
 
     if source == "yahoo":
         fresh, err = fetch_series_yahoo(symbol)
+
         if fresh is None or fresh.empty:
             log(f"  Yahoo fallito: {err}")
             if existing is not None and not existing.empty:
@@ -234,8 +216,20 @@ def update_asset(name: str, cfg: dict) -> bool:
                 return True
             log("  Fallback fallito: nessun dato disponibile")
             return False
+
+        # Per SP500 elimino eventuali tratti artificialmente piatti
+        if name == "sp500" and not fresh.empty:
+            fresh = fresh.loc[fresh["close"].diff().fillna(1).ne(0)].reset_index(drop=True)
+            if fresh.empty:
+                log("  Yahoo SP500: filtro anti-piatti ha svuotato i dati")
+                if existing is not None and not existing.empty:
+                    log("  Fallback: mantengo dati esistenti (OK)")
+                    return True
+                return False
+
     else:
         fresh, err = fetch_series_twelve(symbol)
+
         if fresh is None or fresh.empty:
             log(f"  API non disponibile: {err}")
             if existing is not None and not existing.empty:
@@ -244,12 +238,7 @@ def update_asset(name: str, cfg: dict) -> bool:
             log("  Nessun fallback disponibile")
             return False
 
-    merged = (
-        pd.concat([existing, fresh], ignore_index=True)
-        if existing is not None and not existing.empty
-        else fresh
-    )
-
+    merged = pd.concat([existing, fresh], ignore_index=True) if existing is not None and not existing.empty else fresh
     merged = (
         merged.drop_duplicates(subset=["date"], keep="last")
         .sort_values("date")
