@@ -1,6 +1,13 @@
 (function () {
   let mainChart = null;
   let ddChart = null;
+  let currentBenchmark = "world";
+
+  const BENCHMARK_LABELS = {
+    world: "MSCI World",
+    mib: "iShares FTSE MIB UCITS ETF",
+    sp500: "iShares Core S&P 500 UCITS ETF (Acc)"
+  };
 
   function euro(value, digits = 0) {
     const n = Number(value);
@@ -51,7 +58,6 @@
 
     const rawDigits = String(el.value || "").replace(/\D/g, "");
     const n = Number(rawDigits);
-
     return isFinite(n) && n > 0 ? n : 10000;
   }
 
@@ -67,9 +73,7 @@
 
   async function fetchJson(url) {
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   }
 
@@ -84,48 +88,12 @@
     }
   }
 
-  function computeDrawdownPct(values) {
-    if (!Array.isArray(values) || !values.length) return [];
-
-    let peak = Number(values[0]);
-    const out = [];
-
-    for (let i = 0; i < values.length; i++) {
-      const v = Number(values[i]);
-
-      if (!isFinite(v)) {
-        out.push(null);
-        continue;
-      }
-
-      if (!isFinite(peak) || v > peak) {
-        peak = v;
-      }
-
-      if (!isFinite(peak) || peak <= 0) {
-        out.push(0);
-      } else {
-        out.push(((v / peak) - 1) * 100);
-      }
-    }
-
-    return out;
-  }
-
-  function minNumber(arr) {
-    const nums = (arr || []).filter(v => isFinite(Number(v))).map(Number);
-    return nums.length ? Math.min(...nums) : null;
-  }
-
   function buildYearTicks(labels) {
     if (!Array.isArray(labels) || !labels.length) return labels;
-
     let lastYear = null;
-
     return labels.map((label) => {
       const txt = String(label || "");
       const year = txt.slice(0, 4);
-
       if (/^\d{4}$/.test(year) && year !== lastYear) {
         lastYear = year;
         return year;
@@ -136,94 +104,9 @@
 
   function formatDateIt(isoDate) {
     if (!isoDate || typeof isoDate !== "string") return "—";
-
     const parts = isoDate.split("-");
     if (parts.length !== 3) return isoDate;
-
     return `${parts[2]}-${parts[1]}-${parts[0]}`;
-  }
-
-  function extractWorstEpisodes(labels, ddSeries, topN = 2) {
-    if (!Array.isArray(labels) || !Array.isArray(ddSeries) || !labels.length || !ddSeries.length) {
-      return [];
-    }
-
-    const episodes = [];
-    let inDrawdown = false;
-    let startIdx = null;
-    let troughIdx = null;
-    let troughValue = 0;
-
-    function closeEpisode(endIdx) {
-      if (startIdx === null || troughIdx === null) return;
-
-      episodes.push({
-        startIdx,
-        troughIdx,
-        endIdx,
-        startDate: labels[startIdx] || "",
-        troughDate: labels[troughIdx] || "",
-        endDate: labels[endIdx] || "",
-        depth: troughValue
-      });
-    }
-
-    for (let i = 0; i < ddSeries.length; i++) {
-      const raw = ddSeries[i];
-      const dd = Number(raw);
-
-      if (!isFinite(dd)) continue;
-
-      if (!inDrawdown) {
-        if (dd < 0) {
-          inDrawdown = true;
-          startIdx = Math.max(0, i - 1);
-          troughIdx = i;
-          troughValue = dd;
-        }
-      } else {
-        if (dd < troughValue) {
-          troughValue = dd;
-          troughIdx = i;
-        }
-
-        if (dd >= -0.000001) {
-          closeEpisode(i);
-          inDrawdown = false;
-          startIdx = null;
-          troughIdx = null;
-          troughValue = 0;
-        }
-      }
-    }
-
-    if (inDrawdown) {
-      closeEpisode(ddSeries.length - 1);
-    }
-
-    return episodes
-      .sort((a, b) => a.depth - b.depth)
-      .slice(0, topN);
-  }
-
-  function buildEpisodesComparisonHtml(pigroEpisodes, worldEpisodes) {
-    function line(rank, pigro, world) {
-      const left = pigro
-        ? `Pigro: <b>${pct(pigro.depth, 2)}</b> <span style="opacity:.9;">(${formatDateIt(pigro.startDate)} → minimo ${formatDateIt(pigro.troughDate)})</span>`
-        : `Pigro: —`;
-
-      const right = world
-        ? `MSCI World: <b>${pct(world.depth, 2)}</b> <span style="opacity:.9;">(${formatDateIt(world.startDate)} → minimo ${formatDateIt(world.troughDate)})</span>`
-        : `MSCI World: —`;
-
-      return `<div style="margin-top:4px;"><b>${rank}ª peggiore discesa</b> — ${left} | ${right}</div>`;
-    }
-
-    return `
-      <div><b>Confronto delle 2 peggiori discese complete</b></div>
-      ${line(1, pigroEpisodes[0], worldEpisodes[0])}
-      ${line(2, pigroEpisodes[1], worldEpisodes[1])}
-    `;
   }
 
   function commonChartOptions() {
@@ -261,7 +144,7 @@
     };
   }
 
-  function renderMain(labels, pigroVals, worldVals) {
+  function renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel) {
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
 
@@ -277,8 +160,8 @@
             data: pigroVals
           },
           {
-            label: "MSCI World",
-            data: worldVals
+            label: benchmarkLabel,
+            data: benchmarkVals
           }
         ]
       },
@@ -299,9 +182,7 @@
         },
         scales: {
           x: {
-            grid: {
-              display: false
-            },
+            grid: { display: false },
             ticks: {
               autoSkip: false,
               maxRotation: 0,
@@ -312,9 +193,7 @@
             }
           },
           y: {
-            grid: {
-              color: "rgba(0,0,0,0.06)"
-            },
+            grid: { color: "rgba(0,0,0,0.06)" },
             ticks: {
               callback: function (value) {
                 return euro(value, 0);
@@ -326,7 +205,7 @@
     });
   }
 
-  function renderDd(labels, ddPigroVals, ddWorldVals) {
+  function renderDd(labels, ddPigroVals, ddBenchmarkVals, benchmarkLabel) {
     const canvas = document.getElementById("chart_dd");
     if (!canvas) return;
 
@@ -342,8 +221,8 @@
             data: ddPigroVals
           },
           {
-            label: "Drawdown MSCI World",
-            data: ddWorldVals
+            label: `Drawdown ${benchmarkLabel}`,
+            data: ddBenchmarkVals
           }
         ]
       },
@@ -364,9 +243,7 @@
         },
         scales: {
           x: {
-            grid: {
-              display: false
-            },
+            grid: { display: false },
             ticks: {
               autoSkip: false,
               maxRotation: 0,
@@ -377,9 +254,7 @@
             }
           },
           y: {
-            grid: {
-              color: "rgba(0,0,0,0.06)"
-            },
+            grid: { color: "rgba(0,0,0,0.06)" },
             ticks: {
               callback: function (value) {
                 return pct(value, 0);
@@ -388,6 +263,33 @@
           }
         }
       }
+    });
+  }
+
+  function buildEpisodesComparisonHtml(pigroEpisodes, benchmarkEpisodes, benchmarkLabel) {
+    function line(rank, pigro, benchmark) {
+      const left = pigro
+        ? `Pigro: <b>${pct(pigro.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(pigro.start)} → minimo ${formatDateIt(pigro.bottom)})</span>`
+        : `Pigro: —`;
+
+      const right = benchmark
+        ? `${benchmarkLabel}: <b>${pct(benchmark.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(benchmark.start)} → minimo ${formatDateIt(benchmark.bottom)})</span>`
+        : `${benchmarkLabel}: —`;
+
+      return `<div style="margin-top:4px;"><b>${rank}ª peggiore discesa</b> — ${left} | ${right}</div>`;
+    }
+
+    return `
+      <div><b>Confronto delle 2 peggiori discese complete</b></div>
+      ${line(1, pigroEpisodes[0], benchmarkEpisodes[0])}
+      ${line(2, pigroEpisodes[1], benchmarkEpisodes[1])}
+    `;
+  }
+
+  function setActiveBenchmarkButton() {
+    document.querySelectorAll(".benchmarkBtn").forEach((btn) => {
+      const key = btn.getAttribute("data-benchmark");
+      btn.classList.toggle("active", key === currentBenchmark);
     });
   }
 
@@ -441,7 +343,7 @@
 
     try {
       const payload = await fetchJson(
-        `/api/compute?capital=${encodeURIComponent(capital)}`
+        `/api/compute?capital=${encodeURIComponent(capital)}&benchmark=${encodeURIComponent(currentBenchmark)}`
       );
 
       if (!payload || payload.ok !== true) {
@@ -452,60 +354,61 @@
 
       const labels = payload.dates || [];
       const pigroVals = payload.portfolio || [];
-      const worldVals = payload.world || [];
-      const ddPigroVals =
-        payload.drawdown_portfolio_pct && payload.drawdown_portfolio_pct.length
-          ? payload.drawdown_portfolio_pct
-          : computeDrawdownPct(pigroVals);
-
-      const ddWorldVals =
-        payload.drawdown_world_pct && payload.drawdown_world_pct.length
-          ? payload.drawdown_world_pct
-          : computeDrawdownPct(worldVals);
-
+      const benchmarkVals = payload.benchmark || [];
+      const ddPigroVals = payload.drawdown_portfolio_pct || [];
+      const ddBenchmarkVals = payload.drawdown_benchmark_pct || [];
       const metrics = payload.metrics || {};
+      const benchmarkLabel = payload.benchmark_label || BENCHMARK_LABELS[currentBenchmark];
 
-      if (!labels.length || !pigroVals.length || !worldVals.length) {
+      if (!labels.length || !pigroVals.length || !benchmarkVals.length) {
         throw new Error("Dataset vuoto");
       }
 
       destroyCharts();
-      renderMain(labels, pigroVals, worldVals);
-      renderDd(labels, ddPigroVals, ddWorldVals);
+      renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel);
+      renderDd(labels, ddPigroVals, ddBenchmarkVals, benchmarkLabel);
 
       const last = pigroVals[pigroVals.length - 1];
-      const lastWorld = worldVals[worldVals.length - 1];
+      const lastBenchmark = benchmarkVals[benchmarkVals.length - 1];
       const firstDate = labels[0] || "inizio periodo";
       const lastDate = labels[labels.length - 1] || "";
 
       const years = Number(metrics.final_years);
       const cagr = Number(metrics.cagr_portfolio) * 100;
-      const maxddPigroRaw = Number(metrics.max_dd_portfolio);
-      const maxddPigro = isFinite(maxddPigroRaw)
-        ? maxddPigroRaw * 100
-        : minNumber(ddPigroVals);
-
+      const maxdd = Number(metrics.max_dd_portfolio) * 100;
       const dbl = Number(metrics.doubling_years_portfolio);
+
+      const cagrBench = Number(metrics.cagr_benchmark) * 100;
+      const maxddBench = Number(metrics.max_dd_benchmark) * 100;
 
       setText("final_value", euro(last, 0));
       setText("final_years", isFinite(years) ? plain(years, 1) : "—");
       setText("cagr", isFinite(cagr) ? pct(cagr, 2) : "—");
-      setText("maxdd", isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—");
+      setText("maxdd", isFinite(maxdd) ? pct(maxdd, 2) : "—");
       setText("dbl", isFinite(dbl) ? plain(dbl, 1) : "—");
+
+      setText("chart_title", `Andamento negli ultimi anni — confronto con ${benchmarkLabel}`);
+      setText("compare_title_benchmark", benchmarkLabel);
 
       setText(
         "compare_period",
         `${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})`
       );
       setText("compare_pigro", euro(last, 0));
-      setText("compare_world", euro(lastWorld, 0));
-
-      const pigroEpisodes = extractWorstEpisodes(labels, ddPigroVals, 2);
-      const worldEpisodes = extractWorstEpisodes(labels, ddWorldVals, 2);
+      setText("compare_benchmark", euro(lastBenchmark, 0));
 
       setHtml(
         "dd_summary",
-        buildEpisodesComparisonHtml(pigroEpisodes, worldEpisodes)
+        buildEpisodesComparisonHtml(
+          metrics.worst_episodes_portfolio || [],
+          metrics.worst_episodes_benchmark || [],
+          benchmarkLabel
+        )
+      );
+
+      setHtml(
+        "benchmark_summary",
+        `<b>${benchmarkLabel}</b>: rendimento annualizzato <b>${isFinite(cagrBench) ? pct(cagrBench, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddBench) ? pct(maxddBench, 2) : "—"}</b>`
       );
     } catch (err) {
       console.error("Errore caricamento grafici:", err);
@@ -517,18 +420,18 @@
       setText("maxdd", "—");
       setText("dbl", "—");
       setText("compare_pigro", "—");
-      setText("compare_world", "—");
+      setText("compare_benchmark", "—");
+      setText("compare_title_benchmark", "Benchmark");
       setText("dd_summary", "Impossibile caricare i dati del grafico.");
+      setText("benchmark_summary", "Impossibile calcolare il benchmark.");
 
-      alert("Impossibile caricare il grafico. Controlla /api/compute.");
+      alert("Impossibile caricare il grafico. Controlla /api/compute e i CSV.");
     }
   }
 
   function wireButtons() {
     const btnUpdate = document.getElementById("btn_update");
-    if (btnUpdate) {
-      btnUpdate.addEventListener("click", loadCharts);
-    }
+    if (btnUpdate) btnUpdate.addEventListener("click", loadCharts);
 
     const btnPdf = document.getElementById("btn_pdf");
     if (btnPdf) {
@@ -538,9 +441,7 @@
     }
 
     const btnAsk = document.getElementById("btn_ask");
-    if (btnAsk) {
-      btnAsk.addEventListener("click", askAssistant);
-    }
+    if (btnAsk) btnAsk.addEventListener("click", askAssistant);
 
     const btnLibro = document.getElementById("btn_libro");
     if (btnLibro) {
@@ -567,6 +468,14 @@
       });
     }
 
+    document.querySelectorAll(".benchmarkBtn").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        currentBenchmark = btn.getAttribute("data-benchmark") || "world";
+        setActiveBenchmarkButton();
+        loadCharts();
+      });
+    });
+
     const capital = document.getElementById("capital");
     if (capital) {
       capital.addEventListener("input", function () {
@@ -582,9 +491,7 @@
       });
 
       capital.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          loadCharts();
-        }
+        if (e.key === "Enter") loadCharts();
       });
     }
   }
@@ -593,6 +500,7 @@
     normalizeCapitalInput();
     renderFaq();
     wireButtons();
+    setActiveBenchmarkButton();
     loadCharts();
   });
 })();
