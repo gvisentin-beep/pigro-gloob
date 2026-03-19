@@ -15,6 +15,8 @@ DATA_DIR = BASE_DIR / "data"
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 
+MIN_VALID_ROWS = 100
+
 ASSETS = {
     "ls80": {
         "symbol": os.getenv("LS80_TICKER", "VNGA80.MI").strip(),
@@ -84,7 +86,12 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         )
 
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
+    df["close"] = (
+        df["close"]
+        .astype(str)
+        .str.strip()
+        .str.replace(",", ".", regex=False)
+    )
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
     df = (
@@ -212,6 +219,16 @@ def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[st
         return None, f"Yahoo {type(e).__name__}: {e}"
 
 
+def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
+    return df is not None and not df.empty and len(df) >= MIN_VALID_ROWS
+
+
+def choose_download(source: str, symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    if source == "yahoo":
+        return fetch_series_yahoo(symbol)
+    return fetch_series_twelve(symbol)
+
+
 def update_asset(name: str, cfg: dict) -> bool:
     symbol = cfg["symbol"]
     path = cfg["path"]
@@ -225,24 +242,28 @@ def update_asset(name: str, cfg: dict) -> bool:
     else:
         log("  CSV locale assente o vuoto")
 
-    if source == "yahoo":
-        fresh, err = fetch_series_yahoo(symbol)
-        if fresh is None or fresh.empty:
+    fresh, err = choose_download(source, symbol)
+
+    if fresh is None or fresh.empty:
+        if source == "yahoo":
             log(f"  Yahoo fallito: {err}")
-            if existing is not None and not existing.empty:
-                log("  Fallback: mantengo dati esistenti (OK)")
-                return True
-            log("  Fallback fallito: nessun dato disponibile")
-            return False
-    else:
-        fresh, err = fetch_series_twelve(symbol)
-        if fresh is None or fresh.empty:
+        else:
             log(f"  API non disponibile: {err}")
-            if existing is not None and not existing.empty:
-                log("  Mantengo il CSV locale esistente")
-                return True
-            log("  Nessun fallback disponibile")
-            return False
+
+        if existing is not None and not existing.empty:
+            log("  Fallback: mantengo dati esistenti (OK)")
+            return True
+
+        log("  Fallback fallito: nessun dato disponibile")
+        return False
+
+    if not is_series_usable(fresh):
+        log(f"  Serie scaricata troppo corta o sospetta: {len(fresh)} righe")
+        if existing is not None and not existing.empty:
+            log("  Mantengo il CSV locale esistente")
+            return True
+        log("  Nessun fallback disponibile")
+        return False
 
     merged = (
         pd.concat([existing, fresh], ignore_index=True)
@@ -255,6 +276,13 @@ def update_asset(name: str, cfg: dict) -> bool:
         .sort_values("date")
         .reset_index(drop=True)
     )
+
+    if not is_series_usable(merged):
+        log(f"  Serie finale troppo corta: {len(merged)} righe")
+        if existing is not None and not existing.empty:
+            log("  Mantengo il CSV locale esistente")
+            return True
+        return False
 
     write_csv(path, merged)
     log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
