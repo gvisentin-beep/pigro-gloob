@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 import requests
-import yfinance as yf
 from flask import Flask, jsonify, render_template, request, send_file
 
 app = Flask(__name__)
@@ -21,11 +20,18 @@ LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
+MIB_FILE = DATA_DIR / "mib.csv"
+SP500_FILE = DATA_DIR / "sp500.csv"
 
-LS80_TICKER = os.getenv("LS80_TICKER", "IE00BMVB5R75.MI").strip()
+LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
 WORLD_TICKER = os.getenv("WORLD_TICKER", "URTH").strip()
+
+# Default proposti per Borsa Italiana.
+# Se Twelve Data li mappa in modo diverso, basta cambiare le env vars.
+MIB_TICKER = os.getenv("MIB_TICKER", "CSMIB.MI").strip()
+SP500_TICKER = os.getenv("SP500_TICKER", "CSSPX.MI").strip()
 
 UPDATE_TOKEN = os.getenv("UPDATE_TOKEN", "").strip()
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
@@ -40,15 +46,26 @@ WEIGHT_BTC = 0.05
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
 
-LS80_FALLBACK_TICKERS = [
-    t.strip()
-    for t in [
-        os.getenv("LS80_TICKER", "IE00BMVB5R75.MI"),
-        "VNGA80.MI",
-        "V80A.MI",
-    ]
-    if t and t.strip()
-]
+BENCHMARKS: Dict[str, Dict[str, Any]] = {
+    "world": {
+        "label": "MSCI World",
+        "file": WORLD_FILE,
+        "column": "world",
+        "ticker": lambda: WORLD_TICKER,
+    },
+    "mib": {
+        "label": "iShares FTSE MIB UCITS ETF",
+        "file": MIB_FILE,
+        "column": "mib",
+        "ticker": lambda: MIB_TICKER,
+    },
+    "sp500": {
+        "label": "iShares Core S&P 500 UCITS ETF (Acc)",
+        "file": SP500_FILE,
+        "column": "sp500",
+        "ticker": lambda: SP500_TICKER,
+    },
+}
 
 
 def _now_utc() -> datetime:
@@ -131,7 +148,12 @@ def read_price_csv(path: Path) -> pd.DataFrame:
 
 def write_price_csv(path: Path, df: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    out = df.copy().sort_values("date").drop_duplicates(subset=["date"], keep="last")
+    out = (
+        df.copy()
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
     out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
     out.to_csv(path, sep=";", index=False)
 
@@ -184,83 +206,6 @@ def fetch_twelve_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str
         return None, f"{type(e).__name__}: {e}"
 
 
-def _flatten_yf_columns(df: pd.DataFrame) -> pd.DataFrame:
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [
-            "_".join([str(x) for x in tup if str(x) != ""]).strip("_")
-            for tup in df.columns.to_flat_index()
-        ]
-    return df
-
-
-def fetch_yahoo_data(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    if not symbol:
-        return None, "Ticker vuoto"
-
-    try:
-        df = yf.download(
-            symbol,
-            period="max",
-            interval="1d",
-            progress=False,
-            auto_adjust=False,
-            group_by="column",
-            threads=False,
-        )
-
-        if df is None or df.empty:
-            return None, f"Yahoo Finance non ha restituito dati per {symbol}"
-
-        df = _flatten_yf_columns(df)
-        df = df.reset_index()
-
-        date_col = None
-        for c in df.columns:
-            if str(c).lower() in ("date", "datetime"):
-                date_col = c
-                break
-
-        close_col = None
-        for c in df.columns:
-            if str(c).lower() == "close" or str(c).lower().startswith("close_"):
-                close_col = c
-                break
-
-        if date_col is None or close_col is None:
-            return None, f"Colonne inattese da Yahoo per {symbol}: {list(df.columns)}"
-
-        out = df[[date_col, close_col]].copy()
-        out.columns = ["date", "close"]
-        out["date"] = pd.to_datetime(out["date"], errors="coerce")
-        out["close"] = pd.to_numeric(out["close"], errors="coerce")
-
-        out = (
-            out.dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
-
-        if out.empty:
-            return None, f"Serie Yahoo vuota dopo pulizia per {symbol}"
-
-        return out[["date", "close"]].copy(), None
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
-
-
-def fetch_ls80_with_fallback() -> Tuple[Optional[pd.DataFrame], Optional[str], Optional[str]]:
-    errors: list[str] = []
-
-    for ticker in LS80_FALLBACK_TICKERS:
-        df, err = fetch_yahoo_data(ticker)
-        if df is not None and not df.empty:
-            return df, None, ticker
-        errors.append(f"{ticker}: {err}")
-
-    return None, " | ".join(errors) if errors else "nessun ticker LS80 disponibile", None
-
-
 def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
     info: Dict[str, Any] = {
         "asset": path.stem,
@@ -278,17 +223,9 @@ def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
     except Exception as e:
         info["read_error"] = f"{type(e).__name__}: {e}"
 
-    if path == LS80_FILE:
-        new_df, err, used_ticker = fetch_ls80_with_fallback()
-        info["source"] = "yahoo"
-        info["used_ticker"] = used_ticker or symbol
-    else:
-        new_df, err = fetch_twelve_data(symbol)
-        info["source"] = "twelve_data"
-        info["used_ticker"] = symbol
-
+    new_df, err = fetch_twelve_data(symbol)
     if new_df is None or new_df.empty:
-        info["reason"] = err or "nessun dato disponibile"
+        info["reason"] = err or "no_data_from_twelve_data"
         if old_df is not None and not old_df.empty:
             info["usable"] = True
             info["fallback"] = True
@@ -298,7 +235,11 @@ def update_one_asset(path: Path, symbol: str) -> Dict[str, Any]:
             info["last_value"] = float(old_df["close"].iloc[-1])
         return info
 
-    merged = pd.concat([old_df, new_df], ignore_index=True) if old_df is not None and not old_df.empty else new_df
+    merged = (
+        pd.concat([old_df, new_df], ignore_index=True)
+        if old_df is not None and not old_df.empty
+        else new_df
+    )
     merged = (
         merged.drop_duplicates(subset=["date"], keep="last")
         .sort_values("date")
@@ -329,24 +270,31 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     gold = read_price_csv(GOLD_FILE).rename(columns={"close": "gold"})
     btc = read_price_csv(BTC_FILE).rename(columns={"close": "btc"})
     world = read_price_csv(WORLD_FILE).rename(columns={"close": "world"})
+    mib = read_price_csv(MIB_FILE).rename(columns={"close": "mib"})
+    sp500 = read_price_csv(SP500_FILE).rename(columns={"close": "sp500"})
 
     freshness = {
         "ls80": dataset_freshness_days(ls80),
         "gold": dataset_freshness_days(gold),
         "btc": dataset_freshness_days(btc),
         "world": dataset_freshness_days(world),
+        "mib": dataset_freshness_days(mib),
+        "sp500": dataset_freshness_days(sp500),
     }
 
     df = ls80.merge(gold, on="date", how="outer")
     df = df.merge(btc, on="date", how="outer")
     df = df.merge(world, on="date", how="outer")
+    df = df.merge(mib, on="date", how="outer")
+    df = df.merge(sp500, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
-    df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
-    df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
+    cols = ["ls80", "gold", "btc", "world", "mib", "sp500"]
+    df[cols] = df[cols].ffill()
+    df = df.dropna(subset=cols).reset_index(drop=True)
 
     if df.empty:
-        raise ValueError("Dataset vuoto dopo il merge dei quattro CSV")
+        raise ValueError("Dataset vuoto dopo il merge dei CSV")
 
     return df, freshness
 
@@ -434,6 +382,10 @@ def compute_portfolio_fixed(ls80: pd.Series, gold: pd.Series, btc: pd.Series, ca
     return shares_ls80 * ls80 + shares_gold * gold + shares_btc * btc
 
 
+def scale_benchmark(series: pd.Series, capital: float) -> pd.Series:
+    return (capital * (series / float(series.iloc[0]))).reset_index(drop=True)
+
+
 def _openai_client():
     if not OPENAI_API_KEY:
         return None
@@ -482,17 +434,24 @@ def api_diag():
             "gold": info(GOLD_FILE),
             "btc": info(BTC_FILE),
             "world": info(WORLD_FILE),
+            "mib": info(MIB_FILE),
+            "sp500": info(SP500_FILE),
         },
         "env": {
             "LS80_TICKER": LS80_TICKER,
-            "LS80_FALLBACK_TICKERS": LS80_FALLBACK_TICKERS,
             "GOLD_TICKER": GOLD_TICKER,
             "BTC_TICKER": BTC_TICKER,
             "WORLD_TICKER": WORLD_TICKER,
+            "MIB_TICKER": MIB_TICKER,
+            "SP500_TICKER": SP500_TICKER,
             "TWELVE_DATA_API_KEY_present": bool(TWELVE_DATA_API_KEY),
             "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
             "OPENAI_API_KEY_present": bool(OPENAI_API_KEY),
             "OPENAI_MODEL": OPENAI_MODEL,
+        },
+        "benchmarks": {
+            key: {"label": cfg["label"], "column": cfg["column"]}
+            for key, cfg in BENCHMARKS.items()
         },
     }
 
@@ -514,32 +473,42 @@ def api_diag():
 def api_compute():
     try:
         capital = _safe_float(request.args.get("capital", 10000), 10000.0)
+        benchmark_key = (request.args.get("benchmark", "world") or "world").strip().lower()
+
         if capital <= 0:
             return _json_error("Capitale non valido.", 400)
+
+        if benchmark_key not in BENCHMARKS:
+            return _json_error("Benchmark non valido.", 400, valid=list(BENCHMARKS.keys()))
+
+        benchmark_cfg = BENCHMARKS[benchmark_key]
+        benchmark_label = benchmark_cfg["label"]
+        benchmark_col = benchmark_cfg["column"]
 
         df, freshness = build_merged_dataset()
         if len(df) < MIN_ROWS_REQUIRED:
             return _json_error(
-                "Serie troppo corta dopo il merge tra LS80, Oro, Bitcoin e MSCI World.",
+                "Serie troppo corta dopo il merge dei CSV.",
                 400,
                 rows=int(len(df)),
             )
 
         dates = df["date"].reset_index(drop=True)
         portfolio = compute_portfolio_fixed(df["ls80"], df["gold"], df["btc"], capital).reset_index(drop=True)
-        world_scaled = (capital * (df["world"] / df["world"].iloc[0])).reset_index(drop=True)
+        benchmark_series = scale_benchmark(df[benchmark_col], capital)
 
         cagr_port = compute_cagr(portfolio, dates)
         maxdd_port = compute_max_dd(portfolio)
         dbl_years = doubling_years(cagr_port)
-        cagr_world = compute_cagr(world_scaled, dates)
-        maxdd_world = compute_max_dd(world_scaled)
+
+        cagr_bench = compute_cagr(benchmark_series, dates)
+        maxdd_bench = compute_max_dd(benchmark_series)
 
         dd_port = compute_drawdown_series_pct(portfolio)
-        dd_world = compute_drawdown_series_pct(world_scaled)
+        dd_bench = compute_drawdown_series_pct(benchmark_series)
 
         worst_port = worst_drawdowns(portfolio, dates, n=3)
-        worst_world = worst_drawdowns(world_scaled, dates, n=3)
+        worst_bench = worst_drawdowns(benchmark_series, dates, n=3)
 
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         warnings: list[str] = []
@@ -552,23 +521,25 @@ def api_compute():
                 "ok": True,
                 "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
                 "portfolio": [round(float(x), 6) for x in portfolio.tolist()],
-                "world": [round(float(x), 6) for x in world_scaled.tolist()],
+                "benchmark": [round(float(x), 6) for x in benchmark_series.tolist()],
                 "drawdown_portfolio_pct": [round(float(x), 6) for x in dd_port.tolist()],
-                "drawdown_world_pct": [round(float(x), 6) for x in dd_world.tolist()],
+                "drawdown_benchmark_pct": [round(float(x), 6) for x in dd_bench.tolist()],
                 "composition": {"ls80": WEIGHT_LS80, "gold": WEIGHT_GOLD, "btc": WEIGHT_BTC},
                 "freshness_days": freshness,
                 "warnings": warnings,
+                "benchmark_key": benchmark_key,
+                "benchmark_label": benchmark_label,
                 "metrics": {
                     "final_portfolio": float(portfolio.iloc[-1]),
-                    "final_world": float(world_scaled.iloc[-1]),
+                    "final_benchmark": float(benchmark_series.iloc[-1]),
                     "final_years": float(years_period),
                     "cagr_portfolio": float(cagr_port),
                     "max_dd_portfolio": float(maxdd_port),
                     "doubling_years_portfolio": float(dbl_years) if dbl_years is not None else None,
-                    "cagr_world": float(cagr_world),
-                    "max_dd_world": float(maxdd_world),
+                    "cagr_benchmark": float(cagr_bench),
+                    "max_dd_benchmark": float(maxdd_bench),
                     "worst_episodes_portfolio": worst_port,
-                    "worst_episodes_world": worst_world,
+                    "worst_episodes_benchmark": worst_bench,
                 },
             }
         )
@@ -623,12 +594,16 @@ def api_update_data():
         res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
         res_wd = update_one_asset(WORLD_FILE, WORLD_TICKER)
+        res_mb = update_one_asset(MIB_FILE, MIB_TICKER)
+        res_sp = update_one_asset(SP500_FILE, SP500_TICKER)
 
         usable_all = all([
             bool(res_ls.get("usable")),
             bool(res_gd.get("usable")),
             bool(res_bt.get("usable")),
             bool(res_wd.get("usable")),
+            bool(res_mb.get("usable")),
+            bool(res_sp.get("usable")),
         ])
 
         return jsonify(
@@ -638,6 +613,8 @@ def api_update_data():
                 "gold": res_gd,
                 "btc": res_bt,
                 "world": res_wd,
+                "mib": res_mb,
+                "sp500": res_sp,
                 "time_utc": _now_iso(),
             }
         )
@@ -695,7 +672,7 @@ def api_pdf():
             buf,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="gloob_pigro_8155.pdf",
+            download_name="gloob_pigro_confronto.pdf",
         )
     except Exception as e:
         return _json_error(f"Errore PDF: {type(e).__name__}: {e}", 500)
