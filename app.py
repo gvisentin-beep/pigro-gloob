@@ -27,9 +27,6 @@ LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
 WORLD_TICKER = os.getenv("WORLD_TICKER", "URTH").strip()
-
-# Default proposti per Borsa Italiana.
-# Se Twelve Data li mappa in modo diverso, basta cambiare le env vars.
 MIB_TICKER = os.getenv("MIB_TICKER", "CSMIB.MI").strip()
 SP500_TICKER = os.getenv("SP500_TICKER", "CSSPX.MI").strip()
 
