@@ -21,6 +21,8 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
+# Per LS80 conviene usare il CSV locale come fonte primaria.
+# Se vuoi tentare l'aggiornamento via API, imposta LS80_TICKER su Render.
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
@@ -36,14 +38,8 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 WEIGHT_LS80 = 0.80
 WEIGHT_GOLD = 0.15
 WEIGHT_BTC = 0.05
-
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
-
-DEFAULT_LEVERAGE_CAPITAL = 100000.0
-LEVERAGE_RATIO = 0.20
-LOMBARD_RATE_ANNUAL = 0.025
-DAY_COUNT = 365.25
 
 
 def _now_utc() -> datetime:
@@ -252,7 +248,9 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = df.merge(world, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
+    # Usa l'ultimo dato noto disponibile per evitare che una serie più corta blocchi il grafico.
     df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
+    # Le righe iniziali prima che tutte le serie siano valorizzate vengono escluse.
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
     if df.empty:
@@ -344,103 +342,6 @@ def compute_portfolio_fixed(ls80: pd.Series, gold: pd.Series, btc: pd.Series, ca
     return shares_ls80 * ls80 + shares_gold * gold + shares_btc * btc
 
 
-def _rebalance_holdings(total_value: float, px_ls80: float, px_gold: float, px_btc: float) -> Dict[str, float]:
-    return {
-        "ls80": (total_value * WEIGHT_LS80) / px_ls80,
-        "gold": (total_value * WEIGHT_GOLD) / px_gold,
-        "btc": (total_value * WEIGHT_BTC) / px_btc,
-    }
-
-
-def compute_portfolios_annual_rebalance_with_leverage(
-    df: pd.DataFrame,
-    capital: float,
-    leverage_ratio: float = LEVERAGE_RATIO,
-    lombard_rate_annual: float = LOMBARD_RATE_ANNUAL,
-) -> Dict[str, pd.Series]:
-    dates = df["date"].reset_index(drop=True)
-    px_ls80 = df["ls80"].reset_index(drop=True)
-    px_gold = df["gold"].reset_index(drop=True)
-    px_btc = df["btc"].reset_index(drop=True)
-
-    n = len(df)
-    if n == 0:
-        raise ValueError("Dataset vuoto")
-
-    pigro_hold = _rebalance_holdings(
-        capital,
-        float(px_ls80.iloc[0]),
-        float(px_gold.iloc[0]),
-        float(px_btc.iloc[0]),
-    )
-
-    equity0 = capital
-    debt = equity0 * leverage_ratio
-    gross0 = equity0 + debt
-    leva_hold = _rebalance_holdings(
-        gross0,
-        float(px_ls80.iloc[0]),
-        float(px_gold.iloc[0]),
-        float(px_btc.iloc[0]),
-    )
-
-    pigro_values = []
-    leva_equity_values = []
-    debt_values = []
-    gross_values = []
-
-    for i in range(n):
-        gross_pigro = (
-            pigro_hold["ls80"] * float(px_ls80.iloc[i])
-            + pigro_hold["gold"] * float(px_gold.iloc[i])
-            + pigro_hold["btc"] * float(px_btc.iloc[i])
-        )
-
-        gross_leva = (
-            leva_hold["ls80"] * float(px_ls80.iloc[i])
-            + leva_hold["gold"] * float(px_gold.iloc[i])
-            + leva_hold["btc"] * float(px_btc.iloc[i])
-        )
-
-        if i > 0:
-            days = max((dates.iloc[i] - dates.iloc[i - 1]).days, 1)
-            debt *= (1.0 + lombard_rate_annual * days / DAY_COUNT)
-
-        equity_leva = gross_leva - debt
-
-        pigro_values.append(gross_pigro)
-        leva_equity_values.append(equity_leva)
-        debt_values.append(debt)
-        gross_values.append(gross_leva)
-
-        if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
-            pigro_hold = _rebalance_holdings(
-                gross_pigro,
-                float(px_ls80.iloc[i]),
-                float(px_gold.iloc[i]),
-                float(px_btc.iloc[i]),
-            )
-
-            new_equity = equity_leva
-            new_debt = max(new_equity * leverage_ratio, 0.0)
-            new_gross = max(new_equity + new_debt, 0.0)
-
-            leva_hold = _rebalance_holdings(
-                new_gross,
-                float(px_ls80.iloc[i]),
-                float(px_gold.iloc[i]),
-                float(px_btc.iloc[i]),
-            )
-            debt = new_debt
-
-    return {
-        "pigro": pd.Series(pigro_values),
-        "leva_equity": pd.Series(leva_equity_values),
-        "leva_debt": pd.Series(debt_values),
-        "leva_gross": pd.Series(gross_values),
-    }
-
-
 def _openai_client():
     if not OPENAI_API_KEY:
         return None
@@ -454,11 +355,6 @@ def _openai_client():
 @app.get("/")
 def home():
     return render_template("index.html")
-
-
-@app.get("/leva")
-def leva_page():
-    return render_template("leva.html")
 
 
 @app.get("/health")
@@ -587,98 +483,6 @@ def api_compute():
         return jsonify({"ok": False, "error": f"Errore compute: {type(e).__name__}: {e}"})
 
 
-@app.get("/api/compute_leva")
-def api_compute_leva():
-    try:
-        capital = _safe_float(request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL), DEFAULT_LEVERAGE_CAPITAL)
-        if capital <= 0:
-            return _json_error("Capitale non valido.", 400)
-
-        df, freshness = build_merged_dataset()
-        if len(df) < MIN_ROWS_REQUIRED:
-            return _json_error(
-                "Serie troppo corta dopo il merge dei CSV.",
-                400,
-                rows=int(len(df)),
-            )
-
-        dates = df["date"].reset_index(drop=True)
-
-        series = compute_portfolios_annual_rebalance_with_leverage(
-            df=df,
-            capital=capital,
-            leverage_ratio=LEVERAGE_RATIO,
-            lombard_rate_annual=LOMBARD_RATE_ANNUAL,
-        )
-
-        pigro = series["pigro"].reset_index(drop=True)
-        leva_equity = series["leva_equity"].reset_index(drop=True)
-        leva_debt = series["leva_debt"].reset_index(drop=True)
-        leva_gross = series["leva_gross"].reset_index(drop=True)
-
-        dd_pigro = compute_drawdown_series_pct(pigro)
-        dd_leva = compute_drawdown_series_pct(leva_equity)
-
-        cagr_pigro = compute_cagr(pigro, dates)
-        cagr_leva = compute_cagr(leva_equity, dates)
-
-        maxdd_pigro = compute_max_dd(pigro)
-        maxdd_leva = compute_max_dd(leva_equity)
-
-        dbl_pigro = doubling_years(cagr_pigro)
-        dbl_leva = doubling_years(cagr_leva)
-
-        worst_pigro = worst_drawdowns(pigro, dates, n=3)
-        worst_leva = worst_drawdowns(leva_equity, dates, n=3)
-
-        years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
-
-        warnings: list[str] = []
-        for name, stale_days in freshness.items():
-            if stale_days is not None and stale_days > STALE_WARNING_DAYS:
-                warnings.append(f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile")
-
-        return jsonify(
-            {
-                "ok": True,
-                "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
-                "pigro": [round(float(x), 6) for x in pigro.tolist()],
-                "leva": [round(float(x), 6) for x in leva_equity.tolist()],
-                "drawdown_pigro_pct": [round(float(x), 6) for x in dd_pigro.tolist()],
-                "drawdown_leva_pct": [round(float(x), 6) for x in dd_leva.tolist()],
-                "debt_series": [round(float(x), 6) for x in leva_debt.tolist()],
-                "gross_series": [round(float(x), 6) for x in leva_gross.tolist()],
-                "composition": {"ls80": WEIGHT_LS80, "gold": WEIGHT_GOLD, "btc": WEIGHT_BTC},
-                "leverage": {
-                    "ratio": LEVERAGE_RATIO,
-                    "lombard_rate_annual": LOMBARD_RATE_ANNUAL,
-                    "rebalance": "annuale",
-                },
-                "freshness_days": freshness,
-                "warnings": warnings,
-                "metrics": {
-                    "initial_capital": float(capital),
-                    "final_years": float(years_period),
-                    "final_pigro": float(pigro.iloc[-1]),
-                    "final_leva": float(leva_equity.iloc[-1]),
-                    "cagr_pigro": float(cagr_pigro),
-                    "cagr_leva": float(cagr_leva),
-                    "max_dd_pigro": float(maxdd_pigro),
-                    "max_dd_leva": float(maxdd_leva),
-                    "doubling_years_pigro": float(dbl_pigro) if dbl_pigro is not None else None,
-                    "doubling_years_leva": float(dbl_leva) if dbl_leva is not None else None,
-                    "initial_debt": float(capital * LEVERAGE_RATIO),
-                    "final_debt": float(leva_debt.iloc[-1]),
-                    "final_gross_assets": float(leva_gross.iloc[-1]),
-                    "worst_episodes_pigro": worst_pigro,
-                    "worst_episodes_leva": worst_leva,
-                },
-            }
-        )
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Errore compute_leva: {type(e).__name__}: {e}"})
-
-
 @app.post("/api/ask")
 def api_ask():
     try:
@@ -722,6 +526,7 @@ def api_update_data():
         return err
 
     try:
+        # LS80 resta aggiornabile, ma se l'API non lo supporta il CSV locale rimane valido.
         res_ls = update_one_asset(LS80_FILE, LS80_TICKER)
         res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
