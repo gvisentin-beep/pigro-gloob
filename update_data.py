@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
@@ -86,12 +87,7 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         )
 
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = (
-        df["close"]
-        .astype(str)
-        .str.strip()
-        .str.replace(",", ".", regex=False)
-    )
+    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
     df = (
@@ -173,50 +169,58 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
 
 
 def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    try:
-        data = yf.download(
-            symbol,
-            period="max",
-            interval="1d",
-            auto_adjust=False,
-            progress=False,
-            threads=False,
-        )
+    # Due tentativi leggeri per ridurre i problemi temporanei di rate limit.
+    last_err = None
 
-        if data is None or data.empty:
-            return None, "Yahoo: nessun dato restituito"
+    for attempt in range(2):
+        try:
+            data = yf.download(
+                symbol,
+                period="max",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+                threads=False,
+            )
 
-        df = data.reset_index()
+            if data is None or data.empty:
+                last_err = "Yahoo: nessun dato restituito"
+            else:
+                df = data.reset_index()
 
-        date_col = None
-        for candidate in ["Date", "Datetime"]:
-            if candidate in df.columns:
-                date_col = candidate
-                break
+                date_col = None
+                for candidate in ["Date", "Datetime"]:
+                    if candidate in df.columns:
+                        date_col = candidate
+                        break
 
-        if date_col is None or "Close" not in df.columns:
-            return None, f"Yahoo: colonne inattese {list(df.columns)}"
+                if date_col is None or "Close" not in df.columns:
+                    last_err = f"Yahoo: colonne inattese {list(df.columns)}"
+                else:
+                    df = df[[date_col, "Close"]].copy()
+                    df.columns = ["date", "close"]
 
-        df = df[[date_col, "Close"]].copy()
-        df.columns = ["date", "close"]
+                    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                    df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+                    df = (
+                        df.dropna(subset=["date", "close"])
+                        .sort_values("date")
+                        .drop_duplicates(subset=["date"], keep="last")
+                        .reset_index(drop=True)
+                    )
 
-        df = (
-            df.dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
+                    if not df.empty:
+                        return df, None
 
-        if df.empty:
-            return None, "Yahoo: serie vuota dopo pulizia"
+                    last_err = "Yahoo: serie vuota dopo pulizia"
+        except Exception as e:
+            last_err = f"Yahoo {type(e).__name__}: {e}"
 
-        return df, None
+        if attempt == 0:
+            time.sleep(3)
 
-    except Exception as e:
-        return None, f"Yahoo {type(e).__name__}: {e}"
+    return None, last_err
 
 
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
