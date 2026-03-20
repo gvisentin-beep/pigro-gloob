@@ -41,7 +41,7 @@ WEIGHT_BTC = 0.05
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
 
-# --- Nuovi parametri per pagina leva ---
+# Leva
 DEFAULT_LEVERAGE_CAPITAL = 100000.0
 LEVERAGE_RATIO = 0.20
 LOMBARD_RATE_ANNUAL = 0.025
@@ -254,9 +254,9 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = df.merge(world, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
-    # Usa l'ultimo dato noto disponibile per evitare che una serie più corta blocchi il grafico.
+    # Compatibilità massima col sito attuale:
+    # usa l'ultimo dato disponibile e poi scarta solo le righe iniziali incomplete.
     df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
-    # Le righe iniziali prima che tutte le serie siano valorizzate vengono escluse.
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
     if df.empty:
@@ -347,8 +347,6 @@ def compute_portfolio_fixed(ls80: pd.Series, gold: pd.Series, btc: pd.Series, ca
     shares_btc = (capital * WEIGHT_BTC) / float(btc.iloc[0])
     return shares_ls80 * ls80 + shares_gold * gold + shares_btc * btc
 
-
-# --- Nuove funzioni per pagina leva ---
 
 def _rebalance_holdings(total_value: float, px_ls80: float, px_gold: float, px_btc: float) -> Dict[str, float]:
     return {
@@ -462,7 +460,6 @@ def home():
     return render_template("index.html")
 
 
-# --- Nuova pagina leva ---
 @app.get("/leva")
 def leva_page():
     return render_template("leva.html")
@@ -594,7 +591,6 @@ def api_compute():
         return jsonify({"ok": False, "error": f"Errore compute: {type(e).__name__}: {e}"})
 
 
-# --- Nuovo endpoint leva ---
 @app.get("/api/compute_leva")
 def api_compute_leva():
     try:
@@ -729,7 +725,6 @@ def api_update_data():
         return err
 
     try:
-        # LS80 resta aggiornabile, ma se l'API non lo supporta il CSV locale rimane valido.
         res_ls = update_one_asset(LS80_FILE, LS80_TICKER)
         res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
