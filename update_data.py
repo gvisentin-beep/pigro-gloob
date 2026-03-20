@@ -18,10 +18,10 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": os.getenv("LS80_TICKER", "VNGA80.MI").strip(),
+        "symbol": "",
         "path": DATA_DIR / "ls80.csv",
-        "source": "twelve",
-        "update_enabled": True,
+        "source": "manual",
+        "update_enabled": False,
     },
     "gold": {
         "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
@@ -41,16 +41,14 @@ ASSETS = {
         "source": "twelve",
         "update_enabled": True,
     },
-    # Per ora NON aggiornati automaticamente:
-    # si mantiene il CSV esistente per evitare blocchi Yahoo.
     "mib": {
-        "symbol": "^FTSEMIB",
+        "symbol": "",
         "path": DATA_DIR / "mib.csv",
         "source": "manual",
         "update_enabled": False,
     },
     "sp500": {
-        "symbol": "^GSPC",
+        "symbol": "",
         "path": DATA_DIR / "sp500.csv",
         "source": "manual",
         "update_enabled": False,
@@ -184,7 +182,7 @@ def update_asset(name: str, cfg: dict) -> bool:
     source = cfg.get("source", "twelve")
     update_enabled = bool(cfg.get("update_enabled", True))
 
-    log(f"\n[{name.upper()}] {symbol} -> {path}")
+    log(f"\n[{name.upper()}] {symbol or '(manuale)'} -> {path}")
 
     existing = read_existing_csv(path)
     if existing is not None and not existing.empty:
