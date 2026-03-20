@@ -33,8 +33,6 @@ jobs:
           GOLD_TICKER: ${{ secrets.GOLD_TICKER }}
           BTC_TICKER: ${{ secrets.BTC_TICKER }}
           WORLD_TICKER: ${{ secrets.WORLD_TICKER }}
-          MIB_TICKER: ${{ secrets.MIB_TICKER }}
-          SP500_TICKER: ${{ secrets.SP500_TICKER }}
         run: |
           python update_data.py
 
