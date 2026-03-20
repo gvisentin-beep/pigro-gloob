@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import os
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
 import pandas as pd
 import requests
-import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -23,31 +21,39 @@ ASSETS = {
         "symbol": os.getenv("LS80_TICKER", "VNGA80.MI").strip(),
         "path": DATA_DIR / "ls80.csv",
         "source": "twelve",
+        "update_enabled": True,
     },
     "gold": {
         "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
         "path": DATA_DIR / "gold.csv",
         "source": "twelve",
+        "update_enabled": True,
     },
     "btc": {
         "symbol": os.getenv("BTC_TICKER", "BTC/EUR").strip(),
         "path": DATA_DIR / "btc.csv",
         "source": "twelve",
+        "update_enabled": True,
     },
     "world": {
         "symbol": os.getenv("WORLD_TICKER", "URTH").strip(),
         "path": DATA_DIR / "world.csv",
         "source": "twelve",
+        "update_enabled": True,
     },
+    # Per ora NON aggiornati automaticamente:
+    # si mantiene il CSV esistente per evitare blocchi Yahoo.
     "mib": {
         "symbol": "^FTSEMIB",
         "path": DATA_DIR / "mib.csv",
-        "source": "yahoo",
+        "source": "manual",
+        "update_enabled": False,
     },
     "sp500": {
         "symbol": "^GSPC",
         "path": DATA_DIR / "sp500.csv",
-        "source": "yahoo",
+        "source": "manual",
+        "update_enabled": False,
     },
 }
 
@@ -168,75 +174,15 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
         return None, f"{type(e).__name__}: {e}"
 
 
-def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    # Due tentativi leggeri per ridurre i problemi temporanei di rate limit.
-    last_err = None
-
-    for attempt in range(2):
-        try:
-            data = yf.download(
-                symbol,
-                period="max",
-                interval="1d",
-                auto_adjust=False,
-                progress=False,
-                threads=False,
-            )
-
-            if data is None or data.empty:
-                last_err = "Yahoo: nessun dato restituito"
-            else:
-                df = data.reset_index()
-
-                date_col = None
-                for candidate in ["Date", "Datetime"]:
-                    if candidate in df.columns:
-                        date_col = candidate
-                        break
-
-                if date_col is None or "Close" not in df.columns:
-                    last_err = f"Yahoo: colonne inattese {list(df.columns)}"
-                else:
-                    df = df[[date_col, "Close"]].copy()
-                    df.columns = ["date", "close"]
-
-                    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-                    df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
-                    df = (
-                        df.dropna(subset=["date", "close"])
-                        .sort_values("date")
-                        .drop_duplicates(subset=["date"], keep="last")
-                        .reset_index(drop=True)
-                    )
-
-                    if not df.empty:
-                        return df, None
-
-                    last_err = "Yahoo: serie vuota dopo pulizia"
-        except Exception as e:
-            last_err = f"Yahoo {type(e).__name__}: {e}"
-
-        if attempt == 0:
-            time.sleep(3)
-
-    return None, last_err
-
-
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
     return df is not None and not df.empty and len(df) >= MIN_VALID_ROWS
-
-
-def choose_download(source: str, symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    if source == "yahoo":
-        return fetch_series_yahoo(symbol)
-    return fetch_series_twelve(symbol)
 
 
 def update_asset(name: str, cfg: dict) -> bool:
     symbol = cfg["symbol"]
     path = cfg["path"]
     source = cfg.get("source", "twelve")
+    update_enabled = bool(cfg.get("update_enabled", True))
 
     log(f"\n[{name.upper()}] {symbol} -> {path}")
 
@@ -246,18 +192,21 @@ def update_asset(name: str, cfg: dict) -> bool:
     else:
         log("  CSV locale assente o vuoto")
 
-    fresh, err = choose_download(source, symbol)
+    if not update_enabled:
+        log("  Aggiornamento automatico disattivato: mantengo il CSV esistente")
+        return existing is not None and not existing.empty
+
+    if source != "twelve":
+        log("  Fonte non gestita in questa versione")
+        return existing is not None and not existing.empty
+
+    fresh, err = fetch_series_twelve(symbol)
 
     if fresh is None or fresh.empty:
-        if source == "yahoo":
-            log(f"  Yahoo fallito: {err}")
-        else:
-            log(f"  API non disponibile: {err}")
-
+        log(f"  API non disponibile: {err}")
         if existing is not None and not existing.empty:
             log("  Fallback: mantengo dati esistenti (OK)")
             return True
-
         log("  Fallback fallito: nessun dato disponibile")
         return False
 
