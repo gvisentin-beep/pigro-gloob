@@ -21,8 +21,6 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
-# Per LS80 conviene usare il CSV locale come fonte primaria.
-# Se vuoi tentare l'aggiornamento via API, imposta LS80_TICKER su Render.
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
@@ -42,7 +40,6 @@ WEIGHT_BTC = 0.05
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
 
-# Nuovi parametri leva
 DEFAULT_LEVERAGE_CAPITAL = 100000.0
 LEVERAGE_RATIO = 0.20
 LOMBARD_RATE_ANNUAL = 0.025
@@ -255,9 +252,7 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = df.merge(world, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
-    # Usa l'ultimo dato noto disponibile per evitare che una serie più corta blocchi il grafico.
     df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
-    # Le righe iniziali prima che tutte le serie siano valorizzate vengono escluse.
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
     if df.empty:
@@ -363,19 +358,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
     leverage_ratio: float = LEVERAGE_RATIO,
     lombard_rate_annual: float = LOMBARD_RATE_ANNUAL,
 ) -> Dict[str, pd.Series]:
-    """
-    Calcola due serie:
-    - Pigro normale con ribilanciamento annuale
-    - Pigro con leva 20% e costo Lombard, con ribilanciamento annuale
-
-    Convenzione usata:
-    - capitale iniziale = equity
-    - debito iniziale = equity * leverage_ratio
-    - capitale investito lordo = equity + debito
-    - ad ogni cambio anno si ribilancia:
-        * Pigro ai pesi fissi 80/15/5
-        * Leva riportando il debito al 20% della equity di fine anno
-    """
     dates = df["date"].reset_index(drop=True)
     px_ls80 = df["ls80"].reset_index(drop=True)
     px_gold = df["gold"].reset_index(drop=True)
@@ -385,7 +367,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
     if n == 0:
         raise ValueError("Dataset vuoto")
 
-    # Portafoglio Pigro normale
     pigro_hold = _rebalance_holdings(
         capital,
         float(px_ls80.iloc[0]),
@@ -393,7 +374,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
         float(px_btc.iloc[0]),
     )
 
-    # Portafoglio Pigro con leva
     equity0 = capital
     debt = equity0 * leverage_ratio
     gross0 = equity0 + debt
@@ -433,7 +413,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
         debt_values.append(debt)
         gross_values.append(gross_leva)
 
-        # Ribilanciamento a fine giornata sul primo cambio anno utile
         if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
             pigro_hold = _rebalance_holdings(
                 gross_pigro,
@@ -680,23 +659,17 @@ def api_compute_leva():
                 "metrics": {
                     "initial_capital": float(capital),
                     "final_years": float(years_period),
-
                     "final_pigro": float(pigro.iloc[-1]),
                     "final_leva": float(leva_equity.iloc[-1]),
-
                     "cagr_pigro": float(cagr_pigro),
                     "cagr_leva": float(cagr_leva),
-
                     "max_dd_pigro": float(maxdd_pigro),
                     "max_dd_leva": float(maxdd_leva),
-
                     "doubling_years_pigro": float(dbl_pigro) if dbl_pigro is not None else None,
                     "doubling_years_leva": float(dbl_leva) if dbl_leva is not None else None,
-
                     "initial_debt": float(capital * LEVERAGE_RATIO),
                     "final_debt": float(leva_debt.iloc[-1]),
                     "final_gross_assets": float(leva_gross.iloc[-1]),
-
                     "worst_episodes_pigro": worst_pigro,
                     "worst_episodes_leva": worst_leva,
                 },
@@ -749,7 +722,6 @@ def api_update_data():
         return err
 
     try:
-        # LS80 resta aggiornabile, ma se l'API non lo supporta il CSV locale rimane valido.
         res_ls = update_one_asset(LS80_FILE, LS80_TICKER)
         res_gd = update_one_asset(GOLD_FILE, GOLD_TICKER)
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
