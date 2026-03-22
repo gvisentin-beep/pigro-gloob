@@ -1,93 +1,66 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Confronto Pigro vs Pigro Leva</title>
+document.addEventListener("DOMContentLoaded", async function () {
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  function euro(v) {
+    return v.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+  }
 
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 22px;
-      color: #111;
-      background: #fff;
-    }
+  function pct(v) {
+    return (v * 100).toFixed(2) + "%";
+  }
 
-    h1 {
-      font-size: 20px;
-      margin: 0 0 18px 0;
-      font-weight: 700;
-    }
-
-    .wrap {
-      max-width: 1280px;
-      margin: 0 auto;
-    }
-
-    .chart-box,
-    .metrics-box {
-      margin-top: 18px;
-      padding: 14px;
-      border: 1px solid #d9d9d9;
-      border-radius: 10px;
-      background: #fff;
-    }
-
-    .chart-box canvas {
-      width: 100% !important;
-      height: 420px !important;
-      display: block;
-    }
-
-    .metrics-box {
-      line-height: 1.6;
-      font-size: 15px;
-    }
-
-    .metrics-box b {
-      font-weight: 700;
-    }
-
-    .top-note {
-      font-size: 13px;
-      color: #555;
-      margin-bottom: 8px;
-    }
-
-    @media (max-width: 900px) {
-      body {
-        margin: 14px;
+  function drawChart(labels, pigro, leva) {
+    new Chart(document.getElementById("chart"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "Pigro", data: pigro, borderWidth: 2 },
+          { label: "Pigro Leva", data: leva, borderWidth: 2 }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: true } },
+        scales: { x: { ticks: { maxTicksLimit: 10 } } }
       }
+    });
+  }
 
-      h1 {
-        font-size: 18px;
+  function drawDrawdown(labels, pigro, leva) {
+    new Chart(document.getElementById("drawdownChart"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "Drawdown Pigro", data: pigro },
+          { label: "Drawdown Leva", data: leva }
+        ]
       }
+    });
+  }
 
-      .chart-box canvas {
-        height: 320px !important;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>Confronto Portafoglio Pigro vs Pigro Leva 20%</h1>
+  try {
+    const res = await fetch("/api/leva");
+    const data = await res.json();
 
-    <div class="chart-box">
-      <canvas id="chart"></canvas>
-    </div>
+    const labels = data.labels;
+    const pigro = data.pigro;
+    const leva = data.leva;
+    const ddPigro = data.drawdown_pigro;
+    const ddLeva = data.drawdown_leva;
 
-    <div class="chart-box">
-      <canvas id="drawdownChart"></canvas>
-    </div>
+    drawChart(labels, pigro, leva);
+    drawDrawdown(labels, ddPigro, ddLeva);
 
-    <div id="metrics" class="metrics-box">
-      <div class="top-note">Caricamento risultati in corso…</div>
-    </div>
-  </div>
+    document.getElementById("metrics").innerHTML = `
+      <b>Valore finale Pigro:</b> ${euro(pigro[pigro.length-1])}<br>
+      <b>Valore finale Leva:</b> ${euro(leva[leva.length-1])}
+    `;
 
-  <script src="/static/app_leva.js"></script>
-</body>
-</html>
+  } catch (err) {
+    console.error(err);
+    alert("Errore caricamento leva");
+  }
+
+});
