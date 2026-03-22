@@ -21,8 +21,6 @@ GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
 
-# Per LS80 conviene usare il CSV locale come fonte primaria.
-# Se vuoi tentare l'aggiornamento via API, imposta LS80_TICKER su Render.
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
 BTC_TICKER = os.getenv("BTC_TICKER", "BTC/EUR").strip()
@@ -254,8 +252,7 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = df.merge(world, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
-    # Compatibilità massima col sito attuale:
-    # usa l'ultimo dato disponibile e poi scarta solo le righe iniziali incomplete.
+    # Mantiene compatibilità col sito: riempie i buchi interni ma scarta l'inizio incompleto
     df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
@@ -594,7 +591,10 @@ def api_compute():
 @app.get("/api/compute_leva")
 def api_compute_leva():
     try:
-        capital = _safe_float(request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL), DEFAULT_LEVERAGE_CAPITAL)
+        capital = _safe_float(
+            request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL),
+            DEFAULT_LEVERAGE_CAPITAL,
+        )
         if capital <= 0:
             return _json_error("Capitale non valido.", 400)
 
@@ -730,12 +730,14 @@ def api_update_data():
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
         res_wd = update_one_asset(WORLD_FILE, WORLD_TICKER)
 
-        usable_all = all([
-            bool(res_ls.get("usable")),
-            bool(res_gd.get("usable")),
-            bool(res_bt.get("usable")),
-            bool(res_wd.get("usable")),
-        ])
+        usable_all = all(
+            [
+                bool(res_ls.get("usable")),
+                bool(res_gd.get("usable")),
+                bool(res_bt.get("usable")),
+                bool(res_wd.get("usable")),
+            ]
+        )
 
         return jsonify(
             {
