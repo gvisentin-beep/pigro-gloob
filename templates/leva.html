@@ -1,20 +1,47 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <title>Confronto Pigro vs Pigro Leva</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/style_4.css">
+  <meta charset="UTF-8">
+  <title>Confronto Pigro vs Leva</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      margin: 20px;
+    }
+
+    h2 {
+      margin-bottom: 20px;
+    }
+
+    .box {
+      margin-top: 20px;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 400px !important;
+    }
+  </style>
 </head>
 
 <body>
-    <h1>Confronto Portafoglio Pigro vs Pigro Leva 20%</h1>
 
-    <canvas id="chart" height="100"></canvas>
-    <canvas id="drawdownChart" height="100"></canvas>
+<h2>Confronto Portafoglio Pigro vs Pigro Leva 20%</h2>
 
-    <div id="metrics"></div>
+<div class="box">
+  <canvas id="chart"></canvas>
+</div>
 
-    <script src="/static/app_leva.js"></script>
+<div class="box">
+  <canvas id="drawdownChart"></canvas>
+</div>
+
+<div id="metrics" class="box"></div>
+
+<script src="/static/app_leva.js"></script>
+
 </body>
 </html>
