@@ -2,7 +2,7 @@
   let mainChart = null;
   let ddChart = null;
   let currentBenchmark = "world";
-  let currentMode = "normal"; // normal | leva
+  let currentMode = "normal"; // normal | leva_fissa | leva_dinamica
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
@@ -89,22 +89,19 @@
     }
   }
 
-  function buildYearTicks(labels) {
-    if (!Array.isArray(labels) || !labels.length) return [];
+  function yearTickIndices(labels) {
+    const out = new Set();
     const seen = new Set();
 
-    return labels.map((label) => {
+    labels.forEach((label, idx) => {
       const year = String(label || "").slice(0, 4);
-
-      if (!/^\d{4}$/.test(year)) return "";
-
-      if (!seen.has(year)) {
+      if (/^\d{4}$/.test(year) && !seen.has(year)) {
         seen.add(year);
-        return year;
+        out.add(idx);
       }
-
-      return "";
     });
+
+    return out;
   }
 
   function formatDateIt(isoDate) {
@@ -153,7 +150,7 @@
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
 
-    const xTickLabels = buildYearTicks(labels);
+    const keepTicks = yearTickIndices(labels);
 
     mainChart = new Chart(canvas, {
       type: "line",
@@ -188,12 +185,16 @@
         scales: {
           x: {
             grid: { display: false },
+            afterBuildTicks: function (axis) {
+              axis.ticks = axis.ticks.filter(t => keepTicks.has(t.value));
+            },
             ticks: {
               autoSkip: false,
               maxRotation: 0,
               minRotation: 0,
-              callback: function (value, index) {
-                return xTickLabels[index] || "";
+              callback: function (value) {
+                const lbl = this.getLabelForValue(value);
+                return String(lbl || "").slice(0, 4);
               }
             }
           },
@@ -214,7 +215,7 @@
     const canvas = document.getElementById("chart_dd");
     if (!canvas) return;
 
-    const xTickLabels = buildYearTicks(labels);
+    const keepTicks = yearTickIndices(labels);
 
     ddChart = new Chart(canvas, {
       type: "line",
@@ -249,12 +250,16 @@
         scales: {
           x: {
             grid: { display: false },
+            afterBuildTicks: function (axis) {
+              axis.ticks = axis.ticks.filter(t => keepTicks.has(t.value));
+            },
             ticks: {
               autoSkip: false,
               maxRotation: 0,
               minRotation: 0,
-              callback: function (value, index) {
-                return xTickLabels[index] || "";
+              callback: function (value) {
+                const lbl = this.getLabelForValue(value);
+                return String(lbl || "").slice(0, 4);
               }
             }
           },
@@ -271,10 +276,10 @@
     });
   }
 
-  function buildEpisodesComparisonHtml(pigroEpisodes, secondEpisodes, secondLabel) {
-    function line(rank, pigro, second) {
-      const left = pigro
-        ? `Pigro: <b>${pct(pigro.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(pigro.start)} → minimo ${formatDateIt(pigro.bottom)})</span>`
+  function buildEpisodesComparisonHtml(firstEpisodes, secondEpisodes, secondLabel) {
+    function line(rank, first, second) {
+      const left = first
+        ? `Pigro: <b>${pct(first.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(first.start)} → minimo ${formatDateIt(first.bottom)})</span>`
         : `Pigro: —`;
 
       const right = second
@@ -286,21 +291,27 @@
 
     return `
       <div><b>Confronto delle 2 peggiori discese complete</b></div>
-      ${line(1, pigroEpisodes[0], secondEpisodes[0])}
-      ${line(2, pigroEpisodes[1], secondEpisodes[1])}
+      ${line(1, firstEpisodes[0], secondEpisodes[0])}
+      ${line(2, firstEpisodes[1], secondEpisodes[1])}
     `;
   }
 
   function setActiveButtons() {
     document.querySelectorAll(".benchmarkBtn").forEach((btn) => {
-      const key = btn.getAttribute("data-benchmark");
-      const isLeva = btn.id === "btn_leva";
+      const bench = btn.getAttribute("data-benchmark");
+      const mode = btn.getAttribute("data-mode");
 
-      if (currentMode === "leva") {
-        btn.classList.toggle("active", isLeva);
-      } else {
-        btn.classList.toggle("active", key === currentBenchmark);
+      let active = false;
+
+      if (currentMode === "normal" && bench) {
+        active = bench === currentBenchmark;
+      } else if (currentMode === "leva_fissa" && mode === "leva_fissa") {
+        active = true;
+      } else if (currentMode === "leva_dinamica" && mode === "leva_dinamica") {
+        active = true;
       }
+
+      btn.classList.toggle("active", active);
     });
   }
 
@@ -348,21 +359,23 @@
     }
   }
 
-  function setLevaSummary(payload, capital) {
+  function setStrategySummary(payload, capital) {
     const labels = payload.dates || [];
     const pigroVals = payload.pigro || [];
-    const levaVals = payload.leva || [];
-    const ddPigroVals = payload.dd_pigro || payload.drawdown_pigro_pct || [];
-    const ddLevaVals = payload.dd_leva || payload.drawdown_leva_pct || [];
+    const strategyVals = payload.strategy || [];
+    const ddPigroVals = payload.dd_pigro || [];
+    const ddStrategyVals = payload.dd_strategy || [];
+
+    const strategyLabel = payload.strategy_label || "Strategia";
 
     const finalPigro = pigroVals[pigroVals.length - 1];
-    const finalLeva = levaVals[levaVals.length - 1];
-    const diff = finalLeva - finalPigro;
+    const finalStrategy = strategyVals[strategyVals.length - 1];
+    const diff = finalStrategy - finalPigro;
 
     const cagrPigro = Number(payload.cagr_pigro);
-    const cagrLeva = Number(payload.cagr_leva);
+    const cagrStrategy = Number(payload.cagr_strategy);
     const maxddPigro = Number(payload.maxdd_pigro);
-    const maxddLeva = Number(payload.maxdd_leva);
+    const maxddStrategy = Number(payload.maxdd_strategy);
 
     const startDate = labels[0] || "";
     const endDate = labels[labels.length - 1] || "";
@@ -371,95 +384,39 @@
       : NaN;
 
     const dblPigro = isFinite(cagrPigro) && cagrPigro > 0 ? 72 / cagrPigro : NaN;
-    const dblLeva = isFinite(cagrLeva) && cagrLeva > 0 ? 72 / cagrLeva : NaN;
-    const extraRendimento = isFinite(cagrPigro) && isFinite(cagrLeva) ? (cagrLeva - cagrPigro) : NaN;
+    const dblStrategy = isFinite(cagrStrategy) && cagrStrategy > 0 ? 72 / cagrStrategy : NaN;
+    const extraRendimento = isFinite(cagrPigro) && isFinite(cagrStrategy) ? (cagrStrategy - cagrPigro) : NaN;
+    const avgLeverage = Number(payload.avg_leverage_pct);
+    const maxLeverage = Number(payload.max_leverage_pct);
 
-    setText("final_value", euro(finalLeva, 0));
+    setText("final_value", euro(finalStrategy, 0));
     setText("final_years", isFinite(years) ? plain(years, 1) : "—");
     setText("cagr", isFinite(cagrPigro) ? pct(cagrPigro, 2) : "—");
     setText("maxdd", isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—");
     setText("dbl", isFinite(dblPigro) ? plain(dblPigro, 1) : "—");
 
-    setText("chart_title", "Andamento negli ultimi anni — confronto Pigro vs Pigro con leva");
-    setText("compare_title_benchmark", "Pigro Leva 20%");
+    setText("chart_title", `Andamento negli ultimi anni — confronto Pigro vs ${strategyLabel}`);
+    setText("compare_title_benchmark", strategyLabel);
 
     setText(
       "compare_period",
       `${euro(capital, 0)} investiti all’inizio del periodo (${startDate} → ${endDate})`
     );
     setText("compare_pigro", euro(finalPigro, 0));
-    setText("compare_benchmark", euro(finalLeva, 0));
+    setText("compare_benchmark", euro(finalStrategy, 0));
 
     setHtml(
       "benchmark_summary",
-      `<b>Pigro con leva 20%</b>: rendimento annualizzato <b>${isFinite(cagrLeva) ? pct(cagrLeva, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddLeva) ? pct(maxddLeva, 2) : "—"}</b>`
+      `<b>${strategyLabel}</b>: rendimento annualizzato <b>${isFinite(cagrStrategy) ? pct(cagrStrategy, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddStrategy) ? pct(maxddStrategy, 2) : "—"}</b>`
     );
-
-    function computeWorstEpisodes(values, labelsArr, topN = 2) {
-      if (!Array.isArray(values) || !values.length) return [];
-
-      let peak = values[0];
-      let peakIndex = 0;
-      let inDd = false;
-      let startIndex = 0;
-      let bottomIndex = 0;
-      let bottomDepth = 0;
-      const episodes = [];
-
-      for (let i = 0; i < values.length; i++) {
-        const v = values[i];
-
-        if (v >= peak) {
-          if (inDd) {
-            episodes.push({
-              start: labelsArr[startIndex],
-              bottom: labelsArr[bottomIndex],
-              end: labelsArr[i],
-              depth_pct: bottomDepth
-            });
-            inDd = false;
-          }
-          peak = v;
-          peakIndex = i;
-          continue;
-        }
-
-        const dd = ((v / peak) - 1) * 100;
-
-        if (!inDd) {
-          inDd = true;
-          startIndex = peakIndex;
-          bottomIndex = i;
-          bottomDepth = dd;
-        } else if (dd < bottomDepth) {
-          bottomDepth = dd;
-          bottomIndex = i;
-        }
-      }
-
-      if (inDd) {
-        episodes.push({
-          start: labelsArr[startIndex],
-          bottom: labelsArr[bottomIndex],
-          end: "in corso",
-          depth_pct: bottomDepth
-        });
-      }
-
-      episodes.sort((a, b) => a.depth_pct - b.depth_pct);
-      return episodes.slice(0, topN);
-    }
-
-    const worstPigro = computeWorstEpisodes(pigroVals, labels, 2);
-    const worstLeva = computeWorstEpisodes(levaVals, labels, 2);
 
     setHtml(
       "dd_summary",
-      `
-      <div><b>Confronto delle 2 peggiori discese complete</b></div>
-      <div style="margin-top:4px;"><b>1ª peggiore discesa</b> — Pigro: <b>${isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—"}</b> | Leva: <b>${isFinite(maxddLeva) ? pct(maxddLeva, 2) : "—"}</b></div>
-      <div style="margin-top:4px;"><b>2ª peggiore discesa</b> — Pigro: ${worstPigro[1] ? `<b>${pct(worstPigro[1].depth_pct, 2)}</b>` : "—"} | Leva: ${worstLeva[1] ? `<b>${pct(worstLeva[1].depth_pct, 2)}</b>` : "—"}</div>
-      `
+      buildEpisodesComparisonHtml(
+        payload.worst_episodes_pigro || [],
+        payload.worst_episodes_strategy || [],
+        strategyLabel
+      )
     );
 
     const compareBox = document.getElementById("compare_box");
@@ -468,24 +425,25 @@
         <strong>Confronto immediato</strong><br/>
         ${euro(capital, 0)} investiti all’inizio del periodo (${startDate} → ${endDate})<br/>
         Metodo Pigro → <b>${euro(finalPigro, 0)}</b><br/>
-        Pigro Leva 20% → <b>${euro(finalLeva, 0)}</b><br/><br/>
+        ${strategyLabel} → <b>${euro(finalStrategy, 0)}</b><br/><br/>
 
         <b style="color:#1f77b4">CAGR Pigro:</b> ${isFinite(cagrPigro) ? pct(cagrPigro, 2) : "—"}<br/>
-        <b style="color:#d94b64">CAGR Pigro Leva:</b> ${isFinite(cagrLeva) ? pct(cagrLeva, 2) : "—"}<br/>
-        <b>Extra rendimento leva:</b> ${isFinite(extraRendimento) ? pct(extraRendimento, 2) : "—"}<br/><br/>
+        <b style="color:#d94b64">CAGR ${strategyLabel}:</b> ${isFinite(cagrStrategy) ? pct(cagrStrategy, 2) : "—"}<br/>
+        <b>Extra rendimento:</b> ${isFinite(extraRendimento) ? pct(extraRendimento, 2) : "—"}<br/><br/>
 
         <b>Max Ribasso Pigro:</b> ${isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—"}<br/>
-        <b>Max Ribasso Pigro Leva:</b> ${isFinite(maxddLeva) ? pct(maxddLeva, 2) : "—"}<br/><br/>
+        <b>Max Ribasso ${strategyLabel}:</b> ${isFinite(maxddStrategy) ? pct(maxddStrategy, 2) : "—"}<br/><br/>
 
         <b>Anni teorici per raddoppio Pigro:</b> ${isFinite(dblPigro) ? plain(dblPigro, 1) : "—"}<br/>
-        <b>Anni teorici per raddoppio Leva:</b> ${isFinite(dblLeva) ? plain(dblLeva, 1) : "—"}<br/><br/>
+        <b>Anni teorici per raddoppio ${strategyLabel}:</b> ${isFinite(dblStrategy) ? plain(dblStrategy, 1) : "—"}<br/>
+        <b>Leva media utilizzata:</b> ${isFinite(avgLeverage) ? pct(avgLeverage, 2) : "—"}${isFinite(maxLeverage) ? `<br/><b>Leva massima utilizzata:</b> ${pct(maxLeverage, 2)}` : ""}<br/><br/>
 
-        <b>Vantaggio/Svantaggio leva:</b> ${euro(diff, 0)}
+        <b>Vantaggio/Svantaggio:</b> ${euro(diff, 0)}
       `;
     }
 
-    renderMain(labels, pigroVals, levaVals, "Pigro Leva 20%");
-    renderDd(labels, ddPigroVals, ddLevaVals, "Leva");
+    renderMain(labels, pigroVals, strategyVals, strategyLabel);
+    renderDd(labels, ddPigroVals, ddStrategyVals, strategyLabel);
   }
 
   function setNormalSummary(payload, capital) {
@@ -548,9 +506,9 @@
     if (compareBox) {
       compareBox.innerHTML = `
         <strong>Confronto immediato</strong><br/>
-        <span id="compare_period">${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})</span><br/>
-        Metodo Pigro → <b id="compare_pigro">${euro(last, 0)}</b><br/>
-        <span id="compare_title_benchmark">${benchmarkLabel}</span> → <b id="compare_benchmark">${euro(lastBenchmark, 0)}</b>
+        ${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})<br/>
+        Metodo Pigro → <b>${euro(last, 0)}</b><br/>
+        ${benchmarkLabel} → <b>${euro(lastBenchmark, 0)}</b>
       `;
     }
 
@@ -565,8 +523,10 @@
     try {
       let payload;
 
-      if (currentMode === "leva") {
+      if (currentMode === "leva_fissa") {
         payload = await fetchJson(`/api/compute_leva?capital=${encodeURIComponent(capital)}`);
+      } else if (currentMode === "leva_dinamica") {
+        payload = await fetchJson(`/api/compute_leva_dinamica?capital=${encodeURIComponent(capital)}`);
       } else {
         payload = await fetchJson(
           `/api/compute?capital=${encodeURIComponent(capital)}&benchmark=${encodeURIComponent(currentBenchmark)}`
@@ -581,10 +541,10 @@
 
       destroyCharts();
 
-      if (currentMode === "leva") {
-        setLevaSummary(payload, capital);
-      } else {
+      if (currentMode === "normal") {
         setNormalSummary(payload, capital);
+      } else {
+        setStrategySummary(payload, capital);
       }
     } catch (err) {
       console.error("Errore caricamento grafici:", err);
@@ -601,7 +561,7 @@
       setText("dd_summary", "Impossibile caricare i dati del grafico.");
       setText("benchmark_summary", "Impossibile calcolare il benchmark.");
 
-      alert("Impossibile caricare il grafico. Controlla /api/compute e i CSV.");
+      alert("Impossibile caricare il grafico. Controlla API e CSV.");
     }
   }
 
@@ -653,10 +613,19 @@
       });
     });
 
-    const btnLeva = document.getElementById("btn_leva");
-    if (btnLeva) {
-      btnLeva.addEventListener("click", function () {
-        currentMode = "leva";
+    const btnLevaFissa = document.querySelector('.benchmarkBtn[data-mode="leva_fissa"]');
+    if (btnLevaFissa) {
+      btnLevaFissa.addEventListener("click", function () {
+        currentMode = "leva_fissa";
+        setActiveButtons();
+        loadCharts();
+      });
+    }
+
+    const btnLevaDinamica = document.querySelector('.benchmarkBtn[data-mode="leva_dinamica"]');
+    if (btnLevaDinamica) {
+      btnLevaDinamica.addEventListener("click", function () {
+        currentMode = "leva_dinamica";
         setActiveButtons();
         loadCharts();
       });
