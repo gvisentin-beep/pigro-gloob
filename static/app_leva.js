@@ -1,113 +1,318 @@
-async function loadLeva() {
-    try {
-        const res = await fetch('/api/compute_leva');
-        const data = await res.json();
-
-        if (!data.ok) {
-            alert("Errore: " + data.error);
-            return;
-        }
-
-        const dates = data.dates;
-        const pigro = data.pigro;
-        const leva = data.leva;
-        const dd_pigro = data.dd_pigro;
-        const dd_leva = data.dd_leva;
-
-        // ===== GRAFICO VALORE =====
-        const ctx = document.getElementById('chartLeva').getContext('2d');
-
-        if (window.chartLeva) window.chartLeva.destroy();
-
-        window.chartLeva = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: dates,
-                datasets: [
-                    {
-                        label: 'Pigro',
-                        data: pigro,
-                        borderWidth: 2,
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Pigro Leva',
-                        data: leva,
-                        borderWidth: 2,
-                        tension: 0.1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: { position: 'top' }
-                },
-                scales: {
-                    x: {
-                        ticks: {
-                            maxTicksLimit: 10
-                        }
-                    }
-                }
-            }
-        });
-
-        // ===== GRAFICO DRAWDOWN =====
-        const ctx2 = document.getElementById('chartDrawdownLeva').getContext('2d');
-
-        if (window.chartDD) window.chartDD.destroy();
-
-        window.chartDD = new Chart(ctx2, {
-            type: 'line',
-            data: {
-                labels: dates,
-                datasets: [
-                    {
-                        label: 'Drawdown Pigro',
-                        data: dd_pigro,
-                        borderWidth: 1.5
-                    },
-                    {
-                        label: 'Drawdown Leva',
-                        data: dd_leva,
-                        borderWidth: 1.5
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        ticks: {
-                            callback: v => v + '%'
-                        }
-                    }
-                }
-            }
-        });
-
-        // ===== RISULTATI =====
-        const finalPigro = pigro[pigro.length - 1];
-        const finalLeva = leva[leva.length - 1];
-
-        document.getElementById("leva_results").innerHTML = `
-            <b>Confronto finale:</b><br>
-            Pigro: € ${finalPigro.toLocaleString()}<br>
-            Leva: € ${finalLeva.toLocaleString()}<br><br>
-
-            CAGR Pigro: ${data.cagr_pigro}%<br>
-            CAGR Leva: ${data.cagr_leva}%<br><br>
-
-            Max Ribasso Pigro: ${data.maxdd_pigro}%<br>
-            Max Ribasso Leva: ${data.maxdd_leva}%<br>
-        `;
-
-    } catch (err) {
-        console.error(err);
-        alert("Errore caricamento leva");
+(async function () {
+  function byIds(ids) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) return el;
     }
-}
+    return null;
+  }
 
-window.onload = loadLeva;
+  function euro(value, digits = 0) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("it-IT", {
+      style: "currency",
+      currency: "EUR",
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function pct(value, digits = 2) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("it-IT", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    }) + "%";
+  }
+
+  function plain(value, digits = 1) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("it-IT", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function buildYearTicks(labels) {
+    let lastYear = null;
+    return labels.map((label) => {
+      const year = String(label || "").slice(0, 4);
+      if (/^\d{4}$/.test(year) && year !== lastYear) {
+        lastYear = year;
+        return year;
+      }
+      return "";
+    });
+  }
+
+  function computeWorstEpisodes(values, labels, topN = 2) {
+    if (!Array.isArray(values) || !values.length) return [];
+
+    let peak = values[0];
+    let peakIndex = 0;
+    let inDd = false;
+    let startIndex = 0;
+    let bottomIndex = 0;
+    let bottomDepth = 0;
+    const episodes = [];
+
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+
+      if (v >= peak) {
+        if (inDd) {
+          episodes.push({
+            start: labels[startIndex],
+            bottom: labels[bottomIndex],
+            end: labels[i],
+            depth_pct: bottomDepth
+          });
+          inDd = false;
+        }
+        peak = v;
+        peakIndex = i;
+        continue;
+      }
+
+      const dd = ((v / peak) - 1) * 100;
+
+      if (!inDd) {
+        inDd = true;
+        startIndex = peakIndex;
+        bottomIndex = i;
+        bottomDepth = dd;
+      } else if (dd < bottomDepth) {
+        bottomDepth = dd;
+        bottomIndex = i;
+      }
+    }
+
+    if (inDd) {
+      episodes.push({
+        start: labels[startIndex],
+        bottom: labels[bottomIndex],
+        end: "in corso",
+        depth_pct: bottomDepth
+      });
+    }
+
+    episodes.sort((a, b) => a.depth_pct - b.depth_pct);
+    return episodes.slice(0, topN);
+  }
+
+  function formatDateIt(isoDate) {
+    if (!isoDate || isoDate === "in corso") return isoDate || "—";
+    const parts = String(isoDate).split("-");
+    if (parts.length !== 3) return isoDate;
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+
+  function buildEpisodesHtml(pigroEpisodes, levaEpisodes) {
+    function row(rank, a, b) {
+      const left = a
+        ? `Pigro: <b>${pct(a.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(a.start)} → minimo ${formatDateIt(a.bottom)})</span>`
+        : "Pigro: —";
+
+      const right = b
+        ? `Leva: <b>${pct(b.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(b.start)} → minimo ${formatDateIt(b.bottom)})</span>`
+        : "Leva: —";
+
+      return `<div style="margin-top:4px;"><b>${rank}ª peggiore discesa</b> — ${left} | ${right}</div>`;
+    }
+
+    return `
+      <div><b>Confronto delle 2 peggiori discese</b></div>
+      ${row(1, pigroEpisodes[0], levaEpisodes[0])}
+      ${row(2, pigroEpisodes[1], levaEpisodes[1])}
+    `;
+  }
+
+  try {
+    const res = await fetch("/api/compute_leva", { cache: "no-store" });
+    const data = await res.json();
+
+    if (!data || data.ok !== true) {
+      throw new Error(data && data.error ? data.error : "Risposta backend non valida");
+    }
+
+    const labels = data.dates || [];
+    const pigro = data.pigro || [];
+    const leva = data.leva || [];
+    const ddPigro = data.dd_pigro || data.drawdown_pigro_pct || [];
+    const ddLeva = data.dd_leva || data.drawdown_leva_pct || [];
+
+    if (!labels.length || !pigro.length || !leva.length) {
+      throw new Error("Dataset leva vuoto");
+    }
+
+    const chartCanvas = byIds(["chart", "chartLeva"]);
+    const ddCanvas = byIds(["drawdownChart", "chartDrawdownLeva"]);
+    const metricsBox = byIds(["metrics", "leva_results"]);
+
+    if (!chartCanvas) {
+      throw new Error("Canvas principale non trovato");
+    }
+    if (!ddCanvas) {
+      throw new Error("Canvas drawdown non trovato");
+    }
+
+    const xTickLabels = buildYearTicks(labels);
+
+    if (window.chartLevaMain) window.chartLevaMain.destroy();
+    if (window.chartLevaDD) window.chartLevaDD.destroy();
+
+    window.chartLevaMain = new Chart(chartCanvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Pigro",
+            data: pigro,
+            borderWidth: 2,
+            tension: 0.12,
+            pointRadius: 0,
+            pointHoverRadius: 3
+          },
+          {
+            label: "Pigro Leva",
+            data: leva,
+            borderWidth: 2,
+            tension: 0.12,
+            pointRadius: 0,
+            pointHoverRadius: 3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: true }
+        },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: function (value, index) {
+                return xTickLabels[index] || "";
+              }
+            }
+          },
+          y: {
+            ticks: {
+              callback: function (value) {
+                return euro(value, 0);
+              }
+            }
+          }
+        }
+      }
+    });
+
+    window.chartLevaDD = new Chart(ddCanvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Drawdown Pigro",
+            data: ddPigro,
+            borderWidth: 2,
+            tension: 0.12,
+            pointRadius: 0,
+            pointHoverRadius: 3
+          },
+          {
+            label: "Drawdown Leva",
+            data: ddLeva,
+            borderWidth: 2,
+            tension: 0.12,
+            pointRadius: 0,
+            pointHoverRadius: 3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: true }
+        },
+        scales: {
+          x: {
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: function (value, index) {
+                return xTickLabels[index] || "";
+              }
+            }
+          },
+          y: {
+            suggestedMax: 0,
+            ticks: {
+              callback: function (value) {
+                return pct(value, 0);
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (metricsBox) {
+      const finalPigro = pigro[pigro.length - 1];
+      const finalLeva = leva[leva.length - 1];
+      const diff = finalLeva - finalPigro;
+
+      const cagrPigro = Number(data.cagr_pigro);
+      const cagrLeva = Number(data.cagr_leva);
+      const maxddPigro = Number(data.maxdd_pigro);
+      const maxddLeva = Number(data.maxdd_leva);
+
+      const years = labels.length >= 2
+        ? ((new Date(labels[labels.length - 1]) - new Date(labels[0])) / (365.25 * 24 * 3600 * 1000))
+        : NaN;
+
+      const dblPigro = isFinite(cagrPigro) && cagrPigro > 0 ? 72 / cagrPigro : NaN;
+      const dblLeva = isFinite(cagrLeva) && cagrLeva > 0 ? 72 / cagrLeva : NaN;
+
+      const worstPigro = computeWorstEpisodes(pigro, labels, 2);
+      const worstLeva = computeWorstEpisodes(leva, labels, 2);
+
+      metricsBox.innerHTML = `
+        <div style="margin-top:16px; line-height:1.55;">
+          <div><b>Periodo analizzato:</b> ${formatDateIt(labels[0])} → ${formatDateIt(labels[labels.length - 1])} ${isFinite(years) ? `(circa ${plain(years, 1)} anni)` : ""}</div>
+          <div style="margin-top:8px;"><b>Valore finale Pigro:</b> ${euro(finalPigro, 0)}</div>
+          <div><b>Valore finale Pigro Leva 20%:</b> ${euro(finalLeva, 0)}</div>
+          <div><b>Vantaggio/Svantaggio leva:</b> ${euro(diff, 0)}</div>
+
+          <div style="margin-top:10px;"><b>CAGR Pigro:</b> ${pct(cagrPigro, 2)}</div>
+          <div><b>CAGR Pigro Leva:</b> ${pct(cagrLeva, 2)}</div>
+
+          <div style="margin-top:10px;"><b>Max Ribasso Pigro:</b> ${pct(maxddPigro, 2)}</div>
+          <div><b>Max Ribasso Pigro Leva:</b> ${pct(maxddLeva, 2)}</div>
+
+          <div style="margin-top:10px;"><b>Anni teorici per raddoppio Pigro:</b> ${isFinite(dblPigro) ? plain(dblPigro, 1) : "—"}</div>
+          <div><b>Anni teorici per raddoppio Leva:</b> ${isFinite(dblLeva) ? plain(dblLeva, 1) : "—"}</div>
+
+          <div style="margin-top:12px;">
+            ${buildEpisodesHtml(worstPigro, worstLeva)}
+          </div>
+        </div>
+      `;
+    }
+  } catch (err) {
+    console.error("Errore caricamento leva:", err);
+    alert("Errore caricamento leva");
+  }
+})();
