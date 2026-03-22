@@ -252,7 +252,6 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = df.merge(world, on="date", how="outer")
     df = df.sort_values("date").reset_index(drop=True)
 
-    # Mantiene compatibilità col sito: riempie i buchi interni ma scarta l'inizio incompleto
     df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
@@ -388,7 +387,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
     pigro_values = []
     leva_equity_values = []
     debt_values = []
-    gross_values = []
 
     for i in range(n):
         gross_pigro = (
@@ -412,7 +410,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
         pigro_values.append(gross_pigro)
         leva_equity_values.append(equity_leva)
         debt_values.append(debt)
-        gross_values.append(gross_leva)
 
         if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
             pigro_hold = _rebalance_holdings(
@@ -438,7 +435,6 @@ def compute_portfolios_annual_rebalance_with_leverage(
         "pigro": pd.Series(pigro_values),
         "leva_equity": pd.Series(leva_equity_values),
         "leva_debt": pd.Series(debt_values),
-        "leva_gross": pd.Series(gross_values),
     }
 
 
@@ -607,7 +603,6 @@ def api_compute_leva():
             )
 
         dates = df["date"].reset_index(drop=True)
-
         series = compute_portfolios_annual_rebalance_with_leverage(
             df=df,
             capital=capital,
@@ -617,65 +612,33 @@ def api_compute_leva():
 
         pigro = series["pigro"].reset_index(drop=True)
         leva_equity = series["leva_equity"].reset_index(drop=True)
-        leva_debt = series["leva_debt"].reset_index(drop=True)
-        leva_gross = series["leva_gross"].reset_index(drop=True)
 
         dd_pigro = compute_drawdown_series_pct(pigro)
         dd_leva = compute_drawdown_series_pct(leva_equity)
 
-        cagr_pigro = compute_cagr(pigro, dates)
-        cagr_leva = compute_cagr(leva_equity, dates)
+        cagr_pigro = compute_cagr(pigro, dates) * 100.0
+        cagr_leva = compute_cagr(leva_equity, dates) * 100.0
 
-        maxdd_pigro = compute_max_dd(pigro)
-        maxdd_leva = compute_max_dd(leva_equity)
-
-        dbl_pigro = doubling_years(cagr_pigro)
-        dbl_leva = doubling_years(cagr_leva)
-
-        worst_pigro = worst_drawdowns(pigro, dates, n=3)
-        worst_leva = worst_drawdowns(leva_equity, dates, n=3)
-
-        years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
-
-        warnings: list[str] = []
-        for name, stale_days in freshness.items():
-            if stale_days is not None and stale_days > STALE_WARNING_DAYS:
-                warnings.append(f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile")
+        maxdd_pigro = compute_max_dd(pigro) * 100.0
+        maxdd_leva = compute_max_dd(leva_equity) * 100.0
 
         return jsonify(
             {
                 "ok": True,
                 "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
-                "pigro": [round(float(x), 6) for x in pigro.tolist()],
-                "leva": [round(float(x), 6) for x in leva_equity.tolist()],
-                "drawdown_pigro_pct": [round(float(x), 6) for x in dd_pigro.tolist()],
-                "drawdown_leva_pct": [round(float(x), 6) for x in dd_leva.tolist()],
-                "debt_series": [round(float(x), 6) for x in leva_debt.tolist()],
-                "gross_series": [round(float(x), 6) for x in leva_gross.tolist()],
-                "leverage": {
-                    "ratio": LEVERAGE_RATIO,
-                    "lombard_rate_annual": LOMBARD_RATE_ANNUAL,
-                    "rebalance": "annuale",
-                },
-                "freshness_days": freshness,
-                "warnings": warnings,
-                "metrics": {
-                    "initial_capital": float(capital),
-                    "final_years": float(years_period),
-                    "final_pigro": float(pigro.iloc[-1]),
-                    "final_leva": float(leva_equity.iloc[-1]),
-                    "cagr_pigro": float(cagr_pigro),
-                    "cagr_leva": float(cagr_leva),
-                    "max_dd_pigro": float(maxdd_pigro),
-                    "max_dd_leva": float(maxdd_leva),
-                    "doubling_years_pigro": float(dbl_pigro) if dbl_pigro is not None else None,
-                    "doubling_years_leva": float(dbl_leva) if dbl_leva is not None else None,
-                    "initial_debt": float(capital * LEVERAGE_RATIO),
-                    "final_debt": float(leva_debt.iloc[-1]),
-                    "final_gross_assets": float(leva_gross.iloc[-1]),
-                    "worst_episodes_pigro": worst_pigro,
-                    "worst_episodes_leva": worst_leva,
-                },
+                "pigro": [round(float(x), 2) for x in pigro.tolist()],
+                "leva": [round(float(x), 2) for x in leva_equity.tolist()],
+                "dd_pigro": [round(float(x), 2) for x in dd_pigro.tolist()],
+                "dd_leva": [round(float(x), 2) for x in dd_leva.tolist()],
+                "cagr_pigro": round(float(cagr_pigro), 2),
+                "cagr_leva": round(float(cagr_leva), 2),
+                "maxdd_pigro": round(float(maxdd_pigro), 2),
+                "maxdd_leva": round(float(maxdd_leva), 2),
+                "warnings": [
+                    f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile"
+                    for name, stale_days in freshness.items()
+                    if stale_days is not None and stale_days > STALE_WARNING_DAYS
+                ],
             }
         )
     except Exception as e:
@@ -730,14 +693,12 @@ def api_update_data():
         res_bt = update_one_asset(BTC_FILE, BTC_TICKER)
         res_wd = update_one_asset(WORLD_FILE, WORLD_TICKER)
 
-        usable_all = all(
-            [
-                bool(res_ls.get("usable")),
-                bool(res_gd.get("usable")),
-                bool(res_bt.get("usable")),
-                bool(res_wd.get("usable")),
-            ]
-        )
+        usable_all = all([
+            bool(res_ls.get("usable")),
+            bool(res_gd.get("usable")),
+            bool(res_bt.get("usable")),
+            bool(res_wd.get("usable")),
+        ])
 
         return jsonify(
             {
