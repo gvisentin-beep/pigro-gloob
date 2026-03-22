@@ -20,6 +20,8 @@ LS80_FILE = DATA_DIR / "ls80.csv"
 GOLD_FILE = DATA_DIR / "gold.csv"
 BTC_FILE = DATA_DIR / "btc.csv"
 WORLD_FILE = DATA_DIR / "world.csv"
+MIB_FILE = DATA_DIR / "mib.csv"
+SP500_FILE = DATA_DIR / "sp500.csv"
 
 LS80_TICKER = os.getenv("LS80_TICKER", "VNGA80.MI").strip()
 GOLD_TICKER = os.getenv("GOLD_TICKER", "GLD").strip()
@@ -36,14 +38,32 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 WEIGHT_LS80 = 0.80
 WEIGHT_GOLD = 0.15
 WEIGHT_BTC = 0.05
+
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
 
-# Leva
 DEFAULT_LEVERAGE_CAPITAL = 100000.0
 LEVERAGE_RATIO = 0.20
 LOMBARD_RATE_ANNUAL = 0.025
 DAY_COUNT = 365.25
+
+BENCHMARKS: Dict[str, Dict[str, Any]] = {
+    "world": {
+        "label": "MSCI World",
+        "file": WORLD_FILE,
+        "column": "world",
+    },
+    "mib": {
+        "label": "iShares FTSE MIB UCITS ETF",
+        "file": MIB_FILE,
+        "column": "mib",
+    },
+    "sp500": {
+        "label": "iShares Core S&P 500 UCITS ETF (Acc)",
+        "file": SP500_FILE,
+        "column": "sp500",
+    },
+}
 
 
 def _now_utc() -> datetime:
@@ -122,6 +142,13 @@ def read_price_csv(path: Path) -> pd.DataFrame:
         raise ValueError(f"CSV non valido: {path}")
 
     return df[["date", "close"]].copy()
+
+
+def try_read_price_csv(path: Path) -> Optional[pd.DataFrame]:
+    try:
+        return read_price_csv(path)
+    except Exception:
+        return None
 
 
 def write_price_csv(path: Path, df: pd.DataFrame) -> None:
@@ -240,23 +267,43 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     btc = read_price_csv(BTC_FILE).rename(columns={"close": "btc"})
     world = read_price_csv(WORLD_FILE).rename(columns={"close": "world"})
 
+    mib = try_read_price_csv(MIB_FILE)
+    sp500 = try_read_price_csv(SP500_FILE)
+
     freshness = {
         "ls80": dataset_freshness_days(ls80),
         "gold": dataset_freshness_days(gold),
         "btc": dataset_freshness_days(btc),
         "world": dataset_freshness_days(world),
+        "mib": dataset_freshness_days(mib) if mib is not None else None,
+        "sp500": dataset_freshness_days(sp500) if sp500 is not None else None,
     }
 
     df = ls80.merge(gold, on="date", how="outer")
     df = df.merge(btc, on="date", how="outer")
     df = df.merge(world, on="date", how="outer")
+
+    if mib is not None and not mib.empty:
+        df = df.merge(mib.rename(columns={"close": "mib"}), on="date", how="outer")
+    else:
+        df["mib"] = pd.NA
+
+    if sp500 is not None and not sp500.empty:
+        df = df.merge(sp500.rename(columns={"close": "sp500"}), on="date", how="outer")
+    else:
+        df["sp500"] = pd.NA
+
     df = df.sort_values("date").reset_index(drop=True)
 
-    df[["ls80", "gold", "btc", "world"]] = df[["ls80", "gold", "btc", "world"]].ffill()
+    value_cols = ["ls80", "gold", "btc", "world", "mib", "sp500"]
+    for col in value_cols:
+        if col in df.columns:
+            df[col] = df[col].ffill()
+
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
     if df.empty:
-        raise ValueError("Dataset vuoto dopo il merge dei quattro CSV")
+        raise ValueError("Dataset vuoto dopo il merge dei CSV")
 
     return df, freshness
 
@@ -491,23 +538,15 @@ def api_diag():
             "gold": info(GOLD_FILE),
             "btc": info(BTC_FILE),
             "world": info(WORLD_FILE),
-        },
-        "env": {
-            "LS80_TICKER": LS80_TICKER,
-            "GOLD_TICKER": GOLD_TICKER,
-            "BTC_TICKER": BTC_TICKER,
-            "WORLD_TICKER": WORLD_TICKER,
-            "TWELVE_DATA_API_KEY_present": bool(TWELVE_DATA_API_KEY),
-            "UPDATE_TOKEN_present": bool(UPDATE_TOKEN),
-            "OPENAI_API_KEY_present": bool(OPENAI_API_KEY),
-            "OPENAI_MODEL": OPENAI_MODEL,
+            "mib": info(MIB_FILE) if MIB_FILE.exists() else {"exists": False, "file": str(MIB_FILE)},
+            "sp500": info(SP500_FILE) if SP500_FILE.exists() else {"exists": False, "file": str(SP500_FILE)},
         },
     }
 
     try:
         merged, freshness = build_merged_dataset()
         payload["merge"] = {
-            "rows_after_outer_ffill": int(len(merged)),
+            "rows": int(len(merged)),
             "first_date": str(merged["date"].iloc[0].date()),
             "last_date": str(merged["date"].iloc[-1].date()),
             "freshness_days": freshness,
@@ -522,32 +561,57 @@ def api_diag():
 def api_compute():
     try:
         capital = _safe_float(request.args.get("capital", 10000), 10000.0)
+        benchmark_key = (request.args.get("benchmark", "world") or "world").strip().lower()
+
         if capital <= 0:
             return _json_error("Capitale non valido.", 400)
 
         df, freshness = build_merged_dataset()
         if len(df) < MIN_ROWS_REQUIRED:
             return _json_error(
-                "Serie troppo corta dopo il merge tra LS80, Oro, Bitcoin e MSCI World.",
+                "Serie troppo corta dopo il merge tra LS80, Oro, Bitcoin e benchmark.",
                 400,
                 rows=int(len(df)),
             )
 
-        dates = df["date"].reset_index(drop=True)
-        portfolio = compute_portfolio_fixed(df["ls80"], df["gold"], df["btc"], capital).reset_index(drop=True)
-        world_scaled = (capital * (df["world"] / df["world"].iloc[0])).reset_index(drop=True)
+        if benchmark_key not in BENCHMARKS:
+            benchmark_key = "world"
+
+        benchmark_column = BENCHMARKS[benchmark_key]["column"]
+        benchmark_label = BENCHMARKS[benchmark_key]["label"]
+
+        if benchmark_column not in df.columns or df[benchmark_column].isna().all():
+            benchmark_key = "world"
+            benchmark_column = "world"
+            benchmark_label = BENCHMARKS["world"]["label"]
+
+        benchmark_series_raw = df[benchmark_column].copy().ffill()
+        valid_mask = benchmark_series_raw.notna()
+        if valid_mask.sum() < MIN_ROWS_REQUIRED:
+            benchmark_series_raw = df["world"].copy().ffill()
+            benchmark_label = BENCHMARKS["world"]["label"]
+            valid_mask = benchmark_series_raw.notna()
+
+        work = df.loc[valid_mask, ["date", "ls80", "gold", "btc"]].copy()
+        work["benchmark_raw"] = benchmark_series_raw.loc[valid_mask].values
+        work = work.reset_index(drop=True)
+
+        dates = work["date"]
+        portfolio = compute_portfolio_fixed(work["ls80"], work["gold"], work["btc"], capital).reset_index(drop=True)
+        benchmark_scaled = (capital * (work["benchmark_raw"] / work["benchmark_raw"].iloc[0])).reset_index(drop=True)
 
         cagr_port = compute_cagr(portfolio, dates)
         maxdd_port = compute_max_dd(portfolio)
         dbl_years = doubling_years(cagr_port)
-        cagr_world = compute_cagr(world_scaled, dates)
-        maxdd_world = compute_max_dd(world_scaled)
+
+        cagr_benchmark = compute_cagr(benchmark_scaled, dates)
+        maxdd_benchmark = compute_max_dd(benchmark_scaled)
 
         dd_port = compute_drawdown_series_pct(portfolio)
-        dd_world = compute_drawdown_series_pct(world_scaled)
+        dd_benchmark = compute_drawdown_series_pct(benchmark_scaled)
 
         worst_port = worst_drawdowns(portfolio, dates, n=3)
-        worst_world = worst_drawdowns(world_scaled, dates, n=3)
+        worst_benchmark = worst_drawdowns(benchmark_scaled, dates, n=3)
 
         years_period = (dates.iloc[-1] - dates.iloc[0]).days / 365.25
         warnings: list[str] = []
@@ -560,23 +624,23 @@ def api_compute():
                 "ok": True,
                 "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
                 "portfolio": [round(float(x), 6) for x in portfolio.tolist()],
-                "world": [round(float(x), 6) for x in world_scaled.tolist()],
+                "benchmark": [round(float(x), 6) for x in benchmark_scaled.tolist()],
                 "drawdown_portfolio_pct": [round(float(x), 6) for x in dd_port.tolist()],
-                "drawdown_world_pct": [round(float(x), 6) for x in dd_world.tolist()],
-                "composition": {"ls80": WEIGHT_LS80, "gold": WEIGHT_GOLD, "btc": WEIGHT_BTC},
-                "freshness_days": freshness,
+                "drawdown_benchmark_pct": [round(float(x), 6) for x in dd_benchmark.tolist()],
+                "benchmark_label": benchmark_label,
+                "benchmark_key": benchmark_key,
                 "warnings": warnings,
                 "metrics": {
                     "final_portfolio": float(portfolio.iloc[-1]),
-                    "final_world": float(world_scaled.iloc[-1]),
+                    "final_benchmark": float(benchmark_scaled.iloc[-1]),
                     "final_years": float(years_period),
                     "cagr_portfolio": float(cagr_port),
                     "max_dd_portfolio": float(maxdd_port),
                     "doubling_years_portfolio": float(dbl_years) if dbl_years is not None else None,
-                    "cagr_world": float(cagr_world),
-                    "max_dd_world": float(maxdd_world),
+                    "cagr_benchmark": float(cagr_benchmark),
+                    "max_dd_benchmark": float(maxdd_benchmark),
                     "worst_episodes_portfolio": worst_port,
-                    "worst_episodes_world": worst_world,
+                    "worst_episodes_benchmark": worst_benchmark,
                 },
             }
         )
@@ -587,10 +651,7 @@ def api_compute():
 @app.get("/api/compute_leva")
 def api_compute_leva():
     try:
-        capital = _safe_float(
-            request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL),
-            DEFAULT_LEVERAGE_CAPITAL,
-        )
+        capital = _safe_float(request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL), DEFAULT_LEVERAGE_CAPITAL)
         if capital <= 0:
             return _json_error("Capitale non valido.", 400)
 
@@ -741,7 +802,7 @@ def api_pdf():
 
         buf = BytesIO()
         c = canvas.Canvas(buf, pagesize=A4)
-        w, h = A4
+        _, h = A4
 
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, h - 60, title)
