@@ -2,6 +2,7 @@
   let mainChart = null;
   let ddChart = null;
   let currentBenchmark = "world";
+  let currentMode = "normal"; // normal | leva
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
@@ -89,15 +90,19 @@
   }
 
   function buildYearTicks(labels) {
-    if (!Array.isArray(labels) || !labels.length) return labels;
-    let lastYear = null;
+    if (!Array.isArray(labels) || !labels.length) return [];
+    const seen = new Set();
+
     return labels.map((label) => {
-      const txt = String(label || "");
-      const year = txt.slice(0, 4);
-      if (/^\d{4}$/.test(year) && year !== lastYear) {
-        lastYear = year;
+      const year = String(label || "").slice(0, 4);
+
+      if (!/^\d{4}$/.test(year)) return "";
+
+      if (!seen.has(year)) {
+        seen.add(year);
         return year;
       }
+
       return "";
     });
   }
@@ -144,7 +149,7 @@
     };
   }
 
-  function renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel) {
+  function renderMain(labels, firstVals, secondVals, secondLabel) {
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
 
@@ -157,11 +162,11 @@
         datasets: [
           {
             label: "Metodo Pigro 80/15/5",
-            data: pigroVals
+            data: firstVals
           },
           {
-            label: benchmarkLabel,
-            data: benchmarkVals
+            label: secondLabel,
+            data: secondVals
           }
         ]
       },
@@ -205,7 +210,7 @@
     });
   }
 
-  function renderDd(labels, ddPigroVals, ddBenchmarkVals, benchmarkLabel) {
+  function renderDd(labels, ddFirstVals, ddSecondVals, secondLabel) {
     const canvas = document.getElementById("chart_dd");
     if (!canvas) return;
 
@@ -218,11 +223,11 @@
         datasets: [
           {
             label: "Drawdown Portafoglio Pigro",
-            data: ddPigroVals
+            data: ddFirstVals
           },
           {
-            label: `Drawdown ${benchmarkLabel}`,
-            data: ddBenchmarkVals
+            label: `Drawdown ${secondLabel}`,
+            data: ddSecondVals
           }
         ]
       },
@@ -266,30 +271,36 @@
     });
   }
 
-  function buildEpisodesComparisonHtml(pigroEpisodes, benchmarkEpisodes, benchmarkLabel) {
-    function line(rank, pigro, benchmark) {
+  function buildEpisodesComparisonHtml(pigroEpisodes, secondEpisodes, secondLabel) {
+    function line(rank, pigro, second) {
       const left = pigro
         ? `Pigro: <b>${pct(pigro.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(pigro.start)} → minimo ${formatDateIt(pigro.bottom)})</span>`
         : `Pigro: —`;
 
-      const right = benchmark
-        ? `${benchmarkLabel}: <b>${pct(benchmark.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(benchmark.start)} → minimo ${formatDateIt(benchmark.bottom)})</span>`
-        : `${benchmarkLabel}: —`;
+      const right = second
+        ? `${secondLabel}: <b>${pct(second.depth_pct, 2)}</b> <span style="opacity:.9;">(${formatDateIt(second.start)} → minimo ${formatDateIt(second.bottom)})</span>`
+        : `${secondLabel}: —`;
 
       return `<div style="margin-top:4px;"><b>${rank}ª peggiore discesa</b> — ${left} | ${right}</div>`;
     }
 
     return `
       <div><b>Confronto delle 2 peggiori discese complete</b></div>
-      ${line(1, pigroEpisodes[0], benchmarkEpisodes[0])}
-      ${line(2, pigroEpisodes[1], benchmarkEpisodes[1])}
+      ${line(1, pigroEpisodes[0], secondEpisodes[0])}
+      ${line(2, pigroEpisodes[1], secondEpisodes[1])}
     `;
   }
 
-  function setActiveBenchmarkButton() {
+  function setActiveButtons() {
     document.querySelectorAll(".benchmarkBtn").forEach((btn) => {
       const key = btn.getAttribute("data-benchmark");
-      btn.classList.toggle("active", key === currentBenchmark);
+      const isLeva = btn.id === "btn_leva";
+
+      if (currentMode === "leva") {
+        btn.classList.toggle("active", isLeva);
+      } else {
+        btn.classList.toggle("active", key === currentBenchmark);
+      }
     });
   }
 
@@ -337,14 +348,230 @@
     }
   }
 
+  function setLevaSummary(payload, capital) {
+    const labels = payload.dates || [];
+    const pigroVals = payload.pigro || [];
+    const levaVals = payload.leva || [];
+    const ddPigroVals = payload.dd_pigro || payload.drawdown_pigro_pct || [];
+    const ddLevaVals = payload.dd_leva || payload.drawdown_leva_pct || [];
+
+    const finalPigro = pigroVals[pigroVals.length - 1];
+    const finalLeva = levaVals[levaVals.length - 1];
+    const diff = finalLeva - finalPigro;
+
+    const cagrPigro = Number(payload.cagr_pigro);
+    const cagrLeva = Number(payload.cagr_leva);
+    const maxddPigro = Number(payload.maxdd_pigro);
+    const maxddLeva = Number(payload.maxdd_leva);
+
+    const startDate = labels[0] || "";
+    const endDate = labels[labels.length - 1] || "";
+    const years = startDate && endDate
+      ? ((new Date(endDate) - new Date(startDate)) / (365.25 * 24 * 3600 * 1000))
+      : NaN;
+
+    const dblPigro = isFinite(cagrPigro) && cagrPigro > 0 ? 72 / cagrPigro : NaN;
+    const dblLeva = isFinite(cagrLeva) && cagrLeva > 0 ? 72 / cagrLeva : NaN;
+    const extraRendimento = isFinite(cagrPigro) && isFinite(cagrLeva) ? (cagrLeva - cagrPigro) : NaN;
+
+    setText("final_value", euro(finalLeva, 0));
+    setText("final_years", isFinite(years) ? plain(years, 1) : "—");
+    setText("cagr", isFinite(cagrPigro) ? pct(cagrPigro, 2) : "—");
+    setText("maxdd", isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—");
+    setText("dbl", isFinite(dblPigro) ? plain(dblPigro, 1) : "—");
+
+    setText("chart_title", "Andamento negli ultimi anni — confronto Pigro vs Pigro con leva");
+    setText("compare_title_benchmark", "Pigro Leva 20%");
+
+    setText(
+      "compare_period",
+      `${euro(capital, 0)} investiti all’inizio del periodo (${startDate} → ${endDate})`
+    );
+    setText("compare_pigro", euro(finalPigro, 0));
+    setText("compare_benchmark", euro(finalLeva, 0));
+
+    setHtml(
+      "benchmark_summary",
+      `<b>Pigro con leva 20%</b>: rendimento annualizzato <b>${isFinite(cagrLeva) ? pct(cagrLeva, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddLeva) ? pct(maxddLeva, 2) : "—"}</b>`
+    );
+
+    function computeWorstEpisodes(values, labelsArr, topN = 2) {
+      if (!Array.isArray(values) || !values.length) return [];
+
+      let peak = values[0];
+      let peakIndex = 0;
+      let inDd = false;
+      let startIndex = 0;
+      let bottomIndex = 0;
+      let bottomDepth = 0;
+      const episodes = [];
+
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+
+        if (v >= peak) {
+          if (inDd) {
+            episodes.push({
+              start: labelsArr[startIndex],
+              bottom: labelsArr[bottomIndex],
+              end: labelsArr[i],
+              depth_pct: bottomDepth
+            });
+            inDd = false;
+          }
+          peak = v;
+          peakIndex = i;
+          continue;
+        }
+
+        const dd = ((v / peak) - 1) * 100;
+
+        if (!inDd) {
+          inDd = true;
+          startIndex = peakIndex;
+          bottomIndex = i;
+          bottomDepth = dd;
+        } else if (dd < bottomDepth) {
+          bottomDepth = dd;
+          bottomIndex = i;
+        }
+      }
+
+      if (inDd) {
+        episodes.push({
+          start: labelsArr[startIndex],
+          bottom: labelsArr[bottomIndex],
+          end: "in corso",
+          depth_pct: bottomDepth
+        });
+      }
+
+      episodes.sort((a, b) => a.depth_pct - b.depth_pct);
+      return episodes.slice(0, topN);
+    }
+
+    const worstPigro = computeWorstEpisodes(pigroVals, labels, 2);
+    const worstLeva = computeWorstEpisodes(levaVals, labels, 2);
+
+    setHtml(
+      "dd_summary",
+      `
+      <div><b>Confronto delle 2 peggiori discese complete</b></div>
+      <div style="margin-top:4px;"><b>1ª peggiore discesa</b> — Pigro: <b>${isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—"}</b> | Leva: <b>${isFinite(maxddLeva) ? pct(maxddLeva, 2) : "—"}</b></div>
+      <div style="margin-top:4px;"><b>2ª peggiore discesa</b> — Pigro: ${worstPigro[1] ? `<b>${pct(worstPigro[1].depth_pct, 2)}</b>` : "—"} | Leva: ${worstLeva[1] ? `<b>${pct(worstLeva[1].depth_pct, 2)}</b>` : "—"}</div>
+      `
+    );
+
+    const compareBox = document.getElementById("compare_box");
+    if (compareBox) {
+      compareBox.innerHTML = `
+        <strong>Confronto immediato</strong><br/>
+        ${euro(capital, 0)} investiti all’inizio del periodo (${startDate} → ${endDate})<br/>
+        Metodo Pigro → <b>${euro(finalPigro, 0)}</b><br/>
+        Pigro Leva 20% → <b>${euro(finalLeva, 0)}</b><br/><br/>
+
+        <b style="color:#1f77b4">CAGR Pigro:</b> ${isFinite(cagrPigro) ? pct(cagrPigro, 2) : "—"}<br/>
+        <b style="color:#d94b64">CAGR Pigro Leva:</b> ${isFinite(cagrLeva) ? pct(cagrLeva, 2) : "—"}<br/>
+        <b>Extra rendimento leva:</b> ${isFinite(extraRendimento) ? pct(extraRendimento, 2) : "—"}<br/><br/>
+
+        <b>Max Ribasso Pigro:</b> ${isFinite(maxddPigro) ? pct(maxddPigro, 2) : "—"}<br/>
+        <b>Max Ribasso Pigro Leva:</b> ${isFinite(maxddLeva) ? pct(maxddLeva, 2) : "—"}<br/><br/>
+
+        <b>Anni teorici per raddoppio Pigro:</b> ${isFinite(dblPigro) ? plain(dblPigro, 1) : "—"}<br/>
+        <b>Anni teorici per raddoppio Leva:</b> ${isFinite(dblLeva) ? plain(dblLeva, 1) : "—"}<br/><br/>
+
+        <b>Vantaggio/Svantaggio leva:</b> ${euro(diff, 0)}
+      `;
+    }
+
+    renderMain(labels, pigroVals, levaVals, "Pigro Leva 20%");
+    renderDd(labels, ddPigroVals, ddLevaVals, "Leva");
+  }
+
+  function setNormalSummary(payload, capital) {
+    const labels = payload.dates || [];
+    const pigroVals = payload.portfolio || [];
+    const benchmarkVals = payload.benchmark || [];
+    const ddPigroVals = payload.drawdown_portfolio_pct || [];
+    const ddBenchmarkVals = payload.drawdown_benchmark_pct || [];
+    const metrics = payload.metrics || {};
+    const benchmarkLabel = payload.benchmark_label || BENCHMARK_LABELS[currentBenchmark];
+
+    if (!labels.length || !pigroVals.length || !benchmarkVals.length) {
+      throw new Error("Dataset vuoto");
+    }
+
+    const last = pigroVals[pigroVals.length - 1];
+    const lastBenchmark = benchmarkVals[benchmarkVals.length - 1];
+    const firstDate = labels[0] || "inizio periodo";
+    const lastDate = labels[labels.length - 1] || "";
+
+    const years = Number(metrics.final_years);
+    const cagr = Number(metrics.cagr_portfolio) * 100;
+    const maxdd = Number(metrics.max_dd_portfolio) * 100;
+    const dbl = Number(metrics.doubling_years_portfolio);
+
+    const cagrBench = Number(metrics.cagr_benchmark) * 100;
+    const maxddBench = Number(metrics.max_dd_benchmark) * 100;
+
+    setText("final_value", euro(last, 0));
+    setText("final_years", isFinite(years) ? plain(years, 1) : "—");
+    setText("cagr", isFinite(cagr) ? pct(cagr, 2) : "—");
+    setText("maxdd", isFinite(maxdd) ? pct(maxdd, 2) : "—");
+    setText("dbl", isFinite(dbl) ? plain(dbl, 1) : "—");
+
+    setText("chart_title", `Andamento negli ultimi anni — confronto con ${benchmarkLabel}`);
+    setText("compare_title_benchmark", benchmarkLabel);
+
+    setText(
+      "compare_period",
+      `${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})`
+    );
+    setText("compare_pigro", euro(last, 0));
+    setText("compare_benchmark", euro(lastBenchmark, 0));
+
+    setHtml(
+      "dd_summary",
+      buildEpisodesComparisonHtml(
+        metrics.worst_episodes_portfolio || [],
+        metrics.worst_episodes_benchmark || [],
+        benchmarkLabel
+      )
+    );
+
+    setHtml(
+      "benchmark_summary",
+      `<b>${benchmarkLabel}</b>: rendimento annualizzato <b>${isFinite(cagrBench) ? pct(cagrBench, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddBench) ? pct(maxddBench, 2) : "—"}</b>`
+    );
+
+    const compareBox = document.getElementById("compare_box");
+    if (compareBox) {
+      compareBox.innerHTML = `
+        <strong>Confronto immediato</strong><br/>
+        <span id="compare_period">${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})</span><br/>
+        Metodo Pigro → <b id="compare_pigro">${euro(last, 0)}</b><br/>
+        <span id="compare_title_benchmark">${benchmarkLabel}</span> → <b id="compare_benchmark">${euro(lastBenchmark, 0)}</b>
+      `;
+    }
+
+    renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel);
+    renderDd(labels, ddPigroVals, ddBenchmarkVals, benchmarkLabel);
+  }
+
   async function loadCharts() {
     normalizeCapitalInput();
     const capital = getCapital();
 
     try {
-      const payload = await fetchJson(
-        `/api/compute?capital=${encodeURIComponent(capital)}&benchmark=${encodeURIComponent(currentBenchmark)}`
-      );
+      let payload;
+
+      if (currentMode === "leva") {
+        payload = await fetchJson(`/api/compute_leva?capital=${encodeURIComponent(capital)}`);
+      } else {
+        payload = await fetchJson(
+          `/api/compute?capital=${encodeURIComponent(capital)}&benchmark=${encodeURIComponent(currentBenchmark)}`
+        );
+      }
 
       if (!payload || payload.ok !== true) {
         throw new Error(
@@ -352,64 +579,13 @@
         );
       }
 
-      const labels = payload.dates || [];
-      const pigroVals = payload.portfolio || [];
-      const benchmarkVals = payload.benchmark || [];
-      const ddPigroVals = payload.drawdown_portfolio_pct || [];
-      const ddBenchmarkVals = payload.drawdown_benchmark_pct || [];
-      const metrics = payload.metrics || {};
-      const benchmarkLabel = payload.benchmark_label || BENCHMARK_LABELS[currentBenchmark];
-
-      if (!labels.length || !pigroVals.length || !benchmarkVals.length) {
-        throw new Error("Dataset vuoto");
-      }
-
       destroyCharts();
-      renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel);
-      renderDd(labels, ddPigroVals, ddBenchmarkVals, benchmarkLabel);
 
-      const last = pigroVals[pigroVals.length - 1];
-      const lastBenchmark = benchmarkVals[benchmarkVals.length - 1];
-      const firstDate = labels[0] || "inizio periodo";
-      const lastDate = labels[labels.length - 1] || "";
-
-      const years = Number(metrics.final_years);
-      const cagr = Number(metrics.cagr_portfolio) * 100;
-      const maxdd = Number(metrics.max_dd_portfolio) * 100;
-      const dbl = Number(metrics.doubling_years_portfolio);
-
-      const cagrBench = Number(metrics.cagr_benchmark) * 100;
-      const maxddBench = Number(metrics.max_dd_benchmark) * 100;
-
-      setText("final_value", euro(last, 0));
-      setText("final_years", isFinite(years) ? plain(years, 1) : "—");
-      setText("cagr", isFinite(cagr) ? pct(cagr, 2) : "—");
-      setText("maxdd", isFinite(maxdd) ? pct(maxdd, 2) : "—");
-      setText("dbl", isFinite(dbl) ? plain(dbl, 1) : "—");
-
-      setText("chart_title", `Andamento negli ultimi anni — confronto con ${benchmarkLabel}`);
-      setText("compare_title_benchmark", benchmarkLabel);
-
-      setText(
-        "compare_period",
-        `${euro(capital, 0)} investiti all’inizio del periodo (${firstDate} → ${lastDate})`
-      );
-      setText("compare_pigro", euro(last, 0));
-      setText("compare_benchmark", euro(lastBenchmark, 0));
-
-      setHtml(
-        "dd_summary",
-        buildEpisodesComparisonHtml(
-          metrics.worst_episodes_portfolio || [],
-          metrics.worst_episodes_benchmark || [],
-          benchmarkLabel
-        )
-      );
-
-      setHtml(
-        "benchmark_summary",
-        `<b>${benchmarkLabel}</b>: rendimento annualizzato <b>${isFinite(cagrBench) ? pct(cagrBench, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddBench) ? pct(maxddBench, 2) : "—"}</b>`
-      );
+      if (currentMode === "leva") {
+        setLevaSummary(payload, capital);
+      } else {
+        setNormalSummary(payload, capital);
+      }
     } catch (err) {
       console.error("Errore caricamento grafici:", err);
       destroyCharts();
@@ -468,13 +644,23 @@
       });
     }
 
-    document.querySelectorAll(".benchmarkBtn").forEach((btn) => {
+    document.querySelectorAll(".benchmarkBtn[data-benchmark]").forEach((btn) => {
       btn.addEventListener("click", function () {
+        currentMode = "normal";
         currentBenchmark = btn.getAttribute("data-benchmark") || "world";
-        setActiveBenchmarkButton();
+        setActiveButtons();
         loadCharts();
       });
     });
+
+    const btnLeva = document.getElementById("btn_leva");
+    if (btnLeva) {
+      btnLeva.addEventListener("click", function () {
+        currentMode = "leva";
+        setActiveButtons();
+        loadCharts();
+      });
+    }
 
     const capital = document.getElementById("capital");
     if (capital) {
@@ -500,7 +686,7 @@
     normalizeCapitalInput();
     renderFaq();
     wireButtons();
-    setActiveBenchmarkButton();
+    setActiveButtons();
     loadCharts();
   });
 })();
