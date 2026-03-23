@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
-  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=4YLnl-DZv1HKFtyrzEmESGmp_Rg2YxaDfq3_YWgszf1WD660f7mC7Maew56NxKgOkjby30kZ1kjqRi70BuHfcu16Jebw7FgrVcf4--jFrFcNfI_IUrLO-fyh_07zWQ7O-4YzP54cbrrDSiUBEoiw7YTapj_YApAdXLAsD-xVe2P_gOXmORGE8n1T7LJwJIUKVA39EUXBbG59OjxZDXKxStS6sT_-rmDdbGrGO0lXrqzZIG7GG6vpLeDiGFXaMLLkiGtgwFaNq3ZjsBS8dMaqlw" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=UVyNs9S1pt9HlXUXH4TWVAjK-Jl9Z2En6ftw_9f29zVXRmqQaXPWVfMzxLmNEIFb4MmloBDz9k11E5AGoUcRD1F9-0n7Sx2i4F8-mVowCKKBBZI6YNH6IZc1s0kk-W9ZR0-Yf4XxUbKgOu4N9CfVHzihQPTpxNQ_Lnr9nqnxTLqbCsUH2O0G7ZmUQFmPAs0yN89EeO8BD_3usOpLQeL4oy9Os3SAlvMxHvDptGe9ZtdHTphxiVNeR-fuFSzSeUUiWHqL6Muui40aglWtvuTvsQ" charset="UTF-8"></script><script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=o4PCY8Ca3lj-AkQzS4vossjzRZpMbEf3wyxDwx9uGG3r_Ylw4gX-1RbI6QTr4_J9009IL8DwGWpJBinyf0eW7AEsAY68QwREWvi9IaF_MILFtem17_sHPwFLYFPpRymvh60Xgwg0pbY0QIHGTVSWEUH63MHmrpKrm1zPb8uXyWHBtxkaNPEpCvc2eRjiuJMfRFvbucdoUdZF-myt7AX8sDBTXy5Ck9ZtkOCf8i7SYX5yG8GIZRHfl5DjDvnTwNb88U0KYTX7XWHTj5NZu5HaiA" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
   <style>
     body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
@@ -91,6 +91,7 @@
 
     #chart_main{width:100% !important; height:430px !important;}
     #chart_dd{width:100% !important; height:220px !important;}
+    #chart_liq{width:100% !important; height:220px !important;}
 
     .summary{margin-top:8px; font-size:13px;}
     .summary b{font-size:15px;}
@@ -175,11 +176,8 @@
       0% con drawdown lieve, 10% sotto -5%, 20% sotto -10%, 30% sotto -15%.
     </div>
 
-    <div id="leva_plus_rule_box" class="dynamicRuleBox">
-      <b>Pigro Leva+:</b>
-      parte con leva iniziale del 20%. Se il portafoglio dato a garanzia scende sotto il 90% del capitale iniziale,
-      viene effettuata un’integrazione del 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte,
-      soltanto se la soglia viene prima recuperata e poi nuovamente violata al ribasso.
+    <div id="plus_rule_box" class="dynamicRuleBox">
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
     </div>
 
     <div class="summary">
@@ -202,6 +200,11 @@
       <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
     </div>
 
+    <div id="liquidity_card" class="card" style="display:none;">
+      <canvas id="chart_liq"></canvas>
+      <div id="liquidity_summary" class="smallText" style="margin-top:10px;"></div>
+    </div>
+
     <div id="compare_box" class="bigCompare">
       <strong>Confronto immediato</strong><br/>
       <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
@@ -219,7 +222,7 @@
     <ol>
       <li>Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.</li>
       <li>Evita interventi continui.</li>
-      <li>Confronta il metodo con Italia, USA, MSCI World, leva 20% fissa, leva dinamica intelligente o Pigro Leva+.</li>
+      <li>Confronta il metodo con Italia, USA, MSCI World, leva 20% fissa, leva dinamica intelligente o Pigro Leva+ con riserva Lombard.</li>
       <li>Osserva insieme rendimento e drawdown.</li>
     </ol>
 
