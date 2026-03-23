@@ -47,6 +47,11 @@ LEVERAGE_RATIO = 0.20
 LOMBARD_RATE_ANNUAL = 0.025
 DAY_COUNT = 365.25
 
+LEVA_PLUS_TRIGGER_PCT = 0.90
+LEVA_PLUS_INCREMENT_RATIO = 0.20
+LEVA_PLUS_MAX_TRIGGERS = 2
+
+
 BENCHMARKS: Dict[str, Dict[str, Any]] = {
     "world": {
         "label": "MSCI World",
@@ -591,6 +596,131 @@ def compute_portfolios_dynamic_leverage(
     }
 
 
+
+def compute_portfolios_leva_plus(
+    df: pd.DataFrame,
+    capital: float,
+    leverage_ratio: float = LEVERAGE_RATIO,
+    lombard_rate_annual: float = LOMBARD_RATE_ANNUAL,
+    trigger_pct: float = LEVA_PLUS_TRIGGER_PCT,
+    increment_ratio: float = LEVA_PLUS_INCREMENT_RATIO,
+    max_triggers: int = LEVA_PLUS_MAX_TRIGGERS,
+) -> Dict[str, Any]:
+    dates = df["date"].reset_index(drop=True)
+    px_ls80 = df["ls80"].reset_index(drop=True)
+    px_gold = df["gold"].reset_index(drop=True)
+    px_btc = df["btc"].reset_index(drop=True)
+
+    n = len(df)
+    if n == 0:
+        raise ValueError("Dataset vuoto")
+
+    trigger_value = capital * trigger_pct
+    increment_amount = capital * increment_ratio
+
+    pigro_hold = _rebalance_holdings(
+        capital,
+        float(px_ls80.iloc[0]),
+        float(px_gold.iloc[0]),
+        float(px_btc.iloc[0]),
+    )
+
+    debt = capital * leverage_ratio
+    gross0 = capital + debt
+    leva_hold = _rebalance_holdings(
+        gross0,
+        float(px_ls80.iloc[0]),
+        float(px_gold.iloc[0]),
+        float(px_btc.iloc[0]),
+    )
+
+    pigro_values: list[float] = []
+    strategy_values: list[float] = []
+    debt_values: list[float] = []
+    trigger_events: list[dict[str, Any]] = []
+
+    trigger_count = 0
+    was_below_trigger = False
+
+    for i in range(n):
+        gross_pigro = (
+            pigro_hold["ls80"] * float(px_ls80.iloc[i])
+            + pigro_hold["gold"] * float(px_gold.iloc[i])
+            + pigro_hold["btc"] * float(px_btc.iloc[i])
+        )
+
+        if i > 0:
+            days = max((dates.iloc[i] - dates.iloc[i - 1]).days, 1)
+            debt *= (1.0 + lombard_rate_annual * days / DAY_COUNT)
+
+        gross_strategy = (
+            leva_hold["ls80"] * float(px_ls80.iloc[i])
+            + leva_hold["gold"] * float(px_gold.iloc[i])
+            + leva_hold["btc"] * float(px_btc.iloc[i])
+        )
+
+        is_below_trigger = gross_pigro < trigger_value
+
+        if is_below_trigger and not was_below_trigger and trigger_count < max_triggers:
+            px_now = float(px_ls80.iloc[i])
+            leva_hold["ls80"] += increment_amount / px_now
+            debt += increment_amount
+            trigger_count += 1
+
+            gross_strategy = (
+                leva_hold["ls80"] * px_now
+                + leva_hold["gold"] * float(px_gold.iloc[i])
+                + leva_hold["btc"] * float(px_btc.iloc[i])
+            )
+
+            trigger_events.append(
+                {
+                    "n": trigger_count,
+                    "index": i,
+                    "date": dates.iloc[i].strftime("%Y-%m-%d"),
+                    "amount": round(float(increment_amount), 2),
+                    "price_ls80": round(px_now, 6),
+                    "garanzia_value": round(float(gross_pigro), 2),
+                    "strategy_value_after": round(float(gross_strategy - debt), 2),
+                }
+            )
+
+        was_below_trigger = is_below_trigger
+        strategy_equity = gross_strategy - debt
+
+        pigro_values.append(float(gross_pigro))
+        strategy_values.append(float(strategy_equity))
+        debt_values.append(float(debt))
+
+        if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
+            pigro_hold = _rebalance_holdings(
+                gross_pigro,
+                float(px_ls80.iloc[i]),
+                float(px_gold.iloc[i]),
+                float(px_btc.iloc[i]),
+            )
+
+            current_equity = max(strategy_equity, 0.0)
+            current_gross = max(current_equity + debt, 0.0)
+
+            leva_hold = _rebalance_holdings(
+                current_gross,
+                float(px_ls80.iloc[i]),
+                float(px_gold.iloc[i]),
+                float(px_btc.iloc[i]),
+            )
+
+    return {
+        "pigro": pd.Series(pigro_values),
+        "strategy_equity": pd.Series(strategy_values),
+        "strategy_debt": pd.Series(debt_values),
+        "trigger_events": trigger_events,
+        "trigger_value": trigger_value,
+        "increment_amount": increment_amount,
+        "max_triggers": max_triggers,
+    }
+
+
 def _openai_client():
     if not OPENAI_API_KEY:
         return None
@@ -817,6 +947,83 @@ def api_compute_leva():
         )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Errore compute_leva: {type(e).__name__}: {e}"})
+
+
+
+@app.get("/api/compute_leva_plus")
+def api_compute_leva_plus():
+    try:
+        capital = _safe_float(request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL), DEFAULT_LEVERAGE_CAPITAL)
+        if capital <= 0:
+            return _json_error("Capitale non valido.", 400)
+
+        df, freshness = build_merged_dataset()
+        if len(df) < MIN_ROWS_REQUIRED:
+            return _json_error(
+                "Serie troppo corta dopo il merge dei CSV.",
+                400,
+                rows=int(len(df)),
+            )
+
+        dates = df["date"].reset_index(drop=True)
+        series = compute_portfolios_leva_plus(
+            df=df,
+            capital=capital,
+            leverage_ratio=LEVERAGE_RATIO,
+            lombard_rate_annual=LOMBARD_RATE_ANNUAL,
+            trigger_pct=LEVA_PLUS_TRIGGER_PCT,
+            increment_ratio=LEVA_PLUS_INCREMENT_RATIO,
+            max_triggers=LEVA_PLUS_MAX_TRIGGERS,
+        )
+
+        pigro = series["pigro"].reset_index(drop=True)
+        strategy = series["strategy_equity"].reset_index(drop=True)
+
+        dd_pigro = compute_drawdown_series_pct(pigro)
+        dd_strategy = compute_drawdown_series_pct(strategy)
+
+        cagr_pigro = compute_cagr(pigro, dates) * 100.0
+        cagr_strategy = compute_cagr(strategy, dates) * 100.0
+
+        maxdd_pigro = compute_max_dd(pigro) * 100.0
+        maxdd_strategy = compute_max_dd(strategy) * 100.0
+
+        worst_pigro = worst_drawdowns(pigro, dates, n=3)
+        worst_strategy = worst_drawdowns(strategy, dates, n=3)
+
+        avg_extra_leverage_pct = (
+            (series["strategy_debt"].mean() / capital) * 100.0 if capital > 0 else 0.0
+        )
+
+        return jsonify(
+            {
+                "ok": True,
+                "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
+                "strategy_label": "Pigro Leva+",
+                "pigro": [round(float(x), 2) for x in pigro.tolist()],
+                "strategy": [round(float(x), 2) for x in strategy.tolist()],
+                "dd_pigro": [round(float(x), 2) for x in dd_pigro.tolist()],
+                "dd_strategy": [round(float(x), 2) for x in dd_strategy.tolist()],
+                "cagr_pigro": round(float(cagr_pigro), 2),
+                "cagr_strategy": round(float(cagr_strategy), 2),
+                "maxdd_pigro": round(float(maxdd_pigro), 2),
+                "maxdd_strategy": round(float(maxdd_strategy), 2),
+                "worst_episodes_pigro": worst_pigro,
+                "worst_episodes_strategy": worst_strategy,
+                "avg_leverage_pct": round(float(avg_extra_leverage_pct), 2),
+                "trigger_value": round(float(series["trigger_value"]), 2),
+                "increment_amount": round(float(series["increment_amount"]), 2),
+                "max_triggers": int(series["max_triggers"]),
+                "trigger_events": series["trigger_events"],
+                "warnings": [
+                    f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile"
+                    for name, stale_days in freshness.items()
+                    if stale_days is not None and stale_days > STALE_WARNING_DAYS
+                ],
+            }
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Errore compute_leva_plus: {type(e).__name__}: {e}"})
 
 
 @app.get("/api/compute_leva_dinamica")
