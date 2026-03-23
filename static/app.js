@@ -2,13 +2,15 @@
   let mainChart = null;
   let ddChart = null;
   let currentBenchmark = "world";
-  let currentMode = "normal"; // normal | leva_fissa | leva_dinamica
+  let currentMode = "normal"; // normal | leva_fissa | leva_dinamica | leva_plus
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
     mib: "iShares FTSE MIB UCITS ETF",
     sp500: "iShares Core S&P 500 UCITS ETF (Acc)"
   };
+
+  let currentStrategyMarkers = [];
 
   function euro(value, digits = 0) {
     const n = Number(value);
@@ -71,10 +73,15 @@
     if (el) el.innerHTML = value;
   }
 
-  function toggleDynamicRuleBox() {
-    const box = document.getElementById("dynamic_rule_box");
-    if (!box) return;
-    box.classList.toggle("show", currentMode === "leva_dinamica");
+  function toggleInfoBoxes() {
+    const dynamicBox = document.getElementById("dynamic_rule_box");
+    if (dynamicBox) {
+      dynamicBox.classList.toggle("show", currentMode === "leva_dinamica");
+    }
+    const plusBox = document.getElementById("leva_plus_rule_box");
+    if (plusBox) {
+      plusBox.classList.toggle("show", currentMode === "leva_plus");
+    }
   }
 
   async function fetchJson(url) {
@@ -151,7 +158,7 @@
     };
   }
 
-  function renderMain(labels, firstVals, secondVals, secondLabel) {
+  function renderMain(labels, firstVals, secondVals, secondLabel, markers = []) {
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
 
@@ -169,7 +176,16 @@
           {
             label: secondLabel,
             data: secondVals
-          }
+          },
+          ...(Array.isArray(markers) && markers.length ? [{
+            label: "Integrazioni Leva+",
+            data: markers.map((m) => ({ x: labels[m.index], y: secondVals[m.index] })),
+            showLine: false,
+            parsing: false,
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            pointStyle: "circle"
+          }] : [])
         ]
       },
       options: {
@@ -314,12 +330,14 @@
         active = true;
       } else if (currentMode === "leva_dinamica" && mode === "leva_dinamica") {
         active = true;
+      } else if (currentMode === "leva_plus" && mode === "leva_plus") {
+        active = true;
       }
 
       btn.classList.toggle("active", active);
     });
 
-    toggleDynamicRuleBox();
+    toggleInfoBoxes();
   }
 
   function renderFaq() {
@@ -395,6 +413,7 @@
     const extraRendimento = isFinite(cagrPigro) && isFinite(cagrStrategy) ? (cagrStrategy - cagrPigro) : NaN;
     const avgLeverage = Number(payload.avg_leverage_pct);
     const maxLeverage = Number(payload.max_leverage_pct);
+    currentStrategyMarkers = Array.isArray(payload.trigger_events) ? payload.trigger_events : [];
 
     setText("final_value", euro(finalStrategy, 0));
     setText("final_years", isFinite(years) ? plain(years, 1) : "—");
@@ -417,14 +436,32 @@
       `<b>${strategyLabel}</b>: rendimento annualizzato <b>${isFinite(cagrStrategy) ? pct(cagrStrategy, 2) : "—"}</b> | max ribasso <b>${isFinite(maxddStrategy) ? pct(maxddStrategy, 2) : "—"}</b>`
     );
 
-    setHtml(
-      "dd_summary",
-      buildEpisodesComparisonHtml(
-        payload.worst_episodes_pigro || [],
-        payload.worst_episodes_strategy || [],
-        strategyLabel
-      )
-    );
+    if (currentMode === "leva_plus") {
+      const triggerValue = Number(payload.trigger_value);
+      const incrementAmount = Number(payload.increment_amount);
+      const triggerCount = Array.isArray(payload.trigger_events) ? payload.trigger_events.length : 0;
+      const triggerLines = (payload.trigger_events || []).map((ev) =>
+        `<div style="margin-top:4px;">${ev.n}ª integrazione — <b>${formatDateIt(ev.date)}</b> | +${euro(ev.amount || incrementAmount, 0)} su LS80 | Garanzia: ${euro(ev.garanzia_value, 0)}</div>`
+      ).join("");
+
+      setHtml(
+        "dd_summary",
+        `<div><b>Regola Pigro Leva+</b></div>
+         <div style="margin-top:4px;">Si parte con leva iniziale del <b>20%</b>. La soglia di intervento è il <b>90%</b> del portafoglio dato a garanzia: <b>${euro(triggerValue, 0)}</b>.</div>
+         <div style="margin-top:4px;">Ogni nuovo passaggio al ribasso sotto tale soglia attiva un acquisto di <b>${euro(incrementAmount, 0)}</b> solo su <b>LS80</b>, fino a un massimo di <b>${payload.max_triggers || 2}</b> integrazioni.</div>
+         <div style="margin-top:4px;"><b>Integrazioni effettuate:</b> ${triggerCount}</div>
+         ${triggerLines || '<div style="margin-top:4px;">Nessuna integrazione nel periodo.</div>'}`
+      );
+    } else {
+      setHtml(
+        "dd_summary",
+        buildEpisodesComparisonHtml(
+          payload.worst_episodes_pigro || [],
+          payload.worst_episodes_strategy || [],
+          strategyLabel
+        )
+      );
+    }
 
     const compareBox = document.getElementById("compare_box");
     if (compareBox) {
@@ -443,17 +480,18 @@
 
         <b>Anni teorici per raddoppio Pigro:</b> ${isFinite(dblPigro) ? plain(dblPigro, 1) : "—"}<br/>
         <b>Anni teorici per raddoppio ${strategyLabel}:</b> ${isFinite(dblStrategy) ? plain(dblStrategy, 1) : "—"}<br/>
-        <b>Leva media utilizzata:</b> ${isFinite(avgLeverage) ? pct(avgLeverage, 2) : "—"}${isFinite(maxLeverage) ? `<br/><b>Leva massima utilizzata:</b> ${pct(maxLeverage, 2)}` : ""}<br/><br/>
+        <b>Leva media utilizzata:</b> ${isFinite(avgLeverage) ? pct(avgLeverage, 2) : "—"}${isFinite(maxLeverage) ? `<br/><b>Leva massima utilizzata:</b> ${pct(maxLeverage, 2)}` : ""}${currentMode === "leva_plus" ? `<br/><b>Integrazioni Leva+:</b> ${(payload.trigger_events || []).length}` : ""}<br/><br/>
 
         <b>Vantaggio/Svantaggio:</b> ${euro(diff, 0)}
       `;
     }
 
-    renderMain(labels, pigroVals, strategyVals, strategyLabel);
+    renderMain(labels, pigroVals, strategyVals, strategyLabel, currentMode === "leva_plus" ? currentStrategyMarkers : []);
     renderDd(labels, ddPigroVals, ddStrategyVals, strategyLabel);
   }
 
   function setNormalSummary(payload, capital) {
+    currentStrategyMarkers = [];
     const labels = payload.dates || [];
     const pigroVals = payload.portfolio || [];
     const benchmarkVals = payload.benchmark || [];
@@ -534,6 +572,8 @@
         payload = await fetchJson(`/api/compute_leva?capital=${encodeURIComponent(capital)}`);
       } else if (currentMode === "leva_dinamica") {
         payload = await fetchJson(`/api/compute_leva_dinamica?capital=${encodeURIComponent(capital)}`);
+      } else if (currentMode === "leva_plus") {
+        payload = await fetchJson(`/api/compute_leva_plus?capital=${encodeURIComponent(capital)}`);
       } else {
         payload = await fetchJson(
           `/api/compute?capital=${encodeURIComponent(capital)}&benchmark=${encodeURIComponent(currentBenchmark)}`
@@ -635,6 +675,15 @@
       });
     }
 
+    const btnLevaPlus = document.querySelector('.benchmarkBtn[data-mode="leva_plus"]');
+    if (btnLevaPlus) {
+      btnLevaPlus.addEventListener("click", function () {
+        currentMode = "leva_plus";
+        setActiveButtons();
+        loadCharts();
+      });
+    }
+
     const capital = document.getElementById("capital");
     if (capital) {
       capital.addEventListener("input", function () {
@@ -660,7 +709,7 @@
     renderFaq();
     wireButtons();
     setActiveButtons();
-    toggleDynamicRuleBox();
+    toggleInfoBoxes();
     loadCharts();
   });
 })();
