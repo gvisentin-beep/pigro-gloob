@@ -1,6 +1,7 @@
 (function () {
   let mainChart = null;
   let ddChart = null;
+  let liqChart = null;
   let currentBenchmark = "world";
   let currentMode = "normal"; // normal | leva_fissa | leva_dinamica | leva_plus
 
@@ -9,8 +10,6 @@
     mib: "iShares FTSE MIB UCITS ETF",
     sp500: "iShares Core S&P 500 UCITS ETF (Acc)"
   };
-
-  let currentStrategyMarkers = [];
 
   function euro(value, digits = 0) {
     const n = Number(value);
@@ -73,15 +72,13 @@
     if (el) el.innerHTML = value;
   }
 
-  function toggleInfoBoxes() {
-    const dynamicBox = document.getElementById("dynamic_rule_box");
-    if (dynamicBox) {
-      dynamicBox.classList.toggle("show", currentMode === "leva_dinamica");
-    }
-    const plusBox = document.getElementById("leva_plus_rule_box");
-    if (plusBox) {
-      plusBox.classList.toggle("show", currentMode === "leva_plus");
-    }
+  function toggleModeBoxes() {
+    const dynBox = document.getElementById("dynamic_rule_box");
+    const plusBox = document.getElementById("plus_rule_box");
+    const liqCard = document.getElementById("liquidity_card");
+    if (dynBox) dynBox.classList.toggle("show", currentMode === "leva_dinamica");
+    if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
+    if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
   async function fetchJson(url) {
@@ -98,6 +95,10 @@
     if (ddChart) {
       ddChart.destroy();
       ddChart = null;
+    }
+    if (liqChart) {
+      liqChart.destroy();
+      liqChart = null;
     }
   }
 
@@ -158,7 +159,7 @@
     };
   }
 
-  function renderMain(labels, firstVals, secondVals, secondLabel, markers = []) {
+  function renderMain(labels, firstVals, secondVals, secondLabel, markerIndices) {
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
 
@@ -168,25 +169,29 @@
       type: "line",
       data: {
         labels: labels,
-        datasets: [
-          {
-            label: "Metodo Pigro 80/15/5",
-            data: firstVals
-          },
-          {
-            label: secondLabel,
-            data: secondVals
-          },
-          ...(Array.isArray(markers) && markers.length ? [{
-            label: "Integrazioni Leva+",
-            data: markers.map((m) => ({ x: labels[m.index], y: secondVals[m.index] })),
-            showLine: false,
-            parsing: false,
-            pointRadius: 5,
-            pointHoverRadius: 6,
-            pointStyle: "circle"
-          }] : [])
-        ]
+        datasets: (function() {
+          const ds = [
+            {
+              label: "Metodo Pigro 80/15/5",
+              data: firstVals
+            },
+            {
+              label: secondLabel,
+              data: secondVals
+            }
+          ];
+          if (Array.isArray(markerIndices) && markerIndices.length) {
+            ds.push({
+              type: "scatter",
+              label: "Integrazioni Leva+",
+              data: markerIndices.map(function(i) { return ({ x: labels[i], y: secondVals[i] }); }),
+              showLine: false,
+              pointRadius: 5,
+              pointHoverRadius: 6
+            });
+          }
+          return ds;
+        })()
       },
       options: {
         ...commonChartOptions(),
@@ -297,6 +302,67 @@
     });
   }
 
+  function renderLiquidity(labels, liquidityVals) {
+    const canvas = document.getElementById("chart_liq");
+    if (!canvas) return;
+
+    const keepTicks = yearTickIndices(labels);
+
+    liqChart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Disponibilità Lombard residua",
+            data: liquidityVals
+          }
+        ]
+      },
+      options: {
+        ...commonChartOptions(),
+        plugins: {
+          ...commonChartOptions().plugins,
+          tooltip: {
+            callbacks: {
+              title: function (items) {
+                return items && items.length ? items[0].label : "";
+              },
+              label: function (ctx) {
+                return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            afterBuildTicks: function (axis) {
+              axis.ticks = axis.ticks.filter(t => keepTicks.has(t.value));
+            },
+            ticks: {
+              autoSkip: false,
+              maxRotation: 0,
+              minRotation: 0,
+              callback: function (value) {
+                const lbl = this.getLabelForValue(value);
+                return String(lbl || "").slice(0, 4);
+              }
+            }
+          },
+          y: {
+            grid: { color: "rgba(0,0,0,0.06)" },
+            ticks: {
+              callback: function (value) {
+                return euro(value, 0);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
   function buildEpisodesComparisonHtml(firstEpisodes, secondEpisodes, secondLabel) {
     function line(rank, first, second) {
       const left = first
@@ -337,7 +403,7 @@
       btn.classList.toggle("active", active);
     });
 
-    toggleInfoBoxes();
+    toggleModeBoxes();
   }
 
   function renderFaq() {
@@ -413,7 +479,6 @@
     const extraRendimento = isFinite(cagrPigro) && isFinite(cagrStrategy) ? (cagrStrategy - cagrPigro) : NaN;
     const avgLeverage = Number(payload.avg_leverage_pct);
     const maxLeverage = Number(payload.max_leverage_pct);
-    currentStrategyMarkers = Array.isArray(payload.trigger_events) ? payload.trigger_events : [];
 
     setText("final_value", euro(finalStrategy, 0));
     setText("final_years", isFinite(years) ? plain(years, 1) : "—");
@@ -439,19 +504,20 @@
     if (currentMode === "leva_plus") {
       const triggerValue = Number(payload.trigger_value);
       const incrementAmount = Number(payload.increment_amount);
-      const triggerCount = Array.isArray(payload.trigger_events) ? payload.trigger_events.length : 0;
-      const triggerLines = (payload.trigger_events || []).map((ev) =>
-        `<div style="margin-top:4px;">${ev.n}ª integrazione — <b>${formatDateIt(ev.date)}</b> | +${euro(ev.amount || incrementAmount, 0)} su LS80 | Garanzia: ${euro(ev.garanzia_value, 0)}</div>`
-      ).join("");
-
-      setHtml(
-        "dd_summary",
-        `<div><b>Regola Pigro Leva+</b></div>
-         <div style="margin-top:4px;">Si parte con leva iniziale del <b>20%</b>. La soglia di intervento è il <b>90%</b> del portafoglio dato a garanzia: <b>${euro(triggerValue, 0)}</b>.</div>
-         <div style="margin-top:4px;">Ogni nuovo passaggio al ribasso sotto tale soglia attiva un acquisto di <b>${euro(incrementAmount, 0)}</b> solo su <b>LS80</b>, fino a un massimo di <b>${payload.max_triggers || 2}</b> integrazioni.</div>
-         <div style="margin-top:4px;"><b>Integrazioni effettuate:</b> ${triggerCount}</div>
-         ${triggerLines || '<div style="margin-top:4px;">Nessuna integrazione nel periodo.</div>'}`
-      );
+      const events = payload.trigger_events || [];
+      let html = `<div><b>Regola Pigro Leva+</b></div>
+        <div style="margin-top:4px;">Si parte con leva iniziale del 20%. La soglia di intervento è il 90% del portafoglio principale dato a garanzia: <b>${euro(triggerValue, 0)}</b>.</div>
+        <div style="margin-top:4px;">Ogni nuovo passaggio al ribasso sotto tale soglia attiva un acquisto di <b>${euro(incrementAmount, 0)}</b> solo su LS80, fino a un massimo di 2 integrazioni.</div>
+        <div style="margin-top:4px;">Integrazioni effettuate: <b>${events.length}</b>.</div>`;
+      if (events.length) {
+        html += `<div style="margin-top:8px;"><b>Date integrazione</b></div>`;
+        events.forEach(function(ev) {
+          html += `<div style="margin-top:4px;">${formatDateIt(ev.date)} — ${euro(ev.amount, 0)} su LS80 | disponibilità residua ${euro(ev.available_after, 0)}</div>`;
+        });
+      } else {
+        html += `<div style="margin-top:4px;">Nessuna integrazione nel periodo.</div>`;
+      }
+      setHtml("dd_summary", html);
     } else {
       setHtml(
         "dd_summary",
@@ -480,18 +546,30 @@
 
         <b>Anni teorici per raddoppio Pigro:</b> ${isFinite(dblPigro) ? plain(dblPigro, 1) : "—"}<br/>
         <b>Anni teorici per raddoppio ${strategyLabel}:</b> ${isFinite(dblStrategy) ? plain(dblStrategy, 1) : "—"}<br/>
-        <b>Leva media utilizzata:</b> ${isFinite(avgLeverage) ? pct(avgLeverage, 2) : "—"}${isFinite(maxLeverage) ? `<br/><b>Leva massima utilizzata:</b> ${pct(maxLeverage, 2)}` : ""}${currentMode === "leva_plus" ? `<br/><b>Integrazioni Leva+:</b> ${(payload.trigger_events || []).length}` : ""}<br/><br/>
+        <b>Leva media utilizzata:</b> ${isFinite(avgLeverage) ? pct(avgLeverage, 2) : "—"}${isFinite(maxLeverage) ? `<br/><b>Leva massima utilizzata:</b> ${pct(maxLeverage, 2)}` : ""}${currentMode === "leva_plus" ? `<br/><b>Disponibilità Lombard iniziale:</b> ${euro(payload.initial_available, 0)}` : ""}<br/><br/>
 
         <b>Vantaggio/Svantaggio:</b> ${euro(diff, 0)}
       `;
     }
 
-    renderMain(labels, pigroVals, strategyVals, strategyLabel, currentMode === "leva_plus" ? currentStrategyMarkers : []);
+    renderMain(labels, pigroVals, strategyVals, strategyLabel, currentMode === "leva_plus" ? (payload.trigger_indices || []) : []);
     renderDd(labels, ddPigroVals, ddStrategyVals, strategyLabel);
+    if (currentMode === "leva_plus") {
+      renderLiquidity(labels, payload.liquidity_available || []);
+      const liqSummary = document.getElementById("liquidity_summary");
+      if (liqSummary) {
+        const liq = payload.liquidity_available || [];
+        const firstLiq = liq.length ? liq[0] : NaN;
+        const lastLiq = liq.length ? liq[liq.length - 1] : NaN;
+        liqSummary.innerHTML = `Disponibilità iniziale: <b>${euro(firstLiq, 0)}</b> | disponibilità finale: <b>${euro(lastLiq, 0)}</b>. Il ricalcolo avviene a fine anno in base al valore del solo portafoglio principale da ${euro(capital, 0)} dato a garanzia.`;
+      }
+    } else {
+      const liqSummary = document.getElementById("liquidity_summary");
+      if (liqSummary) liqSummary.innerHTML = "";
+    }
   }
 
   function setNormalSummary(payload, capital) {
-    currentStrategyMarkers = [];
     const labels = payload.dates || [];
     const pigroVals = payload.portfolio || [];
     const benchmarkVals = payload.benchmark || [];
@@ -610,6 +688,8 @@
       if (compareBox) {
         compareBox.innerHTML = `<strong>Confronto immediato</strong><br/>Errore caricamento dati`;
       }
+      const liqSummary = document.getElementById("liquidity_summary");
+      if (liqSummary) liqSummary.innerHTML = "";
     }
   }
 
@@ -709,7 +789,7 @@
     renderFaq();
     wireButtons();
     setActiveButtons();
-    toggleInfoBoxes();
+    toggleModeBoxes();
     loadCharts();
   });
 })();
