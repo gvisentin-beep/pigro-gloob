@@ -1,14 +1,14 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Gloob — Metodo Pigro 80/15/5</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gloob - Metodo Pigro</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
+    body{font-family:Arial,Helvetica,sans-serif; margin:0; background:#fff; color:#111;}
     .wrap{max-width:1100px; margin:0 auto; padding:20px;}
     h1{margin:0; font-size:34px; color:#173a8a;}
     h2{margin-top:22px; color:#173a8a;}
@@ -16,6 +16,39 @@
     .logo{width:52px; height:52px; border-radius:10px;}
     .sub{color:#333; font-size:13px; margin-top:2px;}
     ul{margin-top:10px;}
+
+    .modeRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin:18px 0 6px;
+    }
+
+    .modeBtn{
+      background:#eef3ff;
+      color:#173a8a;
+      border:1px solid #cbd9ff;
+      border-radius:999px;
+      padding:9px 15px;
+      cursor:pointer;
+      font-weight:700;
+    }
+
+    .modeBtn.active{
+      background:#173a8a;
+      color:#fff;
+      border-color:#173a8a;
+    }
+
+    .modeExplain{
+      margin-top:8px;
+      padding:10px 12px;
+      background:#f7f9ff;
+      border:1px solid #dbe4ff;
+      border-radius:10px;
+      font-size:14px;
+      line-height:1.45;
+    }
 
     .controlsRow{
       display:flex;
@@ -71,22 +104,6 @@
       border-color:#173a8a;
     }
 
-    .dynamicRuleBox{
-      display:none;
-      margin-top:8px;
-      padding:10px 12px;
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:10px;
-      font-size:13px;
-      color:#243b6b;
-      line-height:1.5;
-    }
-
-    .dynamicRuleBox.show{
-      display:block;
-    }
-
     .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
 
     #chart_main{width:100% !important; height:430px !important;}
@@ -135,6 +152,18 @@
       <li><b>Struttura &gt; Previsioni</b></li>
     </ul>
 
+    <div class="modeRow">
+      <button class="modeBtn active" data-mode="pigro">Pigro</button>
+      <button class="modeBtn" data-mode="leva20">Pigro con leva 20%</button>
+      <button class="modeBtn" data-mode="levaPlus">Pigro Leva+</button>
+    </div>
+
+    <div id="strategy_note" class="modeExplain">
+      <b>Messaggio chiave:</b><br/>
+      La differenza non è indovinare il mercato.<br/>
+      È avere una struttura semplice e mantenerla nel tempo.
+    </div>
+
     <div class="controlsRow">
       <div class="allocBox">
         <b>Composizione fissa</b><br/>
@@ -145,7 +174,7 @@
 
       <div class="ctrl capital">
         <label><b>Capitale (€)</b></label>
-        <input id="capital" type="text" value="10000">
+        <input id="capital" type="text" value="100000">
       </div>
 
       <div class="btnRow">
@@ -158,28 +187,20 @@
       </div>
     </div>
 
-    <div class="smallText">Scegli il confronto da visualizzare.</div>
+    <div id="benchmark_hint" class="smallText">Scegli il mercato con cui confrontare il Metodo Pigro.</div>
 
-    <div class="benchRow">
+    <div id="benchmark_controls" class="benchRow">
       <button class="benchmarkBtn" data-benchmark="mib">Confronta con Italia</button>
       <button class="benchmarkBtn" data-benchmark="sp500">Confronta con USA</button>
       <button class="benchmarkBtn active" data-benchmark="world">Confronta con MSCI World</button>
-      <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
-      <button class="benchmarkBtn" data-mode="leva_dinamica">Leva dinamica intelligente</button>
-    </div>
-
-    <div id="dynamic_rule_box" class="dynamicRuleBox">
-      <b>Leva dinamica intelligente:</b>
-      aumenta solo nei momenti di debolezza del mercato —
-      0% con drawdown lieve, 10% sotto -5%, 20% sotto -10%, 30% sotto -15%.
     </div>
 
     <div class="summary">
-      <b>Portafoglio “Pigro 80/15/5”:</b>
+      <b id="summary_title">Portafoglio “Pigro 80/15/5”:</b>
       Rendimento annualizzato <b><span id="cagr">—</span></b> |
       <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
       Composizione: LS80 <b>80%</b> | Oro <b>15%</b> | Bitcoin <b>5%</b><br/>
-      Raddoppio del portafoglio in anni: <span id="dbl">—</span><br/>
+      <span id="dbl_label">Raddoppio / attivazioni:</span> <span id="dbl">—</span><br/>
       <span id="benchmark_summary">Benchmark: —</span>
     </div>
 
@@ -201,7 +222,7 @@
       <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
     </div>
 
-    <div class="smallText">
+    <div class="smallText" id="message_block">
       <b>Messaggio chiave:</b><br/>
       La differenza non è indovinare il mercato.<br/>
       È avere una struttura semplice e mantenerla nel tempo.
@@ -211,7 +232,7 @@
     <ol>
       <li>Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.</li>
       <li>Evita interventi continui.</li>
-      <li>Confronta il metodo con Italia, USA, MSCI World, leva 20% fissa o leva dinamica intelligente.</li>
+      <li>Confronta il metodo con Italia, USA o MSCI World, oppure con le varianti a leva.</li>
       <li>Osserva insieme rendimento e drawdown.</li>
     </ol>
 
@@ -242,7 +263,7 @@
         <div class="faqItem"><div class="faqQ">2) Perché solo il 5%?</div><div class="faqA">Una quota contenuta permette di limitarne l’impatto sul rischio complessivo.</div></div>
         <div class="faqItem"><div class="faqQ">3) Perché tenere oro e Bitcoin insieme?</div><div class="faqA">Hanno ruoli diversi: l’oro tende a difendere, il Bitcoin tende a spingere il rendimento.</div></div>
         <div class="faqItem"><div class="faqQ">4) Perché confrontarlo con più mercati?</div><div class="faqA">Per capire se il metodo è stato più efficiente rispetto a Italia, USA o mercato globale.</div></div>
-        <div class="faqItem"><div class="faqQ">5) Cos’è la leva dinamica intelligente?</div><div class="faqA">È una leva che aumenta solo nei drawdown più profondi: 0%, 10%, 20% o 30% a seconda della discesa.</div></div>
+        <div class="faqItem"><div class="faqQ">5) Questo metodo prevede previsioni di mercato?</div><div class="faqA">No. Si basa sulla struttura del portafoglio e sulla disciplina.</div></div>
         <div class="faqItem"><div class="faqQ">6) Quando ribilanciare?</div><div class="faqA">In genere una volta l’anno è una regola semplice ed efficace.</div></div>
         <div class="faqItem"><div class="faqQ">7) Serve molto capitale?</div><div class="faqA">No. Anche capitali contenuti possono essere investiti con questa logica.</div></div>
         <div class="faqItem"><div class="faqQ">8) Il drawdown perché è importante?</div><div class="faqA">Perché mostra quanto si perde davvero nei momenti peggiori.</div></div>
