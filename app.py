@@ -597,6 +597,7 @@ def compute_portfolios_dynamic_leverage(
 
 
 
+
 def compute_portfolios_leva_plus(
     df: pd.DataFrame,
     capital: float,
@@ -626,9 +627,13 @@ def compute_portfolios_leva_plus(
         float(px_btc.iloc[0]),
     )
 
-    debt_cost = capital * leverage_ratio
-    debt_nominal = capital * leverage_ratio
-    gross0 = capital + debt_cost
+    # Debito base 20% del portafoglio principale, da ricalcolare ogni fine anno
+    base_debt_nominal = capital * leverage_ratio
+    extra_debt_nominal = 0.0
+    debt_nominal = base_debt_nominal + extra_debt_nominal
+    debt_cost = debt_nominal
+
+    gross0 = capital + debt_nominal
     strat_hold = _rebalance_holdings(
         gross0,
         float(px_ls80.iloc[0]),
@@ -675,8 +680,9 @@ def compute_portfolios_leva_plus(
         if crossed_down and can_integrate:
             px_now = float(px_ls80.iloc[i])
             strat_hold["ls80"] += increment_amount / px_now
+            extra_debt_nominal += increment_amount
+            debt_nominal = base_debt_nominal + extra_debt_nominal
             debt_cost += increment_amount
-            debt_nominal += increment_amount
             current_available = current_fido_max - debt_nominal
             integrations_done += 1
             was_above_trigger = False
@@ -713,6 +719,7 @@ def compute_portfolios_leva_plus(
         leverage_pct_values.append(float(leverage_pct))
 
         if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
+            # Ribilanciamento annuale del portafoglio principale
             pigro_hold = _rebalance_holdings(
                 gross_pigro,
                 float(px_ls80.iloc[i]),
@@ -720,8 +727,18 @@ def compute_portfolios_leva_plus(
                 float(px_btc.iloc[i]),
             )
 
+            # La leva base viene ricalcolata ogni anno al 20% del portafoglio principale
+            base_debt_nominal = max(gross_pigro * leverage_ratio, 0.0)
+            debt_nominal = base_debt_nominal + extra_debt_nominal
+
+            # Si assume regolazione/azzeramento degli interessi maturati al ribilanciamento annuale
+            debt_cost = debt_nominal
+
+            # L'equity resta quello maturato fino a fine anno; cambia il gross investito dal giorno dopo
+            new_gross_strategy = max(equity_strategy + debt_cost, 0.0)
+
             strat_hold = _rebalance_holdings(
-                gross_strategy,
+                new_gross_strategy,
                 float(px_ls80.iloc[i]),
                 float(px_gold.iloc[i]),
                 float(px_btc.iloc[i]),
