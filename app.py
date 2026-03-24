@@ -47,10 +47,10 @@ LEVERAGE_RATIO = 0.20
 LOMBARD_RATE_ANNUAL = 0.025
 DAY_COUNT = 365.25
 
-LEVA_PLUS_TRIGGER_RATIO = 0.90
+LEVA_PLUS_TRIGGER_PCT = 0.90
 LEVA_PLUS_INCREMENT_RATIO = 0.20
-LEVA_PLUS_MAX_INTEGRATIONS = 2
-LOMBARD_COLLATERAL_RATIO = 0.60
+LEVA_PLUS_MAX_TRIGGERS = 2
+
 
 BENCHMARKS: Dict[str, Dict[str, Any]] = {
     "world": {
@@ -396,6 +396,43 @@ def compute_portfolio_fixed(ls80: pd.Series, gold: pd.Series, btc: pd.Series, ca
     return shares_ls80 * ls80 + shares_gold * gold + shares_btc * btc
 
 
+def compute_portfolio_annual_rebalance(
+    ls80: pd.Series,
+    gold: pd.Series,
+    btc: pd.Series,
+    dates: pd.Series,
+    capital: float,
+) -> pd.Series:
+    n = len(ls80)
+    if n == 0:
+        return pd.Series(dtype=float)
+
+    hold = {
+        "ls80": (capital * WEIGHT_LS80) / float(ls80.iloc[0]),
+        "gold": (capital * WEIGHT_GOLD) / float(gold.iloc[0]),
+        "btc": (capital * WEIGHT_BTC) / float(btc.iloc[0]),
+    }
+
+    values: list[float] = []
+
+    for i in range(n):
+        gross = (
+            hold["ls80"] * float(ls80.iloc[i])
+            + hold["gold"] * float(gold.iloc[i])
+            + hold["btc"] * float(btc.iloc[i])
+        )
+        values.append(float(gross))
+
+        if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
+            hold = _rebalance_holdings(
+                gross,
+                float(ls80.iloc[i]),
+                float(gold.iloc[i]),
+                float(btc.iloc[i]),
+            )
+
+    return pd.Series(values)
+
 def _rebalance_holdings(total_value: float, px_ls80: float, px_gold: float, px_btc: float) -> Dict[str, float]:
     return {
         "ls80": (total_value * WEIGHT_LS80) / px_ls80,
@@ -567,7 +604,7 @@ def compute_portfolios_dynamic_leverage(
             year_change = dates.iloc[i + 1].year != dates.iloc[i].year
             target_change = abs(next_target_ratio - current_target_ratio) > 1e-12
 
-            if year_change or target_change:
+            if year_change:
                 pigro_hold = _rebalance_holdings(
                     gross_pigro,
                     float(px_ls80.iloc[i]),
@@ -575,6 +612,7 @@ def compute_portfolios_dynamic_leverage(
                     float(px_btc.iloc[i]),
                 )
 
+            if year_change or target_change:
                 new_equity = max(dyn_equity, 0.0)
                 new_debt = new_equity * next_target_ratio
                 new_gross = new_equity + new_debt
@@ -597,16 +635,14 @@ def compute_portfolios_dynamic_leverage(
 
 
 
-
 def compute_portfolios_leva_plus(
     df: pd.DataFrame,
     capital: float,
     leverage_ratio: float = LEVERAGE_RATIO,
     lombard_rate_annual: float = LOMBARD_RATE_ANNUAL,
-    trigger_ratio: float = LEVA_PLUS_TRIGGER_RATIO,
+    trigger_pct: float = LEVA_PLUS_TRIGGER_PCT,
     increment_ratio: float = LEVA_PLUS_INCREMENT_RATIO,
-    max_integrations: int = LEVA_PLUS_MAX_INTEGRATIONS,
-    collateral_ratio: float = LOMBARD_COLLATERAL_RATIO,
+    max_triggers: int = LEVA_PLUS_MAX_TRIGGERS,
 ) -> Dict[str, Any]:
     dates = df["date"].reset_index(drop=True)
     px_ls80 = df["ls80"].reset_index(drop=True)
@@ -617,7 +653,7 @@ def compute_portfolios_leva_plus(
     if n == 0:
         raise ValueError("Dataset vuoto")
 
-    trigger_value = capital * trigger_ratio
+    trigger_value = capital * trigger_pct
     increment_amount = capital * increment_ratio
 
     pigro_hold = _rebalance_holdings(
@@ -627,35 +663,22 @@ def compute_portfolios_leva_plus(
         float(px_btc.iloc[0]),
     )
 
-    # Debito base 20% del portafoglio principale, da ricalcolare ogni fine anno
-    base_debt_nominal = capital * leverage_ratio
-    extra_debt_nominal = 0.0
-    debt_nominal = base_debt_nominal + extra_debt_nominal
-    debt_cost = debt_nominal
-
-    gross0 = capital + debt_nominal
-    strat_hold = _rebalance_holdings(
+    debt = capital * leverage_ratio
+    gross0 = capital + debt
+    leva_hold = _rebalance_holdings(
         gross0,
         float(px_ls80.iloc[0]),
         float(px_gold.iloc[0]),
         float(px_btc.iloc[0]),
     )
 
-    current_fido_max = capital * collateral_ratio
-    current_available = current_fido_max - debt_nominal
-
     pigro_values: list[float] = []
     strategy_values: list[float] = []
-    debt_cost_values: list[float] = []
-    debt_nominal_values: list[float] = []
-    available_values: list[float] = []
-    fido_max_values: list[float] = []
-    leverage_pct_values: list[float] = []
-    trigger_indices: list[int] = []
+    debt_values: list[float] = []
     trigger_events: list[dict[str, Any]] = []
 
-    integrations_done = 0
-    was_above_trigger = True
+    trigger_count = 0
+    was_below_trigger = False
 
     for i in range(n):
         gross_pigro = (
@@ -664,62 +687,50 @@ def compute_portfolios_leva_plus(
             + pigro_hold["btc"] * float(px_btc.iloc[i])
         )
 
-        gross_strategy = (
-            strat_hold["ls80"] * float(px_ls80.iloc[i])
-            + strat_hold["gold"] * float(px_gold.iloc[i])
-            + strat_hold["btc"] * float(px_btc.iloc[i])
-        )
-
         if i > 0:
             days = max((dates.iloc[i] - dates.iloc[i - 1]).days, 1)
-            debt_cost *= (1.0 + lombard_rate_annual * days / DAY_COUNT)
+            debt *= (1.0 + lombard_rate_annual * days / DAY_COUNT)
 
-        crossed_down = gross_pigro < trigger_value and was_above_trigger
-        can_integrate = integrations_done < max_integrations and current_available >= increment_amount
+        gross_strategy = (
+            leva_hold["ls80"] * float(px_ls80.iloc[i])
+            + leva_hold["gold"] * float(px_gold.iloc[i])
+            + leva_hold["btc"] * float(px_btc.iloc[i])
+        )
 
-        if crossed_down and can_integrate:
+        is_below_trigger = gross_pigro < trigger_value
+
+        if is_below_trigger and not was_below_trigger and trigger_count < max_triggers:
             px_now = float(px_ls80.iloc[i])
-            strat_hold["ls80"] += increment_amount / px_now
-            extra_debt_nominal += increment_amount
-            debt_nominal = base_debt_nominal + extra_debt_nominal
-            debt_cost += increment_amount
-            current_available = current_fido_max - debt_nominal
-            integrations_done += 1
-            was_above_trigger = False
+            leva_hold["ls80"] += increment_amount / px_now
+            debt += increment_amount
+            trigger_count += 1
 
             gross_strategy = (
-                strat_hold["ls80"] * px_now
-                + strat_hold["gold"] * float(px_gold.iloc[i])
-                + strat_hold["btc"] * float(px_btc.iloc[i])
+                leva_hold["ls80"] * px_now
+                + leva_hold["gold"] * float(px_gold.iloc[i])
+                + leva_hold["btc"] * float(px_btc.iloc[i])
             )
 
-            trigger_indices.append(i)
-            trigger_events.append({
-                "index": i,
-                "date": dates.iloc[i].strftime("%Y-%m-%d"),
-                "amount": round(float(increment_amount), 2),
-                "trigger_value": round(float(trigger_value), 2),
-                "collateral_value": round(float(gross_pigro), 2),
-                "available_after": round(float(current_available), 2),
-            })
-        elif gross_pigro >= trigger_value:
-            was_above_trigger = True
-        else:
-            was_above_trigger = False
+            trigger_events.append(
+                {
+                    "n": trigger_count,
+                    "index": i,
+                    "date": dates.iloc[i].strftime("%Y-%m-%d"),
+                    "amount": round(float(increment_amount), 2),
+                    "price_ls80": round(px_now, 6),
+                    "garanzia_value": round(float(gross_pigro), 2),
+                    "strategy_value_after": round(float(gross_strategy - debt), 2),
+                }
+            )
 
-        equity_strategy = gross_strategy - debt_cost
-        leverage_pct = (debt_cost / equity_strategy * 100.0) if equity_strategy > 0 else 0.0
+        was_below_trigger = is_below_trigger
+        strategy_equity = gross_strategy - debt
 
         pigro_values.append(float(gross_pigro))
-        strategy_values.append(float(equity_strategy))
-        debt_cost_values.append(float(debt_cost))
-        debt_nominal_values.append(float(debt_nominal))
-        available_values.append(float(current_available))
-        fido_max_values.append(float(current_fido_max))
-        leverage_pct_values.append(float(leverage_pct))
+        strategy_values.append(float(strategy_equity))
+        debt_values.append(float(debt))
 
         if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
-            # Ribilanciamento annuale del portafoglio principale
             pigro_hold = _rebalance_holdings(
                 gross_pigro,
                 float(px_ls80.iloc[i]),
@@ -727,40 +738,26 @@ def compute_portfolios_leva_plus(
                 float(px_btc.iloc[i]),
             )
 
-            # La leva base viene ricalcolata ogni anno al 20% del portafoglio principale
-            base_debt_nominal = max(gross_pigro * leverage_ratio, 0.0)
-            debt_nominal = base_debt_nominal + extra_debt_nominal
+            current_equity = max(strategy_equity, 0.0)
+            current_gross = max(current_equity + debt, 0.0)
 
-            # Si assume regolazione/azzeramento degli interessi maturati al ribilanciamento annuale
-            debt_cost = debt_nominal
-
-            # L'equity resta quello maturato fino a fine anno; cambia il gross investito dal giorno dopo
-            new_gross_strategy = max(equity_strategy + debt_cost, 0.0)
-
-            strat_hold = _rebalance_holdings(
-                new_gross_strategy,
+            leva_hold = _rebalance_holdings(
+                current_gross,
                 float(px_ls80.iloc[i]),
                 float(px_gold.iloc[i]),
                 float(px_btc.iloc[i]),
             )
 
-            current_fido_max = gross_pigro * collateral_ratio
-            current_available = current_fido_max - debt_nominal
-
     return {
         "pigro": pd.Series(pigro_values),
-        "strategy": pd.Series(strategy_values),
-        "debt_cost": pd.Series(debt_cost_values),
-        "debt_nominal": pd.Series(debt_nominal_values),
-        "liquidity_available": pd.Series(available_values),
-        "fido_max": pd.Series(fido_max_values),
-        "leverage_pct": pd.Series(leverage_pct_values),
-        "trigger_indices": trigger_indices,
+        "strategy_equity": pd.Series(strategy_values),
+        "strategy_debt": pd.Series(debt_values),
         "trigger_events": trigger_events,
-        "integrations_done": integrations_done,
         "trigger_value": trigger_value,
         "increment_amount": increment_amount,
+        "max_triggers": max_triggers,
     }
+
 
 def _openai_client():
     if not OPENAI_API_KEY:
@@ -874,7 +871,7 @@ def api_compute():
         work = work.reset_index(drop=True)
 
         dates = work["date"]
-        portfolio = compute_portfolio_fixed(work["ls80"], work["gold"], work["btc"], capital).reset_index(drop=True)
+        portfolio = compute_portfolio_annual_rebalance(work["ls80"], work["gold"], work["btc"], dates, capital).reset_index(drop=True)
         benchmark_scaled = (capital * (work["benchmark_raw"] / work["benchmark_raw"].iloc[0])).reset_index(drop=True)
 
         cagr_port = compute_cagr(portfolio, dates)
@@ -990,6 +987,83 @@ def api_compute_leva():
         return jsonify({"ok": False, "error": f"Errore compute_leva: {type(e).__name__}: {e}"})
 
 
+
+@app.get("/api/compute_leva_plus")
+def api_compute_leva_plus():
+    try:
+        capital = _safe_float(request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL), DEFAULT_LEVERAGE_CAPITAL)
+        if capital <= 0:
+            return _json_error("Capitale non valido.", 400)
+
+        df, freshness = build_merged_dataset()
+        if len(df) < MIN_ROWS_REQUIRED:
+            return _json_error(
+                "Serie troppo corta dopo il merge dei CSV.",
+                400,
+                rows=int(len(df)),
+            )
+
+        dates = df["date"].reset_index(drop=True)
+        series = compute_portfolios_leva_plus(
+            df=df,
+            capital=capital,
+            leverage_ratio=LEVERAGE_RATIO,
+            lombard_rate_annual=LOMBARD_RATE_ANNUAL,
+            trigger_pct=LEVA_PLUS_TRIGGER_PCT,
+            increment_ratio=LEVA_PLUS_INCREMENT_RATIO,
+            max_triggers=LEVA_PLUS_MAX_TRIGGERS,
+        )
+
+        pigro = series["pigro"].reset_index(drop=True)
+        strategy = series["strategy_equity"].reset_index(drop=True)
+
+        dd_pigro = compute_drawdown_series_pct(pigro)
+        dd_strategy = compute_drawdown_series_pct(strategy)
+
+        cagr_pigro = compute_cagr(pigro, dates) * 100.0
+        cagr_strategy = compute_cagr(strategy, dates) * 100.0
+
+        maxdd_pigro = compute_max_dd(pigro) * 100.0
+        maxdd_strategy = compute_max_dd(strategy) * 100.0
+
+        worst_pigro = worst_drawdowns(pigro, dates, n=3)
+        worst_strategy = worst_drawdowns(strategy, dates, n=3)
+
+        avg_extra_leverage_pct = (
+            (series["strategy_debt"].mean() / capital) * 100.0 if capital > 0 else 0.0
+        )
+
+        return jsonify(
+            {
+                "ok": True,
+                "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
+                "strategy_label": "Pigro Leva+",
+                "pigro": [round(float(x), 2) for x in pigro.tolist()],
+                "strategy": [round(float(x), 2) for x in strategy.tolist()],
+                "dd_pigro": [round(float(x), 2) for x in dd_pigro.tolist()],
+                "dd_strategy": [round(float(x), 2) for x in dd_strategy.tolist()],
+                "cagr_pigro": round(float(cagr_pigro), 2),
+                "cagr_strategy": round(float(cagr_strategy), 2),
+                "maxdd_pigro": round(float(maxdd_pigro), 2),
+                "maxdd_strategy": round(float(maxdd_strategy), 2),
+                "worst_episodes_pigro": worst_pigro,
+                "worst_episodes_strategy": worst_strategy,
+                "avg_leverage_pct": round(float(avg_extra_leverage_pct), 2),
+                "trigger_value": round(float(series["trigger_value"]), 2),
+                "increment_amount": round(float(series["increment_amount"]), 2),
+                "max_triggers": int(series["max_triggers"]),
+                "trigger_events": series["trigger_events"],
+                "warnings": [
+                    f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile"
+                    for name, stale_days in freshness.items()
+                    if stale_days is not None and stale_days > STALE_WARNING_DAYS
+                ],
+            }
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Errore compute_leva_plus: {type(e).__name__}: {e}"})
+
+
 @app.get("/api/compute_leva_dinamica")
 def api_compute_leva_dinamica():
     try:
@@ -1054,85 +1128,6 @@ def api_compute_leva_dinamica():
         )
     except Exception as e:
         return jsonify({"ok": False, "error": f"Errore compute_leva_dinamica: {type(e).__name__}: {e}"})
-
-
-@app.get("/api/compute_leva_plus")
-def api_compute_leva_plus():
-    try:
-        capital = _safe_float(request.args.get("capital", DEFAULT_LEVERAGE_CAPITAL), DEFAULT_LEVERAGE_CAPITAL)
-        if capital <= 0:
-            return _json_error("Capitale non valido.", 400)
-
-        df, freshness = build_merged_dataset()
-        if len(df) < MIN_ROWS_REQUIRED:
-            return _json_error(
-                "Serie troppo corta dopo il merge dei CSV.",
-                400,
-                rows=int(len(df)),
-            )
-
-        dates = df["date"].reset_index(drop=True)
-        series = compute_portfolios_leva_plus(
-            df=df,
-            capital=capital,
-            leverage_ratio=LEVERAGE_RATIO,
-            lombard_rate_annual=LOMBARD_RATE_ANNUAL,
-            trigger_ratio=LEVA_PLUS_TRIGGER_RATIO,
-            increment_ratio=LEVA_PLUS_INCREMENT_RATIO,
-            max_integrations=LEVA_PLUS_MAX_INTEGRATIONS,
-            collateral_ratio=LOMBARD_COLLATERAL_RATIO,
-        )
-
-        pigro = series["pigro"].reset_index(drop=True)
-        strategy = series["strategy"].reset_index(drop=True)
-        liquidity = series["liquidity_available"].reset_index(drop=True)
-        leverage_pct = series["leverage_pct"].reset_index(drop=True)
-
-        dd_pigro = compute_drawdown_series_pct(pigro)
-        dd_strategy = compute_drawdown_series_pct(strategy)
-
-        cagr_pigro = compute_cagr(pigro, dates) * 100.0
-        cagr_strategy = compute_cagr(strategy, dates) * 100.0
-
-        maxdd_pigro = compute_max_dd(pigro) * 100.0
-        maxdd_strategy = compute_max_dd(strategy) * 100.0
-
-        worst_pigro = worst_drawdowns(pigro, dates, n=3)
-        worst_strategy = worst_drawdowns(strategy, dates, n=3)
-
-        return jsonify(
-            {
-                "ok": True,
-                "dates": dates.dt.strftime("%Y-%m-%d").tolist(),
-                "strategy_label": "Pigro Leva+",
-                "pigro": [round(float(x), 2) for x in pigro.tolist()],
-                "strategy": [round(float(x), 2) for x in strategy.tolist()],
-                "dd_pigro": [round(float(x), 2) for x in dd_pigro.tolist()],
-                "dd_strategy": [round(float(x), 2) for x in dd_strategy.tolist()],
-                "cagr_pigro": round(float(cagr_pigro), 2),
-                "cagr_strategy": round(float(cagr_strategy), 2),
-                "maxdd_pigro": round(float(maxdd_pigro), 2),
-                "maxdd_strategy": round(float(maxdd_strategy), 2),
-                "worst_episodes_pigro": worst_pigro,
-                "worst_episodes_strategy": worst_strategy,
-                "avg_leverage_pct": round(float(leverage_pct.mean()), 2),
-                "max_leverage_pct": round(float(leverage_pct.max()), 2),
-                "liquidity_available": [round(float(x), 2) for x in liquidity.tolist()],
-                "trigger_indices": series["trigger_indices"],
-                "trigger_events": series["trigger_events"],
-                "integrations_done": int(series["integrations_done"]),
-                "trigger_value": round(float(series["trigger_value"]), 2),
-                "increment_amount": round(float(series["increment_amount"]), 2),
-                "initial_available": round(float(capital * LOMBARD_COLLATERAL_RATIO - capital * LEVERAGE_RATIO), 2),
-                "warnings": [
-                    f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile"
-                    for name, stale_days in freshness.items()
-                    if stale_days is not None and stale_days > STALE_WARNING_DAYS
-                ],
-            }
-        )
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Errore compute_leva_plus: {type(e).__name__}: {e}"})
 
 
 @app.post("/api/ask")
