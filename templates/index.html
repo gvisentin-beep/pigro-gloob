@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
-  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=jIFFJRSLN16aDJXnThd6jInMHHspHmnxwULOX3bjXsDzjFpruFYwkCS9ixE_MNW6nB5xeYNmPIt92fpkiXTIcNBU90pjPW95PwMAPVEhAEA_9QZdW37OVstee8SxRYKQT_4QrfvS4IxVSF6xbZNb9DfPAAeE2G0sRfT3lKad98Gor3DtBNNFM5OMIntkV5foDD9kU9oWZl9hNYNEj0uZCeMplNoj9130ZZvB4Zf6qiHKA5Y2u0A5ekzcQ7M-Y-JAwxxoSyTP58Lg0J7TCgRTZQ" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
   <style>
     body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
@@ -21,7 +21,7 @@
       display:flex;
       gap:10px;
       flex-wrap:wrap;
-      margin:18px 0 6px;
+      margin:12px 0 8px;
     }
 
     .modeBtn{
@@ -29,7 +29,7 @@
       color:#173a8a;
       border:1px solid #cbd9ff;
       border-radius:999px;
-      padding:9px 15px;
+      padding:8px 14px;
       cursor:pointer;
       font-weight:700;
     }
@@ -38,16 +38,6 @@
       background:#173a8a;
       color:#fff;
       border-color:#173a8a;
-    }
-
-    .modeExplain{
-      margin-top:8px;
-      padding:10px 12px;
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:10px;
-      font-size:14px;
-      line-height:1.45;
     }
 
     .controlsRow{
@@ -104,10 +94,27 @@
       border-color:#173a8a;
     }
 
+    .infoBox{
+      display:none;
+      margin-top:8px;
+      padding:10px 12px;
+      background:#f7f9ff;
+      border:1px solid #dbe4ff;
+      border-radius:10px;
+      font-size:13px;
+      color:#243b6b;
+      line-height:1.5;
+    }
+
+    .infoBox.show{
+      display:block;
+    }
+
     .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
 
     #chart_main{width:100% !important; height:430px !important;}
     #chart_dd{width:100% !important; height:220px !important;}
+    #chart_liq{width:100% !important; height:220px !important;}
 
     .summary{margin-top:8px; font-size:13px;}
     .summary b{font-size:15px;}
@@ -158,7 +165,7 @@
       <button class="modeBtn" data-mode="levaPlus">Pigro Leva+</button>
     </div>
 
-    <div id="strategy_note" class="modeExplain">
+    <div id="message_block" class="infoBox show">
       <b>Messaggio chiave:</b><br/>
       La differenza non è indovinare il mercato.<br/>
       È avere una struttura semplice e mantenerla nel tempo.
@@ -174,7 +181,7 @@
 
       <div class="ctrl capital">
         <label><b>Capitale (€)</b></label>
-        <input id="capital" type="text" value="100000">
+        <input id="capital" type="text" value="10000">
       </div>
 
       <div class="btnRow">
@@ -195,12 +202,16 @@
       <button class="benchmarkBtn active" data-benchmark="world">Confronta con MSCI World</button>
     </div>
 
+    <div id="plus_rule_box" class="infoBox">
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione del 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
+    </div>
+
     <div class="summary">
-      <b id="summary_title">Portafoglio “Pigro 80/15/5”:</b>
+      <b>Portafoglio “Pigro 80/15/5”:</b>
       Rendimento annualizzato <b><span id="cagr">—</span></b> |
       <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
       Composizione: LS80 <b>80%</b> | Oro <b>15%</b> | Bitcoin <b>5%</b><br/>
-      <span id="dbl_label">Raddoppio / attivazioni: </span><span id="dbl">—</span><br/>
+      Raddoppio del portafoglio in anni: <span id="dbl">—</span><br/>
       <span id="benchmark_summary">Benchmark: —</span>
     </div>
 
@@ -215,6 +226,11 @@
       <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
     </div>
 
+    <div id="liquidity_card" class="card" style="display:none;">
+      <canvas id="chart_liq"></canvas>
+      <div id="liquidity_summary" class="smallText" style="margin-top:10px;"></div>
+    </div>
+
     <div id="compare_box" class="bigCompare">
       <strong>Confronto immediato</strong><br/>
       <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
@@ -222,7 +238,7 @@
       <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
     </div>
 
-    <div class="smallText" id="message_block">
+    <div class="smallText">
       <b>Messaggio chiave:</b><br/>
       La differenza non è indovinare il mercato.<br/>
       È avere una struttura semplice e mantenerla nel tempo.
@@ -232,7 +248,7 @@
     <ol>
       <li>Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.</li>
       <li>Evita interventi continui.</li>
-      <li>Confronta il metodo con Italia, USA o MSCI World, oppure con le varianti a leva.</li>
+      <li>Confronta il metodo con Italia, USA, MSCI World, leva 20% fissa o Pigro Leva+ con riserva Lombard.</li>
       <li>Osserva insieme rendimento e drawdown.</li>
     </ol>
 
@@ -263,12 +279,12 @@
         <div class="faqItem"><div class="faqQ">2) Perché solo il 5%?</div><div class="faqA">Una quota contenuta permette di limitarne l’impatto sul rischio complessivo.</div></div>
         <div class="faqItem"><div class="faqQ">3) Perché tenere oro e Bitcoin insieme?</div><div class="faqA">Hanno ruoli diversi: l’oro tende a difendere, il Bitcoin tende a spingere il rendimento.</div></div>
         <div class="faqItem"><div class="faqQ">4) Perché confrontarlo con più mercati?</div><div class="faqA">Per capire se il metodo è stato più efficiente rispetto a Italia, USA o mercato globale.</div></div>
-        <div class="faqItem"><div class="faqQ">5) Questo metodo prevede previsioni di mercato?</div><div class="faqA">No. Si basa sulla struttura del portafoglio e sulla disciplina.</div></div>
-        <div class="faqItem"><div class="faqQ">6) Quando ribilanciare?</div><div class="faqA">In genere una volta l’anno è una regola semplice ed efficace.</div></div>
-        <div class="faqItem"><div class="faqQ">7) Serve molto capitale?</div><div class="faqA">No. Anche capitali contenuti possono essere investiti con questa logica.</div></div>
-        <div class="faqItem"><div class="faqQ">8) Il drawdown perché è importante?</div><div class="faqA">Perché mostra quanto si perde davvero nei momenti peggiori.</div></div>
-        <div class="faqItem"><div class="faqQ">9) È una strategia di breve periodo?</div><div class="faqA">No. È pensata per il lungo periodo.</div></div>
-        <div class="faqItem"><div class="faqQ">10) Posso usarla come base educativa?</div><div class="faqA">Sì, è una struttura semplice che aiuta a capire il rapporto tra rendimento e rischio.</div></div>
+        <div class="faqItem"><div class="faqQ">5) Quando ribilanciare?</div><div class="faqA">In genere una volta l’anno è una regola semplice ed efficace.</div></div>
+        <div class="faqItem"><div class="faqQ">6) Serve molto capitale?</div><div class="faqA">No. Anche capitali contenuti possono essere investiti con questa logica.</div></div>
+        <div class="faqItem"><div class="faqQ">7) Il drawdown perché è importante?</div><div class="faqA">Perché mostra quanto si perde davvero nei momenti peggiori.</div></div>
+        <div class="faqItem"><div class="faqQ">8) È una strategia di breve periodo?</div><div class="faqA">No. È pensata per il lungo periodo.</div></div>
+        <div class="faqItem"><div class="faqQ">9) Posso usarla come base educativa?</div><div class="faqA">Sì, è una struttura semplice che aiuta a capire il rapporto tra rendimento e rischio.</div></div>
+        <div class="faqItem"><div class="faqQ">10) Cos’è Pigro Leva+?</div><div class="faqA">È una variante che parte con leva del 20% e tiene monitorata la disponibilità Lombard residua nel tempo.</div></div>
       </div>
     </div>
 
