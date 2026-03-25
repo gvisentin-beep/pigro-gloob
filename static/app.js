@@ -3,7 +3,7 @@
   let ddChart = null;
   let liqChart = null;
 
-  let currentBenchmark = "mib";
+  let currentBenchmark = "world";
   let currentMode = "pigro"; // pigro | leva20 | levaPlus
 
   const BENCHMARK_LABELS = {
@@ -82,24 +82,19 @@
 
     if (plusBox) plusBox.classList.toggle("show", currentMode === "levaPlus");
     if (liqCard) liqCard.style.display = currentMode === "levaPlus" ? "block" : "none";
-
     if (benchmarkHint) benchmarkHint.style.display = currentMode === "pigro" ? "block" : "none";
     if (benchmarkControls) benchmarkControls.style.display = currentMode === "pigro" ? "flex" : "none";
 
     if (messageBlock) {
       if (currentMode === "leva20") {
         messageBlock.innerHTML =
-          "<b>Pigro con leva 20%</b><br/>" +
-          "Parte con leva iniziale del 20% e mantiene un ribilanciamento annuale.";
+          "<b>Pigro con leva 20%</b><br/>Parte con leva iniziale del 20% e mantiene un ribilanciamento annuale.";
       } else if (currentMode === "levaPlus") {
         messageBlock.innerHTML =
-          "<b>Pigro Leva+</b><br/>" +
-          "Parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione solo su LS80.";
+          "<b>Pigro Leva+</b><br/>Parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione solo su LS80.";
       } else {
         messageBlock.innerHTML =
-          "<b>Messaggio chiave:</b><br/>" +
-          "La differenza non è indovinare il mercato.<br/>" +
-          "È avere una struttura semplice e mantenerla nel tempo.";
+          "<b>Messaggio chiave:</b><br/>La differenza non è indovinare il mercato.<br/>È avere una struttura semplice e mantenerla nel tempo.";
       }
     }
   }
@@ -111,24 +106,14 @@
   }
 
   function destroyCharts() {
-    if (mainChart) {
-      mainChart.destroy();
-      mainChart = null;
-    }
-    if (ddChart) {
-      ddChart.destroy();
-      ddChart = null;
-    }
-    if (liqChart) {
-      liqChart.destroy();
-      liqChart = null;
-    }
+    if (mainChart) { mainChart.destroy(); mainChart = null; }
+    if (ddChart) { ddChart.destroy(); ddChart = null; }
+    if (liqChart) { liqChart.destroy(); liqChart = null; }
   }
 
   function yearTickIndices(labels) {
     const out = new Set();
     const seen = new Set();
-
     labels.forEach((label, idx) => {
       const year = String(label || "").slice(0, 4);
       if (/^\d{4}$/.test(year) && !seen.has(year)) {
@@ -136,7 +121,6 @@
         out.add(idx);
       }
     });
-
     return out;
   }
 
@@ -151,19 +135,10 @@
     return {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {
-        mode: "index",
-        intersect: false
-      },
+      interaction: { mode: "index", intersect: false },
       elements: {
-        line: {
-          tension: 0.14,
-          borderWidth: 2
-        },
-        point: {
-          radius: 0,
-          hoverRadius: 3
-        }
+        line: { tension: 0.14, borderWidth: 2 },
+        point: { radius: 0, hoverRadius: 3 }
       },
       plugins: {
         legend: {
@@ -172,10 +147,7 @@
             usePointStyle: true,
             boxWidth: 10,
             padding: 16,
-            font: {
-              size: 12,
-              weight: "600"
-            }
+            font: { size: 12, weight: "600" }
           }
         }
       }
@@ -194,23 +166,15 @@
         labels: labels,
         datasets: (function () {
           const ds = [
-            {
-              label: "Metodo Pigro 80/15/5",
-              data: firstVals
-            },
-            {
-              label: secondLabel,
-              data: secondVals
-            }
+            { label: "Metodo Pigro 80/15/5", data: firstVals },
+            { label: secondLabel, data: secondVals }
           ];
 
           if (Array.isArray(markerIndices) && markerIndices.length) {
             ds.push({
               type: "scatter",
               label: "Integrazioni Leva+",
-              data: markerIndices.map(function (i) {
-                return { x: labels[i], y: secondVals[i] };
-              }),
+              data: markerIndices.map(function (i) { return { x: labels[i], y: secondVals[i] }; }),
               showLine: false,
               pointRadius: 5,
               pointHoverRadius: 6
@@ -226,12 +190,8 @@
           ...commonChartOptions().plugins,
           tooltip: {
             callbacks: {
-              title: function (items) {
-                return items && items.length ? items[0].label : "";
-              },
-              label: function (ctx) {
-                return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
-              }
+              title: function (items) { return items && items.length ? items[0].label : ""; },
+              label: function (ctx) { return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`; }
             }
           }
         },
@@ -253,11 +213,7 @@
           },
           y: {
             grid: { color: "rgba(0,0,0,0.06)" },
-            ticks: {
-              callback: function (value) {
-                return euro(value, 0);
-              }
-            }
+            ticks: { callback: function (value) { return euro(value, 0); } }
           }
         }
       }
@@ -275,14 +231,8 @@
       data: {
         labels: labels,
         datasets: [
-          {
-            label: "Drawdown Portafoglio Pigro",
-            data: ddFirstVals
-          },
-          {
-            label: `Drawdown ${secondLabel}`,
-            data: ddSecondVals
-          }
+          { label: "Drawdown Portafoglio Pigro", data: ddFirstVals },
+          { label: `Drawdown ${secondLabel}`, data: ddSecondVals }
         ]
       },
       options: {
@@ -291,12 +241,8 @@
           ...commonChartOptions().plugins,
           tooltip: {
             callbacks: {
-              title: function (items) {
-                return items && items.length ? items[0].label : "";
-              },
-              label: function (ctx) {
-                return `${ctx.dataset.label}: ${pct(ctx.parsed.y, 2)}`;
-              }
+              title: function (items) { return items && items.length ? items[0].label : ""; },
+              label: function (ctx) { return `${ctx.dataset.label}: ${pct(ctx.parsed.y, 2)}`; }
             }
           }
         },
@@ -318,11 +264,7 @@
           },
           y: {
             grid: { color: "rgba(0,0,0,0.06)" },
-            ticks: {
-              callback: function (value) {
-                return pct(value, 0);
-              }
-            }
+            ticks: { callback: function (value) { return pct(value, 0); } }
           }
         }
       }
@@ -340,10 +282,7 @@
       data: {
         labels: labels,
         datasets: [
-          {
-            label: "Disponibilità Lombard residua",
-            data: liquidityVals
-          }
+          { label: "Disponibilità Lombard residua", data: liquidityVals }
         ]
       },
       options: {
@@ -352,12 +291,8 @@
           ...commonChartOptions().plugins,
           tooltip: {
             callbacks: {
-              title: function (items) {
-                return items && items.length ? items[0].label : "";
-              },
-              label: function (ctx) {
-                return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
-              }
+              title: function (items) { return items && items.length ? items[0].label : ""; },
+              label: function (ctx) { return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`; }
             }
           }
         },
@@ -379,11 +314,7 @@
           },
           y: {
             grid: { color: "rgba(0,0,0,0.06)" },
-            ticks: {
-              callback: function (value) {
-                return euro(value, 0);
-              }
-            }
+            ticks: { callback: function (value) { return euro(value, 0); } }
           }
         }
       }
@@ -451,7 +382,6 @@
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
       const payload = await res.json();
       out.textContent = payload.answer || payload.response || "Nessuna risposta disponibile.";
     } catch (err) {
@@ -693,11 +623,7 @@
     if (btnUpdate) btnUpdate.addEventListener("click", loadCharts);
 
     const btnPdf = document.getElementById("btn_pdf");
-    if (btnPdf) {
-      btnPdf.addEventListener("click", function () {
-        window.print();
-      });
-    }
+    if (btnPdf) btnPdf.addEventListener("click", function () { window.print(); });
 
     const btnAsk = document.getElementById("btn_ask");
     if (btnAsk) btnAsk.addEventListener("click", askAssistant);
