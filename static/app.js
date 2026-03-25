@@ -3,7 +3,7 @@
   let ddChart = null;
   let liqChart = null;
   let currentBenchmark = "world";
-  let currentMode = "normal"; // normal | leva_fissa | leva_dinamica | leva_plus
+  let currentMode = "normal"; // normal | leva_fissa | leva_plus
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
@@ -73,10 +73,8 @@
   }
 
   function toggleModeBoxes() {
-    const dynBox = document.getElementById("dynamic_rule_box");
     const plusBox = document.getElementById("plus_rule_box");
     const liqCard = document.getElementById("liquidity_card");
-    if (dynBox) dynBox.classList.toggle("show", currentMode === "leva_dinamica");
     if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
@@ -169,7 +167,7 @@
       type: "line",
       data: {
         labels: labels,
-        datasets: (function() {
+        datasets: (function () {
           const ds = [
             {
               label: "Metodo Pigro 80/15/5",
@@ -180,16 +178,20 @@
               data: secondVals
             }
           ];
+
           if (Array.isArray(markerIndices) && markerIndices.length) {
             ds.push({
               type: "scatter",
               label: "Integrazioni Leva+",
-              data: markerIndices.map(function(i) { return ({ x: labels[i], y: secondVals[i] }); }),
+              data: markerIndices.map(function (i) {
+                return { x: labels[i], y: secondVals[i] };
+              }),
               showLine: false,
               pointRadius: 5,
               pointHoverRadius: 6
             });
           }
+
           return ds;
         })()
       },
@@ -394,8 +396,6 @@
         active = bench === currentBenchmark;
       } else if (currentMode === "leva_fissa" && mode === "leva_fissa") {
         active = true;
-      } else if (currentMode === "leva_dinamica" && mode === "leva_dinamica") {
-        active = true;
       } else if (currentMode === "leva_plus" && mode === "leva_plus") {
         active = true;
       }
@@ -511,7 +511,7 @@
         <div style="margin-top:4px;">Integrazioni effettuate: <b>${events.length}</b>.</div>`;
       if (events.length) {
         html += `<div style="margin-top:8px;"><b>Date integrazione</b></div>`;
-        events.forEach(function(ev) {
+        events.forEach(function (ev) {
           html += `<div style="margin-top:4px;">${formatDateIt(ev.date)} — ${euro(ev.amount, 0)} su LS80 | disponibilità residua ${euro(ev.available_after, 0)}</div>`;
         });
       } else {
@@ -552,8 +552,15 @@
       `;
     }
 
-    renderMain(labels, pigroVals, strategyVals, strategyLabel, currentMode === "leva_plus" ? (payload.trigger_indices || []) : []);
+    renderMain(
+      labels,
+      pigroVals,
+      strategyVals,
+      strategyLabel,
+      currentMode === "leva_plus" ? (payload.trigger_indices || []) : []
+    );
     renderDd(labels, ddPigroVals, ddStrategyVals, strategyLabel);
+
     if (currentMode === "leva_plus") {
       renderLiquidity(labels, payload.liquidity_available || []);
       const liqSummary = document.getElementById("liquidity_summary");
@@ -561,7 +568,9 @@
         const liq = payload.liquidity_available || [];
         const firstLiq = liq.length ? liq[0] : NaN;
         const lastLiq = liq.length ? liq[liq.length - 1] : NaN;
-        liqSummary.innerHTML = `Disponibilità iniziale: <b>${euro(firstLiq, 0)}</b> | disponibilità finale: <b>${euro(lastLiq, 0)}</b>. Il ricalcolo avviene a fine anno in base al valore del solo portafoglio principale da ${euro(capital, 0)} dato a garanzia.`;
+        liqSummary.innerHTML =
+          `Disponibilità iniziale: <b>${euro(firstLiq, 0)}</b> | disponibilità finale: <b>${euro(lastLiq, 0)}</b>. ` +
+          `Il ricalcolo avviene a fine anno in base al valore del solo portafoglio principale da ${euro(capital, 0)} dato a garanzia.`;
       }
     } else {
       const liqSummary = document.getElementById("liquidity_summary");
@@ -635,7 +644,7 @@
       `;
     }
 
-    renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel);
+    renderMain(labels, pigroVals, benchmarkVals, benchmarkLabel, []);
     renderDd(labels, ddPigroVals, ddBenchmarkVals, benchmarkLabel);
   }
 
@@ -648,8 +657,6 @@
 
       if (currentMode === "leva_fissa") {
         payload = await fetchJson(`/api/compute_leva?capital=${encodeURIComponent(capital)}`);
-      } else if (currentMode === "leva_dinamica") {
-        payload = await fetchJson(`/api/compute_leva_dinamica?capital=${encodeURIComponent(capital)}`);
       } else if (currentMode === "leva_plus") {
         payload = await fetchJson(`/api/compute_leva_plus?capital=${encodeURIComponent(capital)}`);
       } else {
@@ -688,6 +695,7 @@
       if (compareBox) {
         compareBox.innerHTML = `<strong>Confronto immediato</strong><br/>Errore caricamento dati`;
       }
+
       const liqSummary = document.getElementById("liquidity_summary");
       if (liqSummary) liqSummary.innerHTML = "";
     }
@@ -741,15 +749,6 @@
     if (btnLevaFissa) {
       btnLevaFissa.addEventListener("click", function () {
         currentMode = "leva_fissa";
-        setActiveButtons();
-        loadCharts();
-      });
-    }
-
-    const btnLevaDinamica = document.querySelector('.benchmarkBtn[data-mode="leva_dinamica"]');
-    if (btnLevaDinamica) {
-      btnLevaDinamica.addEventListener("click", function () {
-        currentMode = "leva_dinamica";
         setActiveButtons();
         loadCharts();
       });
