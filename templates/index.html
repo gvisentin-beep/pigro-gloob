@@ -17,29 +17,6 @@
     .sub{color:#333; font-size:13px; margin-top:2px;}
     ul{margin-top:10px;}
 
-    .modeRow{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      margin:12px 0 8px;
-    }
-
-    .modeBtn{
-      background:#eef3ff;
-      color:#173a8a;
-      border:1px solid #cbd9ff;
-      border-radius:999px;
-      padding:8px 14px;
-      cursor:pointer;
-      font-weight:700;
-    }
-
-    .modeBtn.active{
-      background:#173a8a;
-      color:#fff;
-      border-color:#173a8a;
-    }
-
     .controlsRow{
       display:flex;
       gap:16px;
@@ -94,7 +71,7 @@
       border-color:#173a8a;
     }
 
-    .infoBox{
+    .dynamicRuleBox{
       display:none;
       margin-top:8px;
       padding:10px 12px;
@@ -106,7 +83,7 @@
       line-height:1.5;
     }
 
-    .infoBox.show{
+    .dynamicRuleBox.show{
       display:block;
     }
 
@@ -138,6 +115,135 @@
     .faqQ{font-weight:700;}
     .faqA{display:none; margin-top:4px; color:#333;}
     .faqItem.open .faqA{display:block;}
+
+    /* POPUP CONSULENTI */
+    .modalOverlay{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.38);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:9999;
+      padding:20px;
+    }
+
+    .modalOverlay.show{
+      display:flex;
+    }
+
+    .modalBox{
+      width:min(920px, 100%);
+      max-height:90vh;
+      overflow:auto;
+      background:#fff;
+      border-radius:18px;
+      box-shadow:0 20px 60px rgba(0,0,0,.22);
+      border:1px solid #dbe4ff;
+    }
+
+    .modalHeader{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:16px;
+      padding:20px 22px 14px;
+      border-bottom:1px solid #eef2ff;
+      background:#f7f9ff;
+      border-top-left-radius:18px;
+      border-top-right-radius:18px;
+    }
+
+    .modalTitle{
+      margin:0;
+      color:#173a8a;
+      font-size:24px;
+    }
+
+    .modalSub{
+      margin-top:4px;
+      color:#334;
+      font-size:13px;
+      line-height:1.45;
+    }
+
+    .modalClose{
+      border:none;
+      background:#173a8a;
+      color:#fff;
+      border-radius:999px;
+      width:36px;
+      height:36px;
+      cursor:pointer;
+      font-size:18px;
+      line-height:1;
+      font-weight:700;
+      flex:0 0 auto;
+    }
+
+    .modalBody{
+      padding:18px 22px 22px;
+    }
+
+    .advisorGrid{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      gap:16px;
+      margin-top:6px;
+    }
+
+    @media(max-width:900px){
+      .advisorGrid{grid-template-columns:1fr;}
+    }
+
+    .advisorCard{
+      border:1px solid #dbe4ff;
+      background:#fbfcff;
+      border-radius:14px;
+      padding:16px;
+    }
+
+    .advisorName{
+      font-size:18px;
+      font-weight:700;
+      color:#173a8a;
+      margin-bottom:6px;
+    }
+
+    .advisorRole{
+      font-size:13px;
+      color:#445;
+      margin-bottom:10px;
+      line-height:1.4;
+    }
+
+    .advisorLine{
+      font-size:13px;
+      color:#222;
+      line-height:1.55;
+      margin-bottom:5px;
+      word-break:break-word;
+    }
+
+    .advisorLine a{
+      color:#173a8a;
+      text-decoration:none;
+    }
+
+    .advisorLine a:hover{
+      text-decoration:underline;
+    }
+
+    .modalNote{
+      margin-top:18px;
+      padding:12px 14px;
+      border:1px solid #e8ecff;
+      background:#f7f9ff;
+      border-radius:12px;
+      font-size:13px;
+      color:#243b6b;
+      line-height:1.5;
+    }
   </style>
 </head>
 
@@ -158,18 +264,6 @@
       <li><b>Regole chiare</b>: pesi senza interventi continui</li>
       <li><b>Struttura &gt; Previsioni</b></li>
     </ul>
-
-    <div class="modeRow">
-      <button class="modeBtn active" data-mode="pigro">Pigro</button>
-      <button class="modeBtn" data-mode="leva20">Pigro con leva 20%</button>
-      <button class="modeBtn" data-mode="levaPlus">Pigro Leva+</button>
-    </div>
-
-    <div id="message_block" class="infoBox show">
-      <b>Messaggio chiave:</b><br/>
-      La differenza non è indovinare il mercato.<br/>
-      È avere una struttura semplice e mantenerla nel tempo.
-    </div>
 
     <div class="controlsRow">
       <div class="allocBox">
@@ -194,16 +288,18 @@
       </div>
     </div>
 
-    <div id="benchmark_hint" class="smallText">Scegli il mercato con cui confrontare il Metodo Pigro.</div>
+    <div class="smallText">Scegli il confronto da visualizzare.</div>
 
-    <div id="benchmark_controls" class="benchRow">
+    <div class="benchRow">
       <button class="benchmarkBtn" data-benchmark="mib">Confronta con Italia</button>
       <button class="benchmarkBtn" data-benchmark="sp500">Confronta con USA</button>
       <button class="benchmarkBtn active" data-benchmark="world">Confronta con MSCI World</button>
+      <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
+      <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
     </div>
 
-    <div id="plus_rule_box" class="infoBox">
-      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione del 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
+    <div id="plus_rule_box" class="dynamicRuleBox">
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
     </div>
 
     <div class="summary">
@@ -288,6 +384,53 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- POPUP CONSULENTI -->
+  <div id="advisor_modal" class="modalOverlay" aria-hidden="true">
+    <div class="modalBox" role="dialog" aria-modal="true" aria-labelledby="advisor_modal_title">
+      <div class="modalHeader">
+        <div>
+          <h3 id="advisor_modal_title" class="modalTitle">Consulenti indipendenti</h3>
+          <div class="modalSub">
+            Professionisti da contattare direttamente per eventuale consulenza fee-only.
+          </div>
+        </div>
+        <button id="advisor_modal_close" class="modalClose" aria-label="Chiudi">×</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="advisorGrid">
+          <div class="advisorCard">
+            <div class="advisorName">Consulente 1</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
+            <div class="advisorLine">Email: <a href="mailto:consulente1@email.it">consulente1@email.it</a></div>
+            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente1.it</a></div>
+            <div class="advisorLine">Telefono: 000 0000000</div>
+          </div>
+
+          <div class="advisorCard">
+            <div class="advisorName">Consulente 2</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
+            <div class="advisorLine">Email: <a href="mailto:consulente2@email.it">consulente2@email.it</a></div>
+            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente2.it</a></div>
+            <div class="advisorLine">Telefono: 000 0000000</div>
+          </div>
+
+          <div class="advisorCard">
+            <div class="advisorName">Consulente 3</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
+            <div class="advisorLine">Email: <a href="mailto:consulente3@email.it">consulente3@email.it</a></div>
+            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente3.it</a></div>
+            <div class="advisorLine">Telefono: 000 0000000</div>
+          </div>
+        </div>
+
+        <div class="modalNote">
+          Questo sito non ha alcun rapporto di commissione, retrocessione o collaborazione commerciale con i professionisti sopra indicati. L’eventuale contatto avviene in modo diretto e autonomo da parte dell’utente.
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
