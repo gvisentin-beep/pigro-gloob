@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
-  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=BpzQewwx4TF_yvkY_J_eYWeJD7fgVghPwHQMRUADkSf10VIoAuE-LjlkFcLK1d-cEwQDubrXimLOe7j4FpFyZvYh___4ZTvUjjduPYW31sdZgmFTIx4iAK5DftcZ6aXuv_cmN9RFwiRjKUzcBAI-KMoU8aLISmcMLTXlWyq749RLU81pFC72eX3H27jlSq8I7tZOaqgIuu2CKYefaBPDo7X5rYF1Di5xcuRReEDVBQJyqrQW9FANOdgFJQR2BlkXLhBO8Zgl3eXa7KPsyJsEFg" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=3jz5OUQrUJaLuamoztKZpHxBBVdu-HK8mEf3aYEpZvgMSFqNAm54UAYqFJ7kuQ2Fum1QRiWsniX7FeAa-GQagmxeXHEM7n3cI1LJcqtowJBC_vi5nBWgex9MB1QURI_wdmafK-pY9lefsKbV7AaPFczkEhbo_LJ7K_3O10kyNFMEvjQPKH8zGQxq5GVmsTKmj8L0Ot9kg1xRRmrx2aodF8vOwKRAVisy5fsfz0cbeOD5oKBFQdUprT2b2SClkn0NfJh6fu3jSAIfERaIXPYY9A" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
   <style>
     body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
@@ -89,30 +89,50 @@
 
     .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
 
-
     .heroVideoSection{
       margin:20px 0 18px;
+    }
+
+    .heroVideoBox{
+      max-width:760px;
+      margin:0 auto;
       padding:16px;
       background:linear-gradient(180deg,#f8faff 0%, #ffffff 100%);
       border:1px solid #dbe4ff;
-      border-radius:16px;
+      border-radius:18px;
+      box-shadow:0 10px 28px rgba(23,58,138,.06);
+      text-align:center;
+    }
+
+    .heroVideoBadge{
+      display:inline-block;
+      padding:6px 12px;
+      border-radius:999px;
+      background:#eef4ff;
+      color:#173a8a;
+      font-size:12px;
+      font-weight:700;
+      border:1px solid #dbe4ff;
+      margin-bottom:10px;
     }
 
     .heroVideoTitle{
-      font-size:18px;
+      font-size:22px;
       font-weight:700;
       color:#173a8a;
       margin-bottom:6px;
     }
 
     .heroVideoSub{
-      font-size:13px;
-      color:#334;
-      margin-bottom:12px;
+      font-size:14px;
+      color:#445;
+      margin-bottom:14px;
       line-height:1.45;
     }
 
     .heroVideoWrap{
+      max-width:640px;
+      margin:0 auto;
       border-radius:14px;
       overflow:hidden;
       border:1px solid #dbe4ff;
@@ -124,6 +144,14 @@
       width:100%;
       display:block;
       background:#fff;
+      aspect-ratio:16/9;
+      object-fit:cover;
+    }
+
+    .heroVideoNote{
+      margin-top:10px;
+      font-size:12px;
+      color:#667085;
     }
 
     #chart_main{width:100% !important; height:430px !important;}
@@ -153,7 +181,6 @@
     .faqA{display:none; margin-top:4px; color:#333;}
     .faqItem.open .faqA{display:block;}
 
-    /* POPUP CONSULENTI */
     .modalOverlay{
       position:fixed;
       inset:0;
@@ -302,17 +329,20 @@
       <li><b>Struttura &gt; Previsioni</b></li>
     </ul>
 
-
     <div class="heroVideoSection">
-      <div class="heroVideoTitle">Video introduttivo</div>
-      <div class="heroVideoSub">
-        Una sintesi visiva del Metodo Pigro: semplicità, costi bassi e orizzonte lungo.
-      </div>
-      <div class="heroVideoWrap">
-        <video class="heroVideo" controls playsinline preload="metadata" poster="/static/logo.png">
-          <source src="/static/video_pigro.mp4" type="video/mp4">
-          Il tuo browser non supporta la riproduzione video.
-        </video>
+      <div class="heroVideoBox">
+        <div class="heroVideoBadge">VIDEO INTRODUTTIVO</div>
+        <div class="heroVideoTitle">Il metodo Pigro in pochi secondi</div>
+        <div class="heroVideoSub">
+          Una sintesi visiva della filosofia Pigro: semplicità, costi bassi e orizzonte lungo.
+        </div>
+        <div class="heroVideoWrap">
+          <video class="heroVideo" autoplay muted loop playsinline controls preload="metadata">
+            <source src="/static/video_pigro.mp4" type="video/mp4">
+            Il tuo browser non supporta la riproduzione video.
+          </video>
+        </div>
+        <div class="heroVideoNote">Il video parte in automatico in modalità silenziosa. Puoi attivare l’audio dal player.</div>
       </div>
     </div>
 
@@ -437,7 +467,6 @@
 
   </div>
 
-  <!-- POPUP CONSULENTI -->
   <div id="advisor_modal" class="modalOverlay" aria-hidden="true">
     <div class="modalBox" role="dialog" aria-modal="true" aria-labelledby="advisor_modal_title">
       <div class="modalHeader">
