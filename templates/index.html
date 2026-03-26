@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
-  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=3jz5OUQrUJaLuamoztKZpHxBBVdu-HK8mEf3aYEpZvgMSFqNAm54UAYqFJ7kuQ2Fum1QRiWsniX7FeAa-GQagmxeXHEM7n3cI1LJcqtowJBC_vi5nBWgex9MB1QURI_wdmafK-pY9lefsKbV7AaPFczkEhbo_LJ7K_3O10kyNFMEvjQPKH8zGQxq5GVmsTKmj8L0Ot9kg1xRRmrx2aodF8vOwKRAVisy5fsfz0cbeOD5oKBFQdUprT2b2SClkn0NfJh6fu3jSAIfERaIXPYY9A" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=9McE7JV3dPuGI4b9ZuKJbOmh3WFXuDMwiZCzPG4Utlu44SEn3cxdwmQzuZI8CVcqUR8-faqdk26CY03caaUTkMeg48zqPSJ5YYkgqUjcgGdmA9wYAioGxK2SCd8LPENLLLo7hEpLrOka9rR9syLooTl9rFJuQuerW9Sjpc1kJXI54oohDRlS3FfElCQ3BDDXZhzniTqYzW9EXK9OFFCyCbTaPhViwGBzW-_5WzgsQ6P6iOaKG4-Pv9KEOqIgiSX9oBLN8eZKwlzITgKNtKfoAg" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
   <style>
     body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
@@ -16,6 +16,24 @@
     .logo{width:52px; height:52px; border-radius:10px;}
     .sub{color:#333; font-size:13px; margin-top:2px;}
     ul{margin-top:10px;}
+
+    .introTop{
+      display:grid;
+      grid-template-columns: 1fr 420px;
+      gap:22px;
+      align-items:start;
+      margin-top:8px;
+    }
+
+    @media(max-width:900px){
+      .introTop{
+        grid-template-columns:1fr;
+      }
+    }
+
+    .introText{
+      min-width:0;
+    }
 
     .controlsRow{
       display:flex;
@@ -90,13 +108,14 @@
     .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
 
     .heroVideoSection{
-      margin:20px 0 18px;
+      margin:0;
     }
 
     .heroVideoBox{
-      max-width:760px;
-      margin:0 auto;
-      padding:16px;
+      width:100%;
+      max-width:420px;
+      margin-left:auto;
+      padding:12px;
       background:linear-gradient(180deg,#f8faff 0%, #ffffff 100%);
       border:1px solid #dbe4ff;
       border-radius:18px;
@@ -106,33 +125,32 @@
 
     .heroVideoBadge{
       display:inline-block;
-      padding:6px 12px;
+      padding:5px 11px;
       border-radius:999px;
       background:#eef4ff;
       color:#173a8a;
-      font-size:12px;
+      font-size:11px;
       font-weight:700;
       border:1px solid #dbe4ff;
-      margin-bottom:10px;
+      margin-bottom:8px;
     }
 
     .heroVideoTitle{
-      font-size:22px;
+      font-size:18px;
       font-weight:700;
       color:#173a8a;
-      margin-bottom:6px;
+      margin-bottom:5px;
     }
 
     .heroVideoSub{
-      font-size:14px;
+      font-size:12px;
       color:#445;
-      margin-bottom:14px;
+      margin-bottom:10px;
       line-height:1.45;
     }
 
     .heroVideoWrap{
-      max-width:640px;
-      margin:0 auto;
+      width:100%;
       border-radius:14px;
       overflow:hidden;
       border:1px solid #dbe4ff;
@@ -149,9 +167,10 @@
     }
 
     .heroVideoNote{
-      margin-top:10px;
-      font-size:12px;
+      margin-top:8px;
+      font-size:11px;
       color:#667085;
+      line-height:1.4;
     }
 
     #chart_main{width:100% !important; height:430px !important;}
@@ -322,27 +341,31 @@
       </div>
     </div>
 
-    <ul>
-      <li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
-      <li><b>Controllo del rischio</b>: pesi fissi e struttura semplice</li>
-      <li><b>Regole chiare</b>: pesi senza interventi continui</li>
-      <li><b>Struttura &gt; Previsioni</b></li>
-    </ul>
+    <div class="introTop">
+      <div class="introText">
+        <ul>
+          <li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
+          <li><b>Controllo del rischio</b>: pesi fissi e struttura semplice</li>
+          <li><b>Regole chiare</b>: pesi senza interventi continui</li>
+          <li><b>Struttura &gt; Previsioni</b></li>
+        </ul>
+      </div>
 
-    <div class="heroVideoSection">
-      <div class="heroVideoBox">
-        <div class="heroVideoBadge">VIDEO INTRODUTTIVO</div>
-        <div class="heroVideoTitle">Il metodo Pigro in pochi secondi</div>
-        <div class="heroVideoSub">
-          Una sintesi visiva della filosofia Pigro: semplicità, costi bassi e orizzonte lungo.
+      <div class="heroVideoSection">
+        <div class="heroVideoBox">
+          <div class="heroVideoBadge">VIDEO INTRODUTTIVO</div>
+          <div class="heroVideoTitle">Il metodo Pigro</div>
+          <div class="heroVideoSub">
+            Finestra compatta in alto a destra, pronta a partire in automatico.
+          </div>
+          <div class="heroVideoWrap">
+            <video id="heroVideo" class="heroVideo" muted loop playsinline autoplay controls preload="auto">
+              <source src="/static/video_pigro.mp4?v=3" type="video/mp4">
+              Il tuo browser non supporta la riproduzione video.
+            </video>
+          </div>
+          <div class="heroVideoNote">Se il browser blocca l’autoplay, premi play una sola volta: poi resterà più fluido anche ai successivi accessi.</div>
         </div>
-        <div class="heroVideoWrap">
-          <video class="heroVideo" autoplay muted loop playsinline controls preload="metadata">
-            <source src="/static/video_pigro.mp4" type="video/mp4">
-            Il tuo browser non supporta la riproduzione video.
-          </video>
-        </div>
-        <div class="heroVideoNote">Il video parte in automatico in modalità silenziosa. Puoi attivare l’audio dal player.</div>
       </div>
     </div>
 
@@ -512,6 +535,30 @@
       </div>
     </div>
   </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const v = document.getElementById("heroVideo");
+      if (!v) return;
+
+      const tryPlay = function () {
+        const p = v.play();
+        if (p && typeof p.then === "function") {
+          p.catch(function(){});
+        }
+      };
+
+      v.muted = true;
+      v.defaultMuted = true;
+      v.setAttribute("muted", "");
+      v.setAttribute("autoplay", "");
+      v.setAttribute("playsinline", "");
+      tryPlay();
+
+      document.addEventListener("click", tryPlay, { once: true });
+      document.addEventListener("touchstart", tryPlay, { once: true });
+    });
+  </script>
 
   <script src="/static/app.js"></script>
 </body>
