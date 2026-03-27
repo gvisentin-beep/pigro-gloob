@@ -1,36 +1,26 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="it">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gloob — Metodo Pigro 80/15/5</title>
 
-<link rel="stylesheet" href="/static/style_4.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
 <style>
-.container{
-  max-width:1100px;
-  margin:0 auto;
-  padding:10px 20px 20px;
-}
+body{font-family:Arial; margin:0;}
+.wrap{max-width:1100px; margin:auto; padding:10px 20px;}
+
+h1{color:#173a8a;}
 
 .introTop{
   display:grid;
-  grid-template-columns: 1fr 390px;
+  grid-template-columns:1fr 390px;
   gap:14px;
-  align-items:start;
-  margin-top:-6px;
 }
 
-.heroVideoSection{
-  margin:-10px 0 0 0;
-  display:flex;
-  justify-content:flex-end;
-}
-
-.heroVideoBox{
-  width:100%;
-  max-width:390px;
+@media(max-width:900px){
+  .introTop{grid-template-columns:1fr;}
 }
 
 .heroVideo{
@@ -38,113 +28,89 @@
   border-radius:14px;
 }
 
-ul{
-  margin-top:4px;
-  margin-bottom:4px;
-}
-
 .controlsRow{
   display:flex;
   gap:16px;
-  margin:2px 0 10px;
   align-items:flex-end;
   flex-wrap:wrap;
+}
+
+.btn{
+  background:#132c74;
+  color:#fff;
+  border:none;
+  border-radius:8px;
+  padding:8px 14px;
+  cursor:pointer;
+}
+
+.card{
+  border:1px solid #ddd;
+  border-radius:10px;
+  padding:10px;
+  margin-top:10px;
 }
 </style>
 </head>
 
 <body>
 
-<div class="container">
+<div class="wrap">
 
 <!-- HEADER -->
+<h1>Gloob</h1>
+<div><b>Metodo Pigro — Variante 80/15/5</b></div>
+
 <div class="introTop">
 
 <div>
-<h1 style="margin-bottom:6px;">Gloob</h1>
-
-<div style="margin-bottom:8px;">
-<b>Metodo Pigro — Variante 80/15/5</b><br>
-Tre strumenti globali. Nessuna previsione. Solo disciplina.
-</div>
-
 <ul>
-<li><b>Pochi strumenti:</b> LifeStrategy 80, Oro, Bitcoin</li>
-<li><b>Controllo del rischio:</b> pesi fissi e struttura semplice</li>
-<li><b>Regole chiare:</b> pesi senza interventi continui</li>
-<li><b>Struttura > Previsioni</b></li>
+<li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
+<li><b>Controllo del rischio</b>: pesi fissi</li>
+<li><b>Regole chiare</b>: nessun intervento continuo</li>
 </ul>
 </div>
 
 <!-- VIDEO -->
-<div class="heroVideoSection">
-  <div class="heroVideoBox">
-    <video id="heroVideo" class="heroVideo" controls playsinline preload="metadata" poster="/static/logo.png">
-      <source src="/static/video_finale_pigro.mp4?v=1" type="video/mp4">
-      Il tuo browser non supporta il video.
-    </video>
-  </div>
+<div>
+<video class="heroVideo" controls playsinline preload="metadata"
+poster="/static/sdraio.png">
+<source src="/static/video_pigro_v3_migliorato.mp4?v=2" type="video/mp4">
+</video>
 </div>
 
 </div>
 
-<!-- COMPOSIZIONE -->
-<div class="card" style="margin-top:20px;">
-<b>Composizione fissa</b><br>
-LifeStrategy 80: <b>80%</b><br>
-Oro: <b>15%</b><br>
-Bitcoin: <b>5%</b>
-</div>
-
-<!-- INPUT -->
+<!-- CONTROLLI -->
 <div class="controlsRow">
+
+<div class="card">
+<b>Composizione</b><br>
+80% LS80<br>
+15% Oro<br>
+5% Bitcoin
+</div>
 
 <div>
 <label>Capitale (€)</label><br>
-<input id="capital" value="10000" style="padding:6px;">
+<input id="capital" value="10000">
 </div>
 
 <div>
-<button onclick="compute()">Aggiorna</button>
-<button onclick="downloadPDF()">PDF</button>
+<button class="btn">Aggiorna</button>
+<button class="btn">PDF</button>
 </div>
 
 <div style="margin-left:auto;">
-<b>Finale:</b> <span id="finalValue"></span>
+Finale: <b id="finalValue">—</b>
 </div>
 
 </div>
 
-<!-- BOTTONI -->
-<div class="benchRow">
-<button onclick="setBenchmark('mib')">Confronta con Italia</button>
-<button onclick="setBenchmark('sp500')">Confronta con USA</button>
-<button onclick="setBenchmark('world')">Confronta con MSCI World</button>
-<button onclick="setMode('leva_fissa')">Pigro con leva 20%</button>
-<button onclick="setMode('leva_plus')">Pigro Leva+</button>
-</div>
-
-<!-- SUMMARY -->
-<div class="summary">
-<b>Portafoglio “Pigro 80/15/5”:</b>
-Rendimento annualizzato <b id="cagr"></b> |
-Max Ribasso <b id="maxdd"></b><br>
-
-Composizione: LS80 80% | Oro 15% | Bitcoin 5%<br>
-Raddoppio del portafoglio in anni: <span id="dbl"></span><br>
-
-<span id="benchmark_summary"></span>
-</div>
-
-<!-- CHART -->
-<h2>Andamento negli ultimi anni — confronto</h2>
+<h2>Andamento</h2>
 
 <div class="card">
 <canvas id="chart_main"></canvas>
-</div>
-
-<div class="card">
-<canvas id="chart_dd"></canvas>
 </div>
 
 </div>
