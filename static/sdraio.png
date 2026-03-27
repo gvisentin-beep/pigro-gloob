@@ -1,1 +1,4 @@
-
+ffmpeg -loop 1 -i sdraio.png -i voce.mp3 \
+-c:v libx264 -t 60 -pix_fmt yuv420p \
+-vf "scale=1280:720,format=yuv420p" \
+-c:a aac -shortest video_finale_pigro.mp4
