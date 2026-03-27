@@ -1,121 +1,505 @@
 <!doctype html>
 <html lang="it">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gloob — Metodo Pigro 80/15/5</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gloob — Metodo Pigro 80/15/5</title>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=jxelxkPgY2jbaOhLRQUxM-uS3hMhLiw-UYB5N7R2CojBKh5O1AfP7BMZ2JIGrmGIvBILlPYLPBJTy73BIPZLPbe48_CUmMA0AzTQLsf0Tk2v4g0MreyENAgB3g0e-aNoN3KLDAzPus4AtcsY5iXN0MY_8Jna9qV554RxTvt4BLZISpYDmRfvHuM5cVQfR3CxwZUcrjTHXmJie8VU0plE9e2T8tcedd8rs_KBCq7FEOnMbZU8vQSpayaUUEJrKnKB5b1L9KYAkbkw8mAm6w6_FA" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
-<style>
-body{font-family:Arial; margin:0;}
-.wrap{max-width:1100px; margin:auto; padding:10px 20px;}
+  <style>
+    body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
+    .wrap{max-width:1100px; margin:0 auto; padding:10px 20px 20px;}
+    h1{margin:0; font-size:34px; color:#173a8a;}
+    h2{margin-top:22px; color:#173a8a;}
+    .topRow{display:flex; gap:16px; align-items:center;}
+    .logo{width:52px; height:52px; border-radius:10px;}
+    .sub{color:#333; font-size:13px; margin-top:2px;}
+    ul{margin-top:4px; margin-bottom:4px;}
 
-h1{color:#173a8a;}
+    .introTop{
+      display:grid;
+      grid-template-columns: 1fr 390px;
+      gap:14px;
+      align-items:start;
+      margin-top:-6px;
+    }
 
-.introTop{
-  display:grid;
-  grid-template-columns:1fr 390px;
-  gap:14px;
-}
+    @media(max-width:900px){
+      .introTop{
+        grid-template-columns:1fr;
+      }
+    }
 
-@media(max-width:900px){
-  .introTop{grid-template-columns:1fr;}
-}
+    .introText{
+      min-width:0;
+    }
 
-.heroVideo{
-  width:100%;
-  border-radius:14px;
-}
+    .controlsRow{
+      display:flex;
+      gap:16px;
+      margin:2px 0 10px;
+      align-items:flex-end;
+      flex-wrap:wrap;
+    }
 
-.controlsRow{
-  display:flex;
-  gap:16px;
-  align-items:flex-end;
-  flex-wrap:wrap;
-}
+    .ctrl{display:flex; flex-direction:column; gap:6px;}
+    .ctrl label{display:block; font-size:13px; color:#111; margin-bottom:4px;}
+    .ctrl input[type="text"]{width:180px; padding:6px 8px;}
+    .ctrl.capital{min-width:220px;}
 
-.btn{
-  background:#132c74;
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:8px 14px;
-  cursor:pointer;
-}
+    .allocBox{
+      border:1px solid #d9e2ff;
+      background:#f7f9ff;
+      border-radius:10px;
+      padding:10px 12px;
+      font-size:13px;
+      line-height:1.5;
+      min-width:210px;
+    }
 
-.card{
-  border:1px solid #ddd;
-  border-radius:10px;
-  padding:10px;
-  margin-top:10px;
-}
-</style>
+    .btn{
+      background:#132c74; color:#fff; border:none; border-radius:8px;
+      padding:9px 14px; cursor:pointer; font-weight:700;
+    }
+    .btn:disabled{opacity:.6; cursor:not-allowed;}
+
+    .btnRow{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+
+    .benchRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin:12px 0 8px;
+    }
+
+    .benchmarkBtn{
+      background:#eef3ff;
+      color:#173a8a;
+      border:1px solid #cbd9ff;
+      border-radius:999px;
+      padding:8px 14px;
+      cursor:pointer;
+      font-weight:700;
+    }
+
+    .benchmarkBtn.active{
+      background:#173a8a;
+      color:#fff;
+      border-color:#173a8a;
+    }
+
+    .dynamicRuleBox{
+      display:none;
+      margin-top:8px;
+      padding:10px 12px;
+      background:#f7f9ff;
+      border:1px solid #dbe4ff;
+      border-radius:10px;
+      font-size:13px;
+      color:#243b6b;
+      line-height:1.5;
+    }
+
+    .dynamicRuleBox.show{
+      display:block;
+    }
+
+    .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
+
+    .heroVideoSection{
+      margin:-10px 0 0 0;
+      display:flex;
+      justify-content:flex-end;
+      align-items:flex-start;
+    }
+
+    .heroVideoBox{
+      width:100%;
+      max-width:390px;
+      margin-left:auto;
+      padding:0;
+      background:transparent;
+      border:none;
+      border-radius:0;
+      box-shadow:none;
+      text-align:right;
+    }
+
+    .heroVideoWrap{
+      width:100%;
+      border-radius:14px;
+      overflow:hidden;
+      border:1px solid #dbe4ff;
+      background:#fff;
+      box-shadow:0 8px 20px rgba(23,58,138,.10);
+    }
+
+    .heroVideo{
+      width:100%;
+      display:block;
+      background:#fff;
+      aspect-ratio:16/9;
+      object-fit:cover;
+    }
+
+    #chart_main{width:100% !important; height:430px !important;}
+    #chart_dd{width:100% !important; height:220px !important;}
+    #chart_liq{width:100% !important; height:220px !important;}
+
+    .summary{margin-top:8px; font-size:13px;}
+    .summary b{font-size:15px;}
+    .smallText{font-size:12px; color:#333; margin-top:8px;}
+
+    .bigCompare{
+      margin-top:10px;
+      padding:10px 12px;
+      background:#f7f9ff;
+      border:1px solid #dbe4ff;
+      border-radius:10px;
+      font-size:14px;
+      line-height:1.45;
+    }
+
+    .bigCompare strong{color:#173a8a;}
+    .cols{display:grid; grid-template-columns: 1fr 1fr; gap:26px; margin-top:26px;}
+    @media(max-width:900px){ .cols{grid-template-columns:1fr;} }
+
+    .faqItem{padding:6px 0; cursor:pointer; border-bottom:1px solid #efefef;}
+    .faqQ{font-weight:700;}
+    .faqA{display:none; margin-top:4px; color:#333;}
+    .faqItem.open .faqA{display:block;}
+
+    .modalOverlay{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.38);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:9999;
+      padding:20px;
+    }
+
+    .modalOverlay.show{
+      display:flex;
+    }
+
+    .modalBox{
+      width:min(920px, 100%);
+      max-height:90vh;
+      overflow:auto;
+      background:#fff;
+      border-radius:18px;
+      box-shadow:0 20px 60px rgba(0,0,0,.22);
+      border:1px solid #dbe4ff;
+    }
+
+    .modalHeader{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:16px;
+      padding:20px 22px 14px;
+      border-bottom:1px solid #eef2ff;
+      background:#f7f9ff;
+      border-top-left-radius:18px;
+      border-top-right-radius:18px;
+    }
+
+    .modalTitle{
+      margin:0;
+      color:#173a8a;
+      font-size:24px;
+    }
+
+    .modalSub{
+      margin-top:4px;
+      color:#334;
+      font-size:13px;
+      line-height:1.45;
+    }
+
+    .modalClose{
+      border:none;
+      background:#173a8a;
+      color:#fff;
+      border-radius:999px;
+      width:36px;
+      height:36px;
+      cursor:pointer;
+      font-size:18px;
+      line-height:1;
+      font-weight:700;
+      flex:0 0 auto;
+    }
+
+    .modalBody{
+      padding:18px 22px 22px;
+    }
+
+    .advisorGrid{
+      display:grid;
+      grid-template-columns:repeat(3, 1fr);
+      gap:16px;
+      margin-top:6px;
+    }
+
+    @media(max-width:900px){
+      .advisorGrid{grid-template-columns:1fr;}
+    }
+
+    .advisorCard{
+      border:1px solid #dbe4ff;
+      background:#fbfcff;
+      border-radius:14px;
+      padding:16px;
+    }
+
+    .advisorName{
+      font-size:18px;
+      font-weight:700;
+      color:#173a8a;
+      margin-bottom:6px;
+    }
+
+    .advisorRole{
+      font-size:13px;
+      color:#445;
+      margin-bottom:10px;
+      line-height:1.4;
+    }
+
+    .advisorLine{
+      font-size:13px;
+      color:#222;
+      line-height:1.55;
+      margin-bottom:5px;
+      word-break:break-word;
+    }
+
+    .advisorLine a{
+      color:#173a8a;
+      text-decoration:none;
+    }
+
+    .advisorLine a:hover{
+      text-decoration:underline;
+    }
+
+    .modalNote{
+      margin-top:18px;
+      padding:12px 14px;
+      border:1px solid #e8ecff;
+      background:#f7f9ff;
+      border-radius:12px;
+      font-size:13px;
+      color:#243b6b;
+      line-height:1.5;
+    }
+  </style>
 </head>
 
 <body>
+  <div class="wrap">
 
-<div class="wrap">
+    <div class="topRow">
+      <img class="logo" src="/static/logo.png" alt="Gloob">
+      <div>
+        <h1>Gloob</h1>
+        <div class="sub"><b>Metodo Pigro — Variante 80/15/5</b><br/>Tre strumenti globali. Nessuna previsione. Solo disciplina.</div>
+      </div>
+    </div>
 
-<!-- HEADER -->
-<h1>Gloob</h1>
-<div><b>Metodo Pigro — Variante 80/15/5</b></div>
+    <div class="introTop">
+      <div class="introText">
+        <ul>
+          <li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
+          <li><b>Controllo del rischio</b>: pesi fissi e struttura semplice</li>
+          <li><b>Regole chiare</b>: pesi senza interventi continui</li>
+          <li><b>Struttura &gt; Previsioni</b></li>
+        </ul>
+      </div>
 
-<div class="introTop">
+      <div class="heroVideoSection">
+        <div class="heroVideoBox">
+          <div class="heroVideoWrap">
+            <video id="heroVideo" class="heroVideo" playsinline controls preload="metadata" poster="/static/logo.png">
+              <source src="/static/video_finale_pigro.mp4?v=3" type="video/mp4">
+              Il tuo browser non supporta la riproduzione video.
+            </video>
+          </div>
+        </div>
+      </div>
+    </div>
 
-<div>
-<ul>
-<li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
-<li><b>Controllo del rischio</b>: pesi fissi</li>
-<li><b>Regole chiare</b>: nessun intervento continuo</li>
-</ul>
-</div>
+    <div class="controlsRow">
+      <div class="allocBox">
+        <b>Composizione fissa</b><br/>
+        LifeStrategy 80: <b>80%</b><br/>
+        Oro: <b>15%</b><br/>
+        Bitcoin: <b>5%</b>
+      </div>
 
-<!-- VIDEO -->
-<div>
-<video class="heroVideo" controls playsinline preload="metadata"
-poster="/static/sdraio.png">
-<source src="/static/video_pigro_v3_migliorato.mp4?v=2" type="video/mp4">
-</video>
-</div>
+      <div class="ctrl capital">
+        <label><b>Capitale (€)</b></label>
+        <input id="capital" type="text" value="10000">
+      </div>
 
-</div>
+      <div class="btnRow">
+        <button id="btn_update" class="btn">Aggiorna</button>
+        <button id="btn_pdf" class="btn">PDF</button>
+      </div>
 
-<!-- CONTROLLI -->
-<div class="controlsRow">
+      <div style="margin-left:auto; font-weight:700;">
+        Finale: <span id="final_value">—</span> <span class="sub">(in anni <span id="final_years">—</span>)</span>
+      </div>
+    </div>
 
-<div class="card">
-<b>Composizione</b><br>
-80% LS80<br>
-15% Oro<br>
-5% Bitcoin
-</div>
+    <div class="smallText">Scegli il confronto da visualizzare.</div>
 
-<div>
-<label>Capitale (€)</label><br>
-<input id="capital" value="10000">
-</div>
+    <div class="benchRow">
+      <button class="benchmarkBtn" data-benchmark="mib">Confronta con Italia</button>
+      <button class="benchmarkBtn" data-benchmark="sp500">Confronta con USA</button>
+      <button class="benchmarkBtn active" data-benchmark="world">Confronta con MSCI World</button>
+      <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
+      <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
+    </div>
 
-<div>
-<button class="btn">Aggiorna</button>
-<button class="btn">PDF</button>
-</div>
+    <div id="plus_rule_box" class="dynamicRuleBox">
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
+    </div>
 
-<div style="margin-left:auto;">
-Finale: <b id="finalValue">—</b>
-</div>
+    <div class="summary">
+      <b>Portafoglio “Pigro 80/15/5”:</b>
+      Rendimento annualizzato <b><span id="cagr">—</span></b> |
+      <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
+      Composizione: LS80 <b>80%</b> | Oro <b>15%</b> | Bitcoin <b>5%</b><br/>
+      Raddoppio del portafoglio in anni: <span id="dbl">—</span><br/>
+      <span id="benchmark_summary">Benchmark: —</span>
+    </div>
 
-</div>
+    <h2 id="chart_title">Andamento negli ultimi anni</h2>
 
-<h2>Andamento</h2>
+    <div class="card">
+      <canvas id="chart_main"></canvas>
+    </div>
 
-<div class="card">
-<canvas id="chart_main"></canvas>
-</div>
+    <div class="card">
+      <canvas id="chart_dd"></canvas>
+      <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
+    </div>
 
-</div>
+    <div id="liquidity_card" class="card" style="display:none;">
+      <canvas id="chart_liq"></canvas>
+      <div id="liquidity_summary" class="smallText" style="margin-top:10px;"></div>
+    </div>
 
-<script src="/static/app.js"></script>
+    <div id="compare_box" class="bigCompare">
+      <strong>Confronto immediato</strong><br/>
+      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
+      Metodo Pigro → <b id="compare_pigro">—</b><br/>
+      <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
+    </div>
 
+    <div class="smallText">
+      <b>Messaggio chiave:</b><br/>
+      La differenza non è indovinare il mercato.<br/>
+      È avere una struttura semplice e mantenerla nel tempo.
+    </div>
+
+    <h2>Come applicarlo concretamente</h2>
+    <ol>
+      <li>Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.</li>
+      <li>Evita interventi continui.</li>
+      <li>Confronta il metodo con Italia, USA, MSCI World, leva 20% fissa o Pigro Leva+ con riserva Lombard.</li>
+      <li>Osserva insieme rendimento e drawdown.</li>
+    </ol>
+
+    <div class="btnRow">
+      <button class="btn" id="btn_faxsimile">Faxsimile PDF</button>
+      <button class="btn" id="btn_consulente">Richiedi Consulente</button>
+      <button class="btn" id="btn_libro">Per saperne di più</button>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h2>Domande libere</h2>
+        <div class="smallText">
+          Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).
+        </div>
+        <textarea id="ask_text" style="width:100%; height:110px; padding:8px; margin-top:8px;" placeholder="Scrivi qui la tua domanda..."></textarea>
+        <div style="margin-top:8px;">
+          <button class="btn" id="btn_ask">Chiedi all’assistente</button>
+        </div>
+        <div class="smallText" style="margin-top:10px;">Nota: risposta informativa, non consulenza finanziaria.</div>
+        <div id="ask_answer" class="card" style="display:none;"></div>
+      </div>
+
+      <div>
+        <h2>FAQ</h2>
+
+        <div class="faqItem"><div class="faqQ">1) Perché inserire Bitcoin?</div><div class="faqA">Bitcoin può aggiungere una componente non correlata e una quota di crescita potenziale.</div></div>
+        <div class="faqItem"><div class="faqQ">2) Perché solo il 5%?</div><div class="faqA">Una quota contenuta permette di limitarne l’impatto sul rischio complessivo.</div></div>
+        <div class="faqItem"><div class="faqQ">3) Perché tenere oro e Bitcoin insieme?</div><div class="faqA">Hanno ruoli diversi: l’oro tende a difendere, il Bitcoin tende a spingere il rendimento.</div></div>
+        <div class="faqItem"><div class="faqQ">4) Perché confrontarlo con più mercati?</div><div class="faqA">Per capire se il metodo è stato più efficiente rispetto a Italia, USA o mercato globale.</div></div>
+        <div class="faqItem"><div class="faqQ">5) Quando ribilanciare?</div><div class="faqA">In genere una volta l’anno è una regola semplice ed efficace.</div></div>
+        <div class="faqItem"><div class="faqQ">6) Serve molto capitale?</div><div class="faqA">No. Anche capitali contenuti possono essere investiti con questa logica.</div></div>
+        <div class="faqItem"><div class="faqQ">7) Il drawdown perché è importante?</div><div class="faqA">Perché mostra quanto si perde davvero nei momenti peggiori.</div></div>
+        <div class="faqItem"><div class="faqQ">8) È una strategia di breve periodo?</div><div class="faqA">No. È pensata per il lungo periodo.</div></div>
+        <div class="faqItem"><div class="faqQ">9) Posso usarla come base educativa?</div><div class="faqA">Sì, è una struttura semplice che aiuta a capire il rapporto tra rendimento e rischio.</div></div>
+        <div class="faqItem"><div class="faqQ">10) Cos’è Pigro Leva+?</div><div class="faqA">È una variante che parte con leva del 20% e tiene monitorata la disponibilità Lombard residua nel tempo.</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="advisor_modal" class="modalOverlay" aria-hidden="true">
+    <div class="modalBox" role="dialog" aria-modal="true" aria-labelledby="advisor_modal_title">
+      <div class="modalHeader">
+        <div>
+          <h3 id="advisor_modal_title" class="modalTitle">Consulenti indipendenti</h3>
+          <div class="modalSub">
+            Professionisti da contattare direttamente per eventuale consulenza fee-only.
+          </div>
+        </div>
+        <button id="advisor_modal_close" class="modalClose" aria-label="Chiudi">×</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="advisorGrid">
+          <div class="advisorCard">
+            <div class="advisorName">Consulente 1</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
+            <div class="advisorLine">Email: <a href="mailto:consulente1@email.it">consulente1@email.it</a></div>
+            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente1.it</a></div>
+            <div class="advisorLine">Telefono: 000 0000000</div>
+          </div>
+
+          <div class="advisorCard">
+            <div class="advisorName">Consulente 2</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
+            <div class="advisorLine">Email: <a href="mailto:consulente2@email.it">consulente2@email.it</a></div>
+            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente2.it</a></div>
+            <div class="advisorLine">Telefono: 000 0000000</div>
+          </div>
+
+          <div class="advisorCard">
+            <div class="advisorName">Consulente 3</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
+            <div class="advisorLine">Email: <a href="mailto:consulente3@email.it">consulente3@email.it</a></div>
+            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente3.it</a></div>
+            <div class="advisorLine">Telefono: 000 0000000</div>
+          </div>
+        </div>
+
+        <div class="modalNote">
+          Questo sito non ha alcun rapporto di commissione, retrocessione o collaborazione commerciale con i professionisti sopra indicati. L’eventuale contatto avviene in modo diretto e autonomo da parte dell’utente.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>
