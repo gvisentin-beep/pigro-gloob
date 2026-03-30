@@ -1014,9 +1014,20 @@ def api_ask():
         if not question:
             return _json_error("Scrivi una domanda.", 400)
 
+        if len(question) > 500:
+            return _json_error("La domanda è troppo lunga. Tienila entro circa 500 caratteri.", 400)
+
         client = _openai_client()
         if client is None:
-            return jsonify({"ok": True, "answer": "Assistente non configurato: manca OPENAI_API_KEY su Render."})
+            return jsonify(
+                {
+                    "ok": True,
+                    "answer": (
+                        "Assistente non configurato: manca OPENAI_API_KEY "
+                        "nell'hosting attuale."
+                    ),
+                }
+            )
 
         resp = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -1024,19 +1035,23 @@ def api_ask():
                 {
                     "role": "system",
                     "content": (
-                        "Rispondi in italiano, in modo semplice e pratico. "
-                        "Contesto: sito Metodo Pigro variante 80% LS80, 15% Oro, 5% Bitcoin. "
-                        "Informazione generale, non consulenza personalizzata."
+                        "Rispondi in italiano, in modo semplice, pratico e sintetico. "
+                        "Contesto: sito Gloob Metodo Pigro con portafoglio 80% LS80, 15% Oro, 5% Bitcoin. "
+                        "Fornisci solo informazione generale, educativa, non consulenza personalizzata. "
+                        "Usa esempi semplici se aiutano. Evita tecnicismi inutili. "
+                        "Se la domanda è su rischi o fiscalità, chiarisci che serve verifica con professionista."
                     ),
                 },
                 {"role": "user", "content": question},
             ],
             temperature=0.2,
+            max_tokens=350,
         )
 
         answer = ""
         if resp and resp.choices and resp.choices[0].message and resp.choices[0].message.content:
             answer = resp.choices[0].message.content or ""
+
         return jsonify({"ok": True, "answer": answer.strip() or "Nessuna risposta disponibile."})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
