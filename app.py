@@ -41,6 +41,7 @@ WEIGHT_BTC = 0.05
 
 MIN_ROWS_REQUIRED = 20
 STALE_WARNING_DAYS = 7
+REAL_START_DATE = pd.Timestamp("2020-12-08")
 
 DEFAULT_LEVERAGE_CAPITAL = 100000.0
 LEVERAGE_RATIO = 0.20
@@ -266,14 +267,34 @@ def dataset_freshness_days(df: Optional[pd.DataFrame]) -> Optional[int]:
     return int((today - last_date.normalize()).days)
 
 
-def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    ls80 = read_price_csv(LS80_FILE).rename(columns={"close": "ls80"})
-    gold = read_price_csv(GOLD_FILE).rename(columns={"close": "gold"})
-    btc = read_price_csv(BTC_FILE).rename(columns={"close": "btc"})
-    world = read_price_csv(WORLD_FILE).rename(columns={"close": "world"})
+def clip_from_real_start(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    out = out.dropna(subset=["date"])
+    out = out[out["date"] >= REAL_START_DATE].copy()
+    out = out.sort_values("date").reset_index(drop=True)
+    return out
 
-    mib = try_read_price_csv(MIB_FILE)
-    sp500 = try_read_price_csv(SP500_FILE)
+
+def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    ls80 = clip_from_real_start(read_price_csv(LS80_FILE))
+    gold = clip_from_real_start(read_price_csv(GOLD_FILE))
+    btc = clip_from_real_start(read_price_csv(BTC_FILE))
+    world = clip_from_real_start(read_price_csv(WORLD_FILE))
+
+    mib = clip_from_real_start(try_read_price_csv(MIB_FILE))
+    sp500 = clip_from_real_start(try_read_price_csv(SP500_FILE))
+
+    if ls80 is None or ls80.empty:
+        raise ValueError("LS80 vuoto dopo il filtro reale dal 2020-12-08")
+    if gold is None or gold.empty:
+        raise ValueError("Gold vuoto dopo il filtro reale dal 2020-12-08")
+    if btc is None or btc.empty:
+        raise ValueError("BTC vuoto dopo il filtro reale dal 2020-12-08")
+    if world is None or world.empty:
+        raise ValueError("World vuoto dopo il filtro reale dal 2020-12-08")
 
     freshness = {
         "ls80": dataset_freshness_days(ls80),
@@ -284,31 +305,43 @@ def build_merged_dataset() -> Tuple[pd.DataFrame, Dict[str, Any]]:
         "sp500": dataset_freshness_days(sp500),
     }
 
-    df = ls80.merge(gold, on="date", how="outer")
-    df = df.merge(btc, on="date", how="outer")
-    df = df.merge(world, on="date", how="outer")
+    ls80 = ls80.rename(columns={"close": "ls80"})
+    gold = gold.rename(columns={"close": "gold"})
+    btc = btc.rename(columns={"close": "btc"})
+    world = world.rename(columns={"close": "world"})
+
+    df = ls80.merge(gold, on="date", how="inner")
+    df = df.merge(btc, on="date", how="inner")
+    df = df.merge(world, on="date", how="inner")
 
     if mib is not None and not mib.empty:
-        df = df.merge(mib.rename(columns={"close": "mib"}), on="date", how="outer")
+        df = df.merge(
+            mib.rename(columns={"close": "mib"})[["date", "mib"]],
+            on="date",
+            how="left",
+        )
     else:
         df["mib"] = pd.NA
 
     if sp500 is not None and not sp500.empty:
-        df = df.merge(sp500.rename(columns={"close": "sp500"}), on="date", how="outer")
+        df = df.merge(
+            sp500.rename(columns={"close": "sp500"})[["date", "sp500"]],
+            on="date",
+            how="left",
+        )
     else:
         df["sp500"] = pd.NA
 
     df = df.sort_values("date").reset_index(drop=True)
 
-    value_cols = ["ls80", "gold", "btc", "world", "mib", "sp500"]
-    for col in value_cols:
+    for col in ["mib", "sp500"]:
         if col in df.columns:
             df[col] = df[col].ffill()
 
     df = df.dropna(subset=["ls80", "gold", "btc", "world"]).reset_index(drop=True)
 
     if df.empty:
-        raise ValueError("Dataset vuoto dopo il merge dei CSV")
+        raise ValueError("Dataset vuoto dopo il merge dei CSV filtrati dal 2020-12-08")
 
     return df, freshness
 
@@ -560,7 +593,6 @@ def compute_portfolios_leva_plus(
         float(px_btc.iloc[0]),
     )
 
-    # Debito base 20% del portafoglio principale, da ricalcolare ogni fine anno
     base_debt_nominal = capital * leverage_ratio
     extra_debt_nominal = 0.0
     debt_nominal = base_debt_nominal + extra_debt_nominal
@@ -652,7 +684,6 @@ def compute_portfolios_leva_plus(
         leverage_pct_values.append(float(leverage_pct))
 
         if i < n - 1 and dates.iloc[i + 1].year != dates.iloc[i].year:
-            # Ribilanciamento annuale del portafoglio principale
             pigro_hold = _rebalance_holdings(
                 gross_pigro,
                 float(px_ls80.iloc[i]),
@@ -660,14 +691,10 @@ def compute_portfolios_leva_plus(
                 float(px_btc.iloc[i]),
             )
 
-            # La leva base viene ricalcolata ogni anno al 20% del portafoglio principale
             base_debt_nominal = max(gross_pigro * leverage_ratio, 0.0)
             debt_nominal = base_debt_nominal + extra_debt_nominal
-
-            # Si assume regolazione/azzeramento degli interessi maturati al ribilanciamento annuale
             debt_cost = debt_nominal
 
-            # L'equity resta quello maturato fino a fine anno; cambia il gross investito dal giorno dopo
             new_gross_strategy = max(equity_strategy + debt_cost, 0.0)
 
             strat_hold = _rebalance_holdings(
@@ -761,6 +788,7 @@ def api_diag():
             "first_date": str(merged["date"].iloc[0].date()),
             "last_date": str(merged["date"].iloc[-1].date()),
             "freshness_days": freshness,
+            "real_start_date": str(REAL_START_DATE.date()),
         }
     except Exception as e:
         payload["merge_error"] = f"{type(e).__name__}: {e}"
@@ -844,6 +872,7 @@ def api_compute():
                 "benchmark_label": benchmark_label,
                 "benchmark_key": benchmark_key,
                 "warnings": warnings,
+                "real_start_date": str(REAL_START_DATE.date()),
                 "metrics": {
                     "final_portfolio": float(portfolio.iloc[-1]),
                     "final_benchmark": float(benchmark_scaled.iloc[-1]),
@@ -916,6 +945,7 @@ def api_compute_leva():
                 "worst_episodes_pigro": worst_pigro,
                 "worst_episodes_strategy": worst_leva,
                 "avg_leverage_pct": round(LEVERAGE_RATIO * 100.0, 2),
+                "real_start_date": str(REAL_START_DATE.date()),
                 "warnings": [
                     f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile"
                     for name, stale_days in freshness.items()
@@ -995,6 +1025,7 @@ def api_compute_leva_plus():
                 "trigger_value": round(float(series["trigger_value"]), 2),
                 "increment_amount": round(float(series["increment_amount"]), 2),
                 "initial_available": round(float(capital * LOMBARD_COLLATERAL_RATIO - capital * LEVERAGE_RATIO), 2),
+                "real_start_date": str(REAL_START_DATE.date()),
                 "warnings": [
                     f"{name.upper()} fermo da {stale_days} giorni: usato ultimo valore disponibile"
                     for name, stale_days in freshness.items()
