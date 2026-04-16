@@ -20,12 +20,12 @@
   };
 
   const CSV_PATHS = {
-    ls80: "data/ls80.csv",
-    gold: "data/gold.csv",
-    btc: "data/btc.csv",
-    world: "data/world.csv",
-    mib: "data/mib.csv",
-    sp500: "data/sp500.csv"
+    ls80: "/static/data/ls80.csv",
+    gold: "/static/data/gold.csv",
+    btc: "/static/data/btc.csv",
+    world: "/static/data/world.csv",
+    mib: "/static/data/mib.csv",
+    sp500: "/static/data/sp500.csv"
   };
 
   const COLOR_PIGRO = "#2b6cb0";
