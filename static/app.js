@@ -419,6 +419,8 @@
   }
 
   function updateTextSummary(pigroSeries, secondSeries, labels, secondLabel) {
+    const initialCapital = getCapital();
+
     const cagrBase = computeCagr(pigroSeries, labels);
     const ddBase = computeMaxDD(pigroSeries);
     const dblBase = doublingYears(cagrBase);
@@ -438,6 +440,8 @@
     const d1 = parseDateFlexible(labels[labels.length - 1]);
     const years = d0 && d1 ? (d1 - d0) / (365.25 * 24 * 3600 * 1000) : 0;
     setText("final_years", years > 0 ? plain(years, 1) : "—");
+
+    setText("compare_period", `${euro(initialCapital, 0)} investiti all’inizio del periodo`);
 
     setText("compare_pigro", euro(pigroSeries[pigroSeries.length - 1], 0));
     setText("compare_pigro_cagr", pct(cagrBase * 100, 1));
