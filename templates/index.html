@@ -178,6 +178,35 @@
 
     .bigCompare strong{color:#173a8a;}
 
+    .compareGrid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(260px, 1fr));
+      gap:14px;
+      margin-top:12px;
+    }
+
+    .compareCard{
+      background:#ffffff;
+      border:1px solid #dbe4ff;
+      border-radius:12px;
+      padding:12px 14px;
+      line-height:1.65;
+    }
+
+    .compareCardTitle{
+      color:#173a8a;
+      font-weight:700;
+      font-size:16px;
+      margin-bottom:8px;
+    }
+
+    .compareMessage{
+      margin-top:14px;
+      font-size:13px;
+      color:#333;
+      line-height:1.5;
+    }
+
     .modalOverlay{
       position:fixed;
       inset:0;
@@ -373,6 +402,9 @@
       .benchmarkBtn{
         padding:8px 12px;
       }
+      .compareGrid{
+        grid-template-columns:1fr;
+      }
     }
   </style>
 </head>
@@ -478,16 +510,32 @@
     </div>
 
     <div id="compare_box" class="bigCompare">
-      <strong>Confronto immediato</strong><br/>
-      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
-      Metodo Pigro → <b id="compare_pigro">—</b><br/>
-      <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
-    </div>
+      <strong>Confronto completo</strong><br/>
+      <span id="compare_period">10.000 € investiti all’inizio del periodo</span>
 
-    <div class="smallText">
-      <b>Messaggio chiave:</b><br/>
-      La differenza non è indovinare il mercato.<br/>
-      È avere una struttura semplice e mantenerla nel tempo.
+      <div class="compareGrid">
+        <div class="compareCard">
+          <div class="compareCardTitle">Metodo Pigro</div>
+          <div>Valore finale: <b id="compare_pigro">—</b></div>
+          <div>Rendimento annualizzato: <b id="compare_pigro_cagr">—</b></div>
+          <div>Max Ribasso nel periodo: <b id="compare_pigro_maxdd">—</b></div>
+          <div>Raddoppio del capitale in anni: <b id="compare_pigro_dbl">—</b></div>
+        </div>
+
+        <div class="compareCard">
+          <div class="compareCardTitle" id="compare_title_benchmark">MSCI World</div>
+          <div>Valore finale: <b id="compare_benchmark">—</b></div>
+          <div>Rendimento annualizzato: <b id="compare_benchmark_cagr">—</b></div>
+          <div>Max Ribasso nel periodo: <b id="compare_benchmark_maxdd">—</b></div>
+          <div>Raddoppio del capitale in anni: <b id="compare_benchmark_dbl">—</b></div>
+        </div>
+      </div>
+
+      <div class="compareMessage">
+        <b>Messaggio chiave:</b><br/>
+        La differenza non è indovinare il mercato.<br/>
+        È avere una struttura semplice e mantenerla nel tempo.
+      </div>
     </div>
 
     <h2>Come applicarlo concretamente</h2>
@@ -602,6 +650,6 @@
     }
   </script>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>
