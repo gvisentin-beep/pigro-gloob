@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
-  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=eWY3pBFPOcIz7Asj8ACCLDy6yfzwu8r5-MWtkrdxwCWm2qUvh9zkj_yBhe9c5PsLvxzTSl6jYzR-Kw9dUbCLdVvmtTwGmn0EaVPLJLx9xDDczkPi-nBjEu0xASi4nDhZbTR388v8DnKG5YIIVjK2wdOQei__MEbkbk0O0Pn02XR5fdd5SOIcVM3UGTA4qW7lTz0UPyF-idYE2-LRFMu4LruAOiP9TJjqLEadHxGQZshvVCxqhMq-6x1Osx4MIJFZXhRlW_TEzII6ZglsaB7OOQ" charset="UTF-8"></script><script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 
   <style>
     body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
@@ -23,9 +23,6 @@
       gap:14px;
       align-items:start;
       margin-top:-6px;
-    }
-    @media(max-width:900px){
-      .introTop{grid-template-columns:1fr;}
     }
 
     .introText{min-width:0;}
@@ -54,12 +51,30 @@
     }
 
     .btn{
-      background:#132c74; color:#fff; border:none; border-radius:8px;
-      padding:9px 14px; cursor:pointer; font-weight:700;
+      background:#132c74;
+      color:#fff;
+      border:none;
+      border-radius:8px;
+      padding:9px 14px;
+      cursor:pointer;
+      font-weight:700;
+      transition:all .2s ease;
+      box-sizing:border-box;
+      width:100%;
     }
     .btn:disabled{opacity:.6; cursor:not-allowed;}
+    .btn:hover{
+      transform:translateY(-1px);
+      box-shadow:0 6px 14px rgba(19,44,116,.20);
+    }
 
-    .btnRow{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    .btnRow{
+      display:grid;
+      grid-template-columns:repeat(4, 1fr);
+      gap:8px;
+      align-items:stretch;
+      width:100%;
+    }
 
     .benchRow{
       display:flex;
@@ -76,12 +91,19 @@
       padding:8px 14px;
       cursor:pointer;
       font-weight:700;
+      transition:all .2s ease;
+    }
+
+    .benchmarkBtn:hover{
+      transform:translateY(-1px);
     }
 
     .benchmarkBtn.active{
-      background:#173a8a;
-      color:#fff;
-      border-color:#173a8a;
+      background:#173a8a !important;
+      color:#fff !important;
+      border:2px solid #173a8a !important;
+      box-shadow:0 8px 18px rgba(23,58,138,.22);
+      transform:translateY(-1px);
     }
 
     .dynamicRuleBox{
@@ -136,9 +158,9 @@
       object-fit:cover;
     }
 
-    #chart_main{width:100% !important; height:430px !important;}
-    #chart_dd{width:100% !important; height:220px !important;}
-    #chart_liq{width:100% !important; height:220px !important;}
+    #chart_main{width:100% !important; height:387px !important;}
+    #chart_dd{width:100% !important; height:198px !important;}
+    #chart_liq{width:100% !important; height:198px !important;}
 
     .summary{margin-top:8px; font-size:13px;}
     .summary b{font-size:15px;}
@@ -155,13 +177,6 @@
     }
 
     .bigCompare strong{color:#173a8a;}
-    .cols{display:grid; grid-template-columns: 1fr 1fr; gap:26px; margin-top:26px;}
-    @media(max-width:900px){ .cols{grid-template-columns:1fr;} }
-
-    .faqItem{padding:6px 0; cursor:pointer; border-bottom:1px solid #efefef;}
-    .faqQ{font-weight:700;}
-    .faqA{display:none; margin-top:4px; color:#333;}
-    .faqItem.open .faqA{display:block;}
 
     .modalOverlay{
       position:fixed;
@@ -234,10 +249,6 @@
       margin-top:6px;
     }
 
-    @media(max-width:900px){
-      .advisorGrid{grid-template-columns:1fr;}
-    }
-
     .advisorCard{
       border:1px solid #dbe4ff;
       background:#fbfcff;
@@ -284,6 +295,85 @@
       color:#243b6b;
       line-height:1.5;
     }
+
+    .missionSection{
+      margin-top:28px;
+    }
+
+    .missionBox{
+      background:#f7f9ff;
+      border:1px solid #dbe4ff;
+      border-radius:14px;
+      padding:18px 20px;
+      font-size:15px;
+      line-height:1.65;
+      color:#223;
+      box-shadow:0 8px 20px rgba(23,58,138,.06);
+    }
+
+    .missionBox p{margin:0 0 14px 0;}
+    .missionBox p:last-child{margin-bottom:0;}
+
+    .missionStrong{
+      color:#173a8a;
+      font-weight:700;
+      font-size:16px;
+    }
+
+    .btnMission{
+      background:#5fa8ff;
+      color:#fff;
+      border:none;
+      border-radius:10px;
+      padding:12px 16px;
+      cursor:pointer;
+      font-weight:700;
+      width:100%;
+      margin-top:14px;
+      transition:all .2s ease;
+      box-sizing:border-box;
+    }
+
+    .btnMission:hover{
+      background:#4a95f0;
+      transform:translateY(-1px);
+      box-shadow:0 6px 14px rgba(80,140,255,.25);
+    }
+
+    .missionHidden{
+      display:none;
+    }
+
+    .missionHidden.show{
+      display:block;
+    }
+
+    @media(max-width:900px){
+      .introTop{grid-template-columns:1fr;}
+      .advisorGrid{grid-template-columns:1fr;}
+      .btnRow{
+        grid-template-columns:repeat(2, 1fr);
+      }
+    }
+
+    @media(max-width:700px){
+      .wrap{padding:10px 14px 20px;}
+      .topRow{align-items:flex-start;}
+      .controlsRow{gap:12px;}
+      .ctrl.capital{min-width:0; width:100%;}
+      .ctrl input[type="text"]{width:100%; box-sizing:border-box;}
+      .allocBox{min-width:0; width:100%; box-sizing:border-box;}
+      .btnRow{
+        grid-template-columns:1fr;
+        gap:8px;
+      }
+      .benchRow{
+        gap:8px;
+      }
+      .benchmarkBtn{
+        padding:8px 12px;
+      }
+    }
   </style>
 </head>
 
@@ -312,7 +402,7 @@
         <div class="heroVideoBox">
           <div class="heroVideoWrap">
             <video id="heroVideo" class="heroVideo" playsinline controls preload="metadata" poster="/static/sdraio.png">
-              <source src="/static/video_finale_pigro.mp4?v=3" type="video/mp4">
+              <source src="/static/pigro-video.mp4" type="video/mp4">
               Il tuo browser non supporta la riproduzione video.
             </video>
           </div>
@@ -333,7 +423,7 @@
         <input id="capital" type="text" value="10000">
       </div>
 
-      <div class="btnRow">
+      <div class="btnRow" style="max-width:690px;">
         <button id="btn_update" class="btn">Aggiorna</button>
         <button id="btn_pdf" class="btn">PDF</button>
       </div>
@@ -346,9 +436,9 @@
     <div class="smallText">Scegli il confronto da visualizzare.</div>
 
     <div class="benchRow">
-      <button class="benchmarkBtn" data-benchmark="mib">Confronta con Italia</button>
-      <button class="benchmarkBtn" data-benchmark="sp500">Confronta con USA</button>
-      <button class="benchmarkBtn active" data-benchmark="world">Confronta con MSCI World</button>
+      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Italia</button>
+      <button class="benchmarkBtn" data-mode="normal" data-benchmark="sp500">Confronta con USA</button>
+      <button class="benchmarkBtn active" data-mode="normal" data-benchmark="world">Confronta con MSCI World</button>
       <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
       <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
     </div>
@@ -366,11 +456,13 @@
       <span id="benchmark_summary">Benchmark: —</span>
     </div>
 
-    <h2 id="chart_title">Andamento negli ultimi anni</h2>
+    <h2 id="chart_title">Andamento Portafogli negli ultimi anni</h2>
 
     <div class="card">
       <canvas id="chart_main"></canvas>
     </div>
+
+    <h2>Andamento Ribassi Portafogli</h2>
 
     <div class="card">
       <canvas id="chart_dd"></canvas>
@@ -378,6 +470,9 @@
     </div>
 
     <div id="liquidity_card" class="card" style="display:none;">
+      <div style="font-weight:700; margin-bottom:6px; color:#173a8a;">
+        Disponibilità residua Lombard
+      </div>
       <canvas id="chart_liq"></canvas>
       <div id="liquidity_summary" class="smallText" style="margin-top:10px;"></div>
     </div>
@@ -407,37 +502,44 @@
       <button class="btn" id="btn_faxsimile">Faxsimile PDF</button>
       <button class="btn" id="btn_consulente">Richiedi Consulente</button>
       <button class="btn" id="btn_libro">Per saperne di più</button>
+      <button class="btn" onclick="window.open('https://portafoglioperfetto.it', '_blank')">Per Consulenti / Esperti</button>
     </div>
 
-    <div class="cols">
-      <div>
-        <h2>Domande libere</h2>
-        <div class="smallText">
-          Scrivi una domanda. Riceverai una risposta dall’assistente (nessun dato viene salvato sul sito).
-        </div>
-        <textarea id="ask_text" style="width:100%; height:110px; padding:8px; margin-top:8px;" placeholder="Scrivi qui la tua domanda..."></textarea>
-        <div style="margin-top:8px;">
-          <button class="btn" id="btn_ask">Chiedi all’assistente</button>
-        </div>
-        <div class="smallText" style="margin-top:10px;">Nota: risposta informativa, non consulenza finanziaria.</div>
-        <div id="ask_answer" class="card" style="display:none;"></div>
-      </div>
+    <button class="btnMission" onclick="toggleMission()">Scopri la Mission</button>
 
-      <div>
-        <h2>FAQ</h2>
+    <section id="missionSection" class="missionSection missionHidden">
+      <h2>MISSION</h2>
 
-        <div class="faqItem"><div class="faqQ">1) Perché inserire Bitcoin?</div><div class="faqA">Bitcoin può aggiungere una componente non correlata e una quota di crescita potenziale.</div></div>
-        <div class="faqItem"><div class="faqQ">2) Perché solo il 5%?</div><div class="faqA">Una quota contenuta permette di limitarne l’impatto sul rischio complessivo.</div></div>
-        <div class="faqItem"><div class="faqQ">3) Perché tenere oro e Bitcoin insieme?</div><div class="faqA">Hanno ruoli diversi: l’oro tende a difendere, il Bitcoin tende a spingere il rendimento.</div></div>
-        <div class="faqItem"><div class="faqQ">4) Perché confrontarlo con più mercati?</div><div class="faqA">Per capire se il metodo è stato più efficiente rispetto a Italia, USA o mercato globale.</div></div>
-        <div class="faqItem"><div class="faqQ">5) Quando ribilanciare?</div><div class="faqA">In genere una volta l’anno è una regola semplice ed efficace.</div></div>
-        <div class="faqItem"><div class="faqQ">6) Serve molto capitale?</div><div class="faqA">No. Anche capitali contenuti possono essere investiti con questa logica.</div></div>
-        <div class="faqItem"><div class="faqQ">7) Il drawdown perché è importante?</div><div class="faqA">Perché mostra quanto si perde davvero nei momenti peggiori.</div></div>
-        <div class="faqItem"><div class="faqQ">8) È una strategia di breve periodo?</div><div class="faqA">No. È pensata per il lungo periodo.</div></div>
-        <div class="faqItem"><div class="faqQ">9) Posso usarla come base educativa?</div><div class="faqA">Sì, è una struttura semplice che aiuta a capire il rapporto tra rendimento e rischio.</div></div>
-        <div class="faqItem"><div class="faqQ">10) Cos’è Pigro Leva+?</div><div class="faqA">È una variante che parte con leva del 20% e tiene monitorata la disponibilità Lombard residua nel tempo.</div></div>
+      <div class="missionBox">
+        <p>
+          In Italia una parte enorme del risparmio viene ancora investita in modo inefficiente:
+          costi elevati, prodotti poco trasparenti e scelte spesso guidate più dalla distribuzione
+          che dall’interesse del risparmiatore.
+        </p>
+
+        <p>
+          Gloob nasce da un’idea semplice: aiutare le persone a capire che un portafoglio costruito
+          bene può essere più chiaro, più efficiente e più coerente con obiettivi di lungo periodo.
+        </p>
+
+        <p>
+          Un risparmio investito meglio non aiuta solo il singolo investitore. Può contribuire anche
+          a indirizzare capitali verso strumenti solidi, mercati produttivi e imprese capaci di creare valore.
+        </p>
+
+        <p>
+          Questa pagina, completamente gratuita, mette a disposizione strumenti facili di analisi,
+          confronto e simulazione. L’obiettivo è offrire un punto di riferimento accessibile, dove
+          il risparmiatore possa orientarsi in autonomia oppure, se lo desidera, confrontarsi con
+          consulenti autorizzati, senza conflitti di interesse.
+        </p>
+
+        <p class="missionStrong">
+          Il risparmio non dovrebbe essere eroso da costi nascosti:
+          dovrebbe restare il più possibile nelle mani di chi lo ha costruito.
+        </p>
       </div>
-    </div>
+    </section>
 
   </div>
 
@@ -456,37 +558,50 @@
       <div class="modalBody">
         <div class="advisorGrid">
           <div class="advisorCard">
-            <div class="advisorName">Consulente 1</div>
-            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
-            <div class="advisorLine">Email: <a href="mailto:consulente1@email.it">consulente1@email.it</a></div>
-            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente1.it</a></div>
-            <div class="advisorLine">Telefono: 000 0000000</div>
+            <div class="advisorName">Parillo Sebastiano</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF n. 627826</div>
+            <div class="advisorLine">Sede: Caserta (CE)</div>
+            <div class="advisorLine">Email: <a href="mailto:s.parillo@unocapital.it">s.parillo@unocapital.it</a></div>
+            <div class="advisorLine">Sito: <a href="https://www.unocapital.it" target="_blank" rel="noopener">www.unocapital.it</a></div>
+            <div class="advisorLine">Telefono: <a href="tel:+393669507306">+39 3669507306</a></div>
           </div>
 
           <div class="advisorCard">
-            <div class="advisorName">Consulente 2</div>
-            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
-            <div class="advisorLine">Email: <a href="mailto:consulente2@email.it">consulente2@email.it</a></div>
-            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente2.it</a></div>
-            <div class="advisorLine">Telefono: 000 0000000</div>
+            <div class="advisorName">Travagli Maximiliano</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF n. 107890</div>
+            <div class="advisorLine">Sede: Roma (RM)</div>
+            <div class="advisorLine">Email: <a href="mailto:info@travaglifinancial.com">info@travaglifinancial.com</a></div>
+            <div class="advisorLine">Sito: <a href="https://www.consulentefinanziarioindipendente.it" target="_blank" rel="noopener">www.consulentefinanziarioindipendente.it</a></div>
+            <div class="advisorLine">Telefono: <a href="tel:+390696701730">+39 06 96701730</a></div>
           </div>
 
           <div class="advisorCard">
-            <div class="advisorName">Consulente 3</div>
-            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF</div>
-            <div class="advisorLine">Email: <a href="mailto:consulente3@email.it">consulente3@email.it</a></div>
-            <div class="advisorLine">Sito: <a href="#" target="_blank" rel="noopener">www.sito-consulente3.it</a></div>
-            <div class="advisorLine">Telefono: 000 0000000</div>
+            <div class="advisorName">Caramia Luciano</div>
+            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF n. 233010</div>
+            <div class="advisorLine">Sede: Zero Branco (TV)</div>
+            <div class="advisorLine">Email: <a href="mailto:info@caramiaconsulting.it">info@caramiaconsulting.it</a></div>
+            <div class="advisorLine">Sito: <a href="https://www.caramiaconsulting.it" target="_blank" rel="noopener">www.caramiaconsulting.it</a></div>
+            <div class="advisorLine">Telefono: <a href="tel:+393289256241">+39 328 9256241</a></div>
           </div>
         </div>
 
         <div class="modalNote">
+          Si consiglia di verificare sempre l’iscrizione all’Albo sul sito ufficiale OCF:
+          <a href="https://www.organismocf.it" target="_blank" rel="noopener">www.organismocf.it</a>.
+          <br><br>
           Questo sito non ha alcun rapporto di commissione, retrocessione o collaborazione commerciale con i professionisti sopra indicati. L’eventuale contatto avviene in modo diretto e autonomo da parte dell’utente.
         </div>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script>
+    function toggleMission(){
+      const box = document.getElementById('missionSection');
+      if (box) box.classList.toggle('show');
+    }
+  </script>
+
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
