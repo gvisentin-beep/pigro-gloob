@@ -19,7 +19,7 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": os.getenv("LS80_TICKER", "V80A.AS").strip(),
+        "symbol": os.getenv("LS80_TICKER", "VNGA80.AS").strip(),
         "path": DATA_DIR / "ls80.csv",
         "source": "yahoo",
         "update_enabled": True,
