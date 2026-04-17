@@ -239,6 +239,7 @@ def update_asset(name: str, cfg: dict) -> bool:
     log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
     return True
 
+
 def main() -> None:
     log("=" * 72)
     log(f"Aggiornamento dati avviato: {now_utc()}")
@@ -254,6 +255,8 @@ def main() -> None:
     log("=" * 72)
 
     if not all(results):
-        log("⚠️ Alcuni asset non aggiornati, ma continuo senza bloccare")
+        log("ATTENZIONE: alcuni asset non aggiornati, continuo comunque")
 
 
+if __name__ == "__main__":
+    main()
