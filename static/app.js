@@ -6,6 +6,7 @@
   let currentMode = "normal"; // normal | leva_fissa | leva_plus
   let levaPlusIntegrations = 0;
   let levaPlusMarkerIndices = [];
+  let isRefreshing = false;
 
   const WEIGHT_LS80 = 0.80;
   const WEIGHT_GOLD = 0.15;
@@ -650,6 +651,11 @@
     if (!canvas) return;
     const keepTicks = yearTickIndices(labels);
 
+    if (mainChart) {
+      mainChart.destroy();
+      mainChart = null;
+    }
+
     const firstPlot = (currentMode === "normal") ? firstVals : normalizeTo100(firstVals);
     const secondPlot = (currentMode === "normal") ? secondVals : normalizeTo100(secondVals);
 
@@ -669,16 +675,11 @@
     ];
 
     const markerDataset = buildMarkerDataset(labels, secondVals);
-    if (markerDataset) {
-      datasets.push(markerDataset);
-    }
+    if (markerDataset) datasets.push(markerDataset);
 
     mainChart = new Chart(canvas, {
       type: "line",
-      data: {
-        labels,
-        datasets
-      },
+      data: { labels, datasets },
       options: {
         ...commonChartOptions(),
         plugins: {
@@ -687,12 +688,8 @@
             callbacks: {
               title: items => (items && items.length ? formatDateIt(items[0].label) : ""),
               label: ctx => {
-                if (ctx.dataset.label === "Integrazione Leva+") {
-                  return "Integrazione Leva+";
-                }
-                if (currentMode === "normal") {
-                  return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
-                }
+                if (ctx.dataset.label === "Integrazione Leva+") return "Integrazione Leva+";
+                if (currentMode === "normal") return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
                 return `${ctx.dataset.label}: ${plain(ctx.parsed.y, 1)} (base 100)`;
               }
             }
@@ -717,10 +714,7 @@
           y: {
             grid: { color: "rgba(0,0,0,0.06)" },
             ticks: {
-              callback: value => {
-                if (currentMode === "normal") return euro(value, 0);
-                return plain(value, 0);
-              }
+              callback: value => currentMode === "normal" ? euro(value, 0) : plain(value, 0)
             }
           }
         }
@@ -732,6 +726,11 @@
     const canvas = document.getElementById("chart_dd");
     if (!canvas) return;
     const keepTicks = yearTickIndices(labels);
+
+    if (ddChart) {
+      ddChart.destroy();
+      ddChart = null;
+    }
 
     ddChart = new Chart(canvas, {
       type: "line",
@@ -872,15 +871,9 @@
       const mode = btn.getAttribute("data-mode");
       let active = false;
 
-      if (currentMode === "normal" && mode === "normal" && bench === currentBenchmark) {
-        active = true;
-      }
-      if (currentMode === "leva_fissa" && mode === "leva_fissa") {
-        active = true;
-      }
-      if (currentMode === "leva_plus" && mode === "leva_plus") {
-        active = true;
-      }
+      if (currentMode === "normal" && mode === "normal" && bench === currentBenchmark) active = true;
+      if (currentMode === "leva_fissa" && mode === "leva_fissa") active = true;
+      if (currentMode === "leva_plus" && mode === "leva_plus") active = true;
 
       btn.classList.toggle("active", active);
     });
@@ -911,6 +904,9 @@
   }
 
   async function refresh() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+
     try {
       normalizeCapitalInput();
       toggleModeBoxes();
@@ -961,6 +957,8 @@
     } catch (err) {
       console.error(err);
       setHtml("compare_box", `<strong>Errore:</strong> ${err.message}`);
+    } finally {
+      isRefreshing = false;
     }
   }
 
@@ -1015,7 +1013,6 @@
       capitalInput.addEventListener("input", function () {
         this.value = formatIntegerInput(this.value);
       });
-      capitalInput.addEventListener("change", refresh);
     }
 
     [
