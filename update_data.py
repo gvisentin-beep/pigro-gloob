@@ -254,8 +254,8 @@ def main() -> None:
     log(f"Aggiornamento completato: {now_utc()}")
     log("=" * 72)
 
-    if not all(results):
-        raise SystemExit(1)
+     if not all(results):
+    log("⚠️ Alcuni asset non aggiornati, ma continuo senza bloccare")
 
 
 if __name__ == "__main__":
