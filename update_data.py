@@ -178,23 +178,31 @@ def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[st
         return None, "Ticker Yahoo vuoto"
 
     try:
-        df = yf.download(symbol, period="max", interval="1d", progress=False, auto_adjust=False)
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="max", interval="1d", auto_adjust=False)
 
         if df is None or df.empty:
             return None, "Nessun dato Yahoo restituito"
 
         df = df.reset_index()
 
+        if "Date" in df.columns:
+            df = df.rename(columns={"Date": "date"})
+        elif "Datetime" in df.columns:
+            df = df.rename(columns={"Datetime": "date"})
+        else:
+            return None, f"Colonna data Yahoo inattesa: {list(df.columns)}"
+
         close_col = None
-        for candidate in ["Adj Close", "Close"]:
+        for candidate in ["Close", "Adj Close"]:
             if candidate in df.columns:
                 close_col = candidate
                 break
 
-        if "Date" not in df.columns or close_col is None:
+        if close_col is None:
             return None, f"Colonne Yahoo inattese: {list(df.columns)}"
 
-        df = df.rename(columns={"Date": "date", close_col: "close"})
+        df = df.rename(columns={close_col: "close"})
         df["date"] = pd.to_datetime(df["date"], errors="coerce")
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
