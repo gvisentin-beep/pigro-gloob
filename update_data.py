@@ -19,7 +19,7 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": "V80A.AS",
+        "symbol": "VNGA80.AS",
         "fallback_symbols": ["VNGA80.MI"],
         "path": DATA_DIR / "ls80.csv",
         "source": "yahoo",
