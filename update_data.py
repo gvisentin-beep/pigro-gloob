@@ -1,3 +1,4 @@
+# INCOLLA QUI ESATTAMENTE TUTTO IL CODICE CHE TI HO DATO PRIMA
 from __future__ import annotations
 
 import os
