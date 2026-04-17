@@ -1,4 +1,3 @@
-# INCOLLA QUI ESATTAMENTE TUTTO IL CODICE CHE TI HO DATO PRIMA
 from __future__ import annotations
 
 import os
@@ -8,6 +7,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 import requests
+import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -19,10 +19,10 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": "",
+        "symbol": "VNGA80.MI",
         "path": DATA_DIR / "ls80.csv",
-        "source": "manual",
-        "update_enabled": False,
+        "source": "yahoo",
+        "update_enabled": True,
     },
     "gold": {
         "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
@@ -173,6 +173,48 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
         return None, f"{type(e).__name__}: {e}"
 
 
+def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    if not symbol:
+        return None, "Ticker Yahoo vuoto"
+
+    try:
+        df = yf.download(symbol, period="max", interval="1d", progress=False, auto_adjust=False)
+
+        if df is None or df.empty:
+            return None, "Nessun dato Yahoo restituito"
+
+        df = df.reset_index()
+
+        close_col = None
+        for candidate in ["Adj Close", "Close"]:
+            if candidate in df.columns:
+                close_col = candidate
+                break
+
+        if "Date" not in df.columns or close_col is None:
+            return None, f"Colonne Yahoo inattese: {list(df.columns)}"
+
+        df = df.rename(columns={"Date": "date", close_col: "close"})
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+
+        df = (
+            df[["date", "close"]]
+            .dropna(subset=["date", "close"])
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
+
+        if df.empty:
+            return None, "Serie Yahoo vuota dopo pulizia"
+
+        return df, None
+
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
     return df is not None and not df.empty and len(df) >= MIN_VALID_ROWS
 
@@ -195,11 +237,13 @@ def update_asset(name: str, cfg: dict) -> bool:
         log("  Aggiornamento automatico disattivato: mantengo il CSV esistente")
         return existing is not None and not existing.empty
 
-    if source != "twelve":
-        log("  Fonte non gestita in questa versione")
+    if source == "yahoo":
+        fresh, err = fetch_series_yahoo(symbol)
+    elif source == "twelve":
+        fresh, err = fetch_series_twelve(symbol)
+    else:
+        log("  Fonte non gestita")
         return existing is not None and not existing.empty
-
-    fresh, err = fetch_series_twelve(symbol)
 
     if fresh is None or fresh.empty:
         log(f"  API non disponibile: {err}")
