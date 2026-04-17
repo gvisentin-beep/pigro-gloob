@@ -18,10 +18,10 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": "VNGA80.MI",   # oppure proxy se non funziona
+        "symbol": "",
         "path": DATA_DIR / "ls80.csv",
-        "source": "twelve",
-        "update_enabled": True,
+        "source": "manual",
+        "update_enabled": False,
     },
     "gold": {
         "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
@@ -42,13 +42,13 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-       "symbol": "EWI",   # ETF Italia
+        "symbol": os.getenv("MIB_TICKER", "EWI").strip(),
         "path": DATA_DIR / "mib.csv",
         "source": "twelve",
         "update_enabled": True,
     },
     "sp500": {
-       "symbol": "SPY",   # proxy S&P500
+        "symbol": os.getenv("SP500_TICKER", "SPY").strip(),
         "path": DATA_DIR / "sp500.csv",
         "source": "twelve",
         "update_enabled": True,
@@ -254,8 +254,8 @@ def main() -> None:
     log(f"Aggiornamento completato: {now_utc()}")
     log("=" * 72)
 
-     if not all(results):
-    log("⚠️ Alcuni asset non aggiornati, ma continuo senza bloccare")
+    if not all(results):
+        log("⚠️ Alcuni asset non aggiornati, ma continuo senza bloccare")
 
 
 if __name__ == "__main__":
