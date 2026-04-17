@@ -18,10 +18,10 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": "",
+        "symbol": "VNGA80.MI",   # oppure proxy se non funziona
         "path": DATA_DIR / "ls80.csv",
-        "source": "manual",
-        "update_enabled": False,
+        "source": "twelve",
+        "update_enabled": True,
     },
     "gold": {
         "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
@@ -42,16 +42,16 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "",
+       "symbol": "EWI",   # ETF Italia
         "path": DATA_DIR / "mib.csv",
-        "source": "manual",
-        "update_enabled": False,
+        "source": "twelve",
+        "update_enabled": True,
     },
     "sp500": {
-        "symbol": "",
+       "symbol": "SPY",   # proxy S&P500
         "path": DATA_DIR / "sp500.csv",
-        "source": "manual",
-        "update_enabled": False,
+        "source": "twelve",
+        "update_enabled": True,
     },
 }
 
