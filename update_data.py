@@ -41,11 +41,12 @@ ASSETS = {
     "world": {
         "symbol": os.getenv("WORLD_TICKER", "URTH").strip(),
         "path": DATA_DIR / "world.csv",
-        "source": "twelve",
+        "source": "yahoo",
         "update_enabled": True,
     },
     "mib": {
-        "symbol": os.getenv("MIB_TICKER", "EWI").strip(),
+      
+        "symbol": "CSSX5E.MI",
         "path": DATA_DIR / "mib.csv",
         "source": "twelve",
         "update_enabled": True,
