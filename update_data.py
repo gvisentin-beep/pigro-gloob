@@ -19,7 +19,7 @@ MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
-        "symbol": "VNGA80.AS",
+        "symbol": "V80A.AS",
         "fallback_symbols": ["VNGA80.MI"],
         "path": DATA_DIR / "ls80.csv",
         "source": "yahoo",
@@ -45,10 +45,9 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-      
         "symbol": "CSSX5E.MI",
         "path": DATA_DIR / "mib.csv",
-        "source": "twelve",
+        "source": "yahoo",
         "update_enabled": True,
     },
     "sp500": {
@@ -66,6 +65,20 @@ def now_utc() -> str:
 
 def log(msg: str) -> None:
     print(msg, flush=True)
+
+
+def _to_naive_datetime(series: pd.Series, dayfirst: bool = False) -> pd.Series:
+    s = pd.to_datetime(series, dayfirst=dayfirst, errors="coerce")
+    try:
+        if getattr(s.dt, "tz", None) is not None:
+            s = s.dt.tz_convert(None)
+    except Exception:
+        pass
+    try:
+        s = s.dt.tz_localize(None)
+    except Exception:
+        pass
+    return s
 
 
 def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
@@ -94,7 +107,7 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
             encoding="utf-8-sig",
         )
 
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    df["date"] = _to_naive_datetime(df["date"], dayfirst=True)
     df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
@@ -118,7 +131,7 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
         .reset_index(drop=True)
     )
 
-    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
+    out["date"] = _to_naive_datetime(out["date"]).dt.strftime("%d/%m/%Y")
     out.to_csv(path, sep=";", index=False)
 
 
@@ -157,7 +170,7 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
         if "datetime" not in df.columns or "close" not in df.columns:
             return None, f"Colonne inattese: {list(df.columns)}"
 
-        df["date"] = pd.to_datetime(df["datetime"], errors="coerce")
+        df["date"] = _to_naive_datetime(df["datetime"])
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
         df = (
@@ -199,7 +212,7 @@ def _normalize_yahoo_df(df: pd.DataFrame) -> Tuple[Optional[pd.DataFrame], Optio
         return None, f"Colonne Yahoo inattese: {list(df.columns)}"
 
     df = df.rename(columns={close_col: "close"})
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["date"] = _to_naive_datetime(df["date"])
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
     df = (
@@ -220,7 +233,6 @@ def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[st
     if not symbol:
         return None, "Ticker Yahoo vuoto"
 
-    # Primo tentativo: Ticker.history
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period="max", interval="1d", auto_adjust=False)
@@ -235,7 +247,6 @@ def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[st
     except Exception as e:
         log(f"  Yahoo history errore: {type(e).__name__}: {e}")
 
-    # Secondo tentativo: download
     try:
         df = yf.download(
             symbol,
@@ -312,7 +323,10 @@ def update_asset(name: str, cfg: dict) -> bool:
         log("  Fallback fallito: nessun dato disponibile")
         return False
 
-    # Per LS80 forziamo il salvataggio se Yahoo restituisce una serie non vuota
+    if existing is not None and not existing.empty:
+        existing["date"] = _to_naive_datetime(existing["date"])
+    fresh["date"] = _to_naive_datetime(fresh["date"])
+
     if name != "ls80":
         if not is_series_usable(fresh):
             log(f"  Serie scaricata troppo corta o sospetta: {len(fresh)} righe")
@@ -364,7 +378,7 @@ def main() -> None:
     log("=" * 72)
 
     if not all(results):
-        log("ATTENZIONE: alcuni asset non aggiornati, continuo comunque")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
