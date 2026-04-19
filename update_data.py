@@ -42,7 +42,7 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "SX5E",
+        "symbol": "EUEA",
         "path": DATA_DIR / "mib.csv",
         "source": "twelve",
         "update_enabled": True,
