@@ -468,18 +468,21 @@
     <div class="smallText">Scegli il confronto da visualizzare.</div>
 
     <div class="benchRow">
-      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Italia</button>
+      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Euro Stoxx 50</button>
       <button class="benchmarkBtn" data-mode="normal" data-benchmark="sp500">Confronta con USA</button>
       <button class="benchmarkBtn active" data-mode="normal" data-benchmark="world">Confronta con MSCI World</button>
       <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
       <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
     </div>
+<div id="plus_rule_box" class="dynamicRuleBox">
+  <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo della leva è considerato mediamente del 2,5%.
+</div>
 
-    <div id="plus_rule_box" class="dynamicRuleBox">
-      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo della leva è considerato mediamente del 2,5%.
-    </div>
+<div id="leva20_rule_box" class="dynamicRuleBox">
+  <b>Pigro con leva 20%:</b> parte con leva iniziale del 20% che viene ricalibrata, per ogni titolo, a fine di ogni anno. Il costo della leva è considerato mediamente del 2,5%.
+</div>
 
-    <div class="summary">
+      <div class="summary">
       <b>Portafoglio “Pigro 80/15/5”:</b>
       Rendimento annualizzato <b><span id="cagr">—</span></b> |
       <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
