@@ -41,12 +41,15 @@ ASSETS = {
         "source": "twelve",
         "update_enabled": True,
     },
-    "mib": {
-        "symbol": "",
-        "path": DATA_DIR / "mib.csv",
-        "source": "manual",
-        "update_enabled": False,
+
+    # ✅ EURO STOXX 50 REALE
+    "eurostoxx": {
+        "symbol": "SX5E",
+        "path": DATA_DIR / "eurostoxx.csv",
+        "source": "twelve",
+        "update_enabled": True,
     },
+
     "sp500": {
         "symbol": "",
         "path": DATA_DIR / "sp500.csv",
@@ -211,10 +214,9 @@ def main() -> None:
     log("UPDATE END")
     log("=" * 60)
 
-    # ⚠️ QUI ERA IL PROBLEMA
-    # NON facciamo fallire il workflow
+    # NON blocchiamo più il workflow
     if not all(results):
-        log("WARNING: alcuni asset non aggiornati (ma continuo)")
+        log("WARNING: alcuni asset non aggiornati")
 
 
 if __name__ == "__main__":
