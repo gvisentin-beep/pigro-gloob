@@ -41,11 +41,13 @@ ASSETS = {
         "source": "twelve",
         "update_enabled": True,
     },
-    "mib": {
-        "symbol": "EUEA",
-        "path": DATA_DIR / "mib.csv",
-        "source": "twelve",
-        "update_enabled": True,
+"mib": {
+    "symbol": "",
+    "path": DATA_DIR / "mib.csv",
+    "source": "manual",
+    "update_enabled": False,
+},
+    
     },
     "sp500": {
         "symbol": "",
