@@ -16,7 +16,7 @@
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
-    mib: "iShares Core EURO STOXX 50 ETF EUR Acc",
+    mib: "Euro Stoxx 50",
     sp500: "iShares Core S&P 500 UCITS ETF (Acc)"
   };
 
