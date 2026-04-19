@@ -41,14 +41,13 @@ ASSETS = {
         "source": "twelve",
         "update_enabled": True,
     },
-
-    # ✅ EURO STOXX 50 REALE
-    "eurostoxx": {
-        "symbol": "SX5E",
-        "path": DATA_DIR / "eurostoxx.csv",
-        "source": "twelve",
-        "update_enabled": True,
-    },
+    
+"mib": {
+    "symbol": "SX5E",
+    "path": DATA_DIR / "mib.csv",
+    "source": "twelve",
+    "update_enabled": True,
+},
 
     "sp500": {
         "symbol": "",
