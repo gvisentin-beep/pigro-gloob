@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 import pandas as pd
 import requests
+import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -41,13 +42,11 @@ ASSETS = {
         "source": "twelve",
         "update_enabled": True,
     },
-"mib": {
-    "symbol": "",
-    "path": DATA_DIR / "mib.csv",
-    "source": "manual",
-    "update_enabled": False,
-},
-    
+    "mib": {
+        "symbol": "VGK",
+        "path": DATA_DIR / "mib.csv",
+        "source": "yahoo",
+        "update_enabled": True,
     },
     "sp500": {
         "symbol": "",
@@ -174,6 +173,59 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
         return None, f"{type(e).__name__}: {e}"
 
 
+def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    if not symbol:
+        return None, "Ticker Yahoo vuoto"
+
+    try:
+        df = yf.download(
+            symbol,
+            start="2020-01-01",
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+            threads=False,
+        )
+
+        if df is None or df.empty:
+            return None, "Nessun dato Yahoo restituito"
+
+        df = df.reset_index()
+
+        if "Date" not in df.columns:
+            return None, f"Colonne inattese: {list(df.columns)}"
+
+        close_col = "Adj Close" if "Adj Close" in df.columns else "Close"
+        if close_col not in df.columns:
+            return None, f"Colonne inattese: {list(df.columns)}"
+
+        df = df.rename(columns={"Date": "date", close_col: "close"})
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.tz_localize(None)
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+
+        df = (
+            df[["date", "close"]]
+            .dropna(subset=["date", "close"])
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
+
+        if df.empty:
+            return None, "Serie Yahoo vuota dopo pulizia"
+
+        # Base 100 per coerenza col benchmark Europa nel sito
+        base = float(df["close"].iloc[0])
+        if base <= 0:
+            return None, "Base iniziale non valida"
+        df["close"] = df["close"] / base * 100.0
+
+        return df, None
+
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
     return df is not None and not df.empty and len(df) >= MIN_VALID_ROWS
 
@@ -196,11 +248,13 @@ def update_asset(name: str, cfg: dict) -> bool:
         log("  Aggiornamento automatico disattivato: mantengo il CSV esistente")
         return existing is not None and not existing.empty
 
-    if source != "twelve":
+    if source == "twelve":
+        fresh, err = fetch_series_twelve(symbol)
+    elif source == "yahoo":
+        fresh, err = fetch_series_yahoo(symbol)
+    else:
         log("  Fonte non gestita in questa versione")
         return existing is not None and not existing.empty
-
-    fresh, err = fetch_series_twelve(symbol)
 
     if fresh is None or fresh.empty:
         log(f"  API non disponibile: {err}")
@@ -218,11 +272,15 @@ def update_asset(name: str, cfg: dict) -> bool:
         log("  Nessun fallback disponibile")
         return False
 
-    merged = (
-        pd.concat([existing, fresh], ignore_index=True)
-        if existing is not None and not existing.empty
-        else fresh
-    )
+    # Per il benchmark Europa da Yahoo vogliamo una serie pulita, non mista
+    if name == "mib":
+        merged = fresh.copy()
+    else:
+        merged = (
+            pd.concat([existing, fresh], ignore_index=True)
+            if existing is not None and not existing.empty
+            else fresh
+        )
 
     merged = (
         merged.drop_duplicates(subset=["date"], keep="last")
