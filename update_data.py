@@ -44,7 +44,7 @@ ASSETS = {
         "source": "yahoo",
         "update_enabled": True,
     },
-    "mib": {
+    "eurostoxx": {
         "symbol": "CSSX5E.MI",
         "path": DATA_DIR / "mib.csv",
         "source": "yahoo",
