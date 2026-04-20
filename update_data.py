@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
@@ -16,7 +17,6 @@ TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
 TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
 
 MIN_VALID_ROWS = 100
-
 
 ASSETS = {
     "ls80": {
@@ -66,51 +66,47 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def detect_sep(path: Path) -> str:
+    try:
+        first_line = path.read_text(encoding="utf-8-sig").splitlines()[0]
+    except Exception:
+        return ";"
+    if "," in first_line and ";" not in first_line:
+        return ","
+    return ";"
+
+
 def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
     if not path.exists():
         return None
 
-    try:
-        text = path.read_text(encoding="utf-8-sig").strip()
-    except Exception:
-        text = ""
-
-    if not text:
-        return None
+    sep = detect_sep(path)
 
     try:
-        first_line = text.splitlines()[0].strip().lower()
-        if ";" in first_line:
-            df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
-        elif "," in first_line:
-            df = pd.read_csv(path, sep=",", dtype=str, encoding="utf-8-sig")
-        else:
+        df = pd.read_csv(path, sep=sep, dtype=str, encoding="utf-8-sig")
+        df.columns = [str(c).strip().lower() for c in df.columns]
+
+        if "date" not in df.columns or "close" not in df.columns:
             df = pd.read_csv(
                 path,
-                sep=r"\s+",
-                engine="python",
+                sep=sep,
+                header=None,
+                names=["date", "close"],
                 dtype=str,
                 encoding="utf-8-sig",
             )
     except Exception:
-        return None
-
-    df.columns = [str(c).strip().lower() for c in df.columns]
-
-    if "date" not in df.columns or "close" not in df.columns:
-        if len(df.columns) >= 2:
-            df = df.iloc[:, :2].copy()
-            df.columns = ["date", "close"]
-        else:
-            return None
+        df = pd.read_csv(
+            path,
+            sep=sep,
+            header=None,
+            names=["date", "close"],
+            dtype=str,
+            encoding="utf-8-sig",
+        )
 
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = (
-        df["close"]
-        .astype(str)
-        .str.strip()
-        .str.replace(",", ".", regex=False)
-    )
+    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
     df = (
@@ -196,48 +192,54 @@ def fetch_series_yahoo(symbol: str, start_date: str = "2022-06-02") -> Tuple[Opt
     if not symbol:
         return None, "Ticker Yahoo vuoto"
 
-    try:
-        df = yf.download(
-            symbol,
-            start=start_date,
-            interval="1d",
-            progress=False,
-            auto_adjust=False,
-            threads=False,
-        )
+    last_err = None
 
-        if df is None or df.empty:
-            return None, "Nessun dato Yahoo restituito"
+    for attempt in range(3):
+        try:
+            df = yf.download(
+                symbol,
+                start=start_date,
+                interval="1d",
+                progress=False,
+                auto_adjust=False,
+                threads=False,
+            )
 
-        df = df.reset_index()
+            if df is None or df.empty:
+                raise ValueError("Nessun dato Yahoo")
 
-        if "Date" not in df.columns:
-            return None, f"Colonne inattese: {list(df.columns)}"
+            df = df.reset_index()
 
-        close_col = "Adj Close" if "Adj Close" in df.columns else "Close"
-        if close_col not in df.columns:
-            return None, f"Colonne inattese: {list(df.columns)}"
+            if "Date" not in df.columns:
+                raise ValueError(f"Colonne inattese: {list(df.columns)}")
 
-        df = df.rename(columns={"Date": "date", close_col: "close"})
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["date"] = df["date"].dt.tz_localize(None)
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
+            close_col = "Adj Close" if "Adj Close" in df.columns else "Close"
+            if close_col not in df.columns:
+                raise ValueError(f"Colonne inattese: {list(df.columns)}")
 
-        df = (
-            df[["date", "close"]]
-            .dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
+            df = df.rename(columns={"Date": "date", close_col: "close"})
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            df["date"] = df["date"].dt.tz_localize(None)
+            df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
-        if df.empty:
-            return None, "Serie Yahoo vuota dopo pulizia"
+            df = (
+                df[["date", "close"]]
+                .dropna(subset=["date", "close"])
+                .sort_values("date")
+                .drop_duplicates(subset=["date"], keep="last")
+                .reset_index(drop=True)
+            )
 
-        return df, None
+            if df.empty:
+                raise ValueError("Serie Yahoo vuota dopo pulizia")
 
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
+            return df, None
+
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            time.sleep(2 + attempt * 2)
+
+    return None, last_err or "Yahoo rate limit (riprovare)"
 
 
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
@@ -275,6 +277,11 @@ def update_asset(name: str, cfg: dict) -> bool:
         if existing is not None and not existing.empty:
             log("  Fallback: mantengo dati esistenti (OK)")
             return True
+
+        if source == "yahoo":
+            log("  Yahoo non disponibile, riprovare al prossimo run")
+            return True
+
         log("  Fallback fallito: nessun dato disponibile")
         return False
 
@@ -283,6 +290,11 @@ def update_asset(name: str, cfg: dict) -> bool:
         if existing is not None and not existing.empty:
             log("  Mantengo il CSV locale esistente")
             return True
+
+        if source == "yahoo":
+            log("  Serie Yahoo insufficiente, riprovare al prossimo run")
+            return True
+
         log("  Nessun fallback disponibile")
         return False
 
@@ -306,6 +318,11 @@ def update_asset(name: str, cfg: dict) -> bool:
         if existing is not None and not existing.empty:
             log("  Mantengo il CSV locale esistente")
             return True
+
+        if source == "yahoo":
+            log("  Serie finale Yahoo insufficiente, riprovare al prossimo run")
+            return True
+
         return False
 
     write_csv(path, merged)
