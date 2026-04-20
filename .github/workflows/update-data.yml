@@ -2,15 +2,15 @@ name: Update portfolio data
 
 on:
   schedule:
-    - cron: "15 22 * * 1-5"
+    - cron: "0 1 * * *"
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -24,12 +24,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install yfinance
 
       - name: Run updater
         env:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-          LS80_TICKER: ${{ secrets.LS80_TICKER }}
           GOLD_TICKER: ${{ secrets.GOLD_TICKER }}
           BTC_TICKER: ${{ secrets.BTC_TICKER }}
           WORLD_TICKER: ${{ secrets.WORLD_TICKER }}
@@ -41,7 +41,7 @@ jobs:
           cp data/btc.csv static/data_btc.csv
           cp data/gold.csv static/data_gold.csv
           cp data/ls80.csv static/data_ls80.csv
-          cp data/mib.csv static/data_mib.csv
+          if [ -f data/mib.csv ]; then cp data/mib.csv static/data_mib.csv; else echo "data/mib.csv non presente, salto copia"; fi
           cp data/sp500.csv static/data_sp500.csv
           cp data/world.csv static/data_world.csv
 
