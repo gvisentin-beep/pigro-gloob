@@ -44,7 +44,7 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "VGK",
+        "symbol": "EUN2.DE",
         "path": DATA_DIR / "mib.csv",
         "source": "yahoo",
         "update_enabled": True,
