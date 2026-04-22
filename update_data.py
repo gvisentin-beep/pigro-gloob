@@ -38,7 +38,7 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "MSE.PA",  # benchmark Europa
+        "symbol": "MSE.PA",
         "path": DATA_DIR / "mib.csv",
         "source": "yahoo",
         "update_enabled": True,
@@ -50,6 +50,12 @@ ASSETS = {
         "update_enabled": True,
     },
 }
+
+# soglie più severe
+MAX_DAILY_MOVE_DEFAULT = 0.18   # 18%
+MAX_DAILY_MOVE_BTC = 0.30       # BTC più volatile
+REBOUND_TOLERANCE = 0.06        # 6%
+LOCAL_WINDOW = 3                # controllo locale più robusto
 
 
 def log(msg: str) -> None:
@@ -126,7 +132,130 @@ def extract_close_series(df: pd.DataFrame) -> Optional[pd.Series]:
     return None
 
 
-def clean_downloaded_series(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+def robust_zscore_flags(series: pd.Series, window: int = 15, z_thresh: float = 5.0) -> pd.Series:
+    s = pd.to_numeric(series, errors="coerce")
+    med = s.rolling(window=window, center=True, min_periods=5).median()
+    mad = (s - med).abs().rolling(window=window, center=True, min_periods=5).median()
+
+    # 1.4826 * MAD ≈ std robusta
+    robust_sigma = 1.4826 * mad
+    z = (s - med).abs() / robust_sigma.replace(0, pd.NA)
+    flags = z > z_thresh
+    return flags.fillna(False)
+
+
+def detect_isolated_spikes(df: pd.DataFrame, symbol: str) -> list[int]:
+    close = pd.to_numeric(df["close"], errors="coerce")
+    ret = close.pct_change()
+    n = len(df)
+
+    max_daily = MAX_DAILY_MOVE_BTC if symbol.upper() == "BTC-EUR" else MAX_DAILY_MOVE_DEFAULT
+    flags = set()
+
+    robust_flags = robust_zscore_flags(close, window=15, z_thresh=5.0)
+
+    for i in range(1, n - 1):
+        prev_close = close.iloc[i - 1]
+        cur_close = close.iloc[i]
+        next_close = close.iloc[i + 1]
+
+        if not pd.notna(prev_close) or not pd.notna(cur_close) or not pd.notna(next_close):
+            continue
+
+        if cur_close <= 0:
+            flags.add(i)
+            continue
+
+        r = ret.iloc[i]
+        if pd.notna(r) and abs(r) > max_daily:
+            flags.add(i)
+            continue
+
+        # punto isolato: il giorno dopo torna vicino al giorno prima
+        if prev_close > 0:
+            rebound = abs((next_close / prev_close) - 1)
+            one_day_jump = abs((cur_close / prev_close) - 1)
+            next_day_jump = abs((next_close / cur_close) - 1)
+
+            if one_day_jump > max_daily and rebound < REBOUND_TOLERANCE:
+                flags.add(i)
+                continue
+
+            # spike a V molto evidente
+            if one_day_jump > max_daily * 0.8 and next_day_jump > max_daily * 0.8 and rebound < REBOUND_TOLERANCE:
+                flags.add(i)
+                continue
+
+        # controllo locale su finestra
+        left = max(0, i - LOCAL_WINDOW)
+        right = min(n, i + LOCAL_WINDOW + 1)
+        local = close.iloc[left:right].drop(index=df.index[i], errors="ignore")
+
+        if len(local) >= 3:
+            local_med = local.median()
+            if pd.notna(local_med) and local_med > 0:
+                dev = abs((cur_close / local_med) - 1)
+                if dev > max_daily * 1.2:
+                    flags.add(i)
+                    continue
+
+        # robust z-score
+        if bool(robust_flags.iloc[i]):
+            flags.add(i)
+
+    return sorted(flags)
+
+
+def smooth_spikes_by_interpolation(df: pd.DataFrame, spike_idx: list[int]) -> pd.DataFrame:
+    if not spike_idx:
+        return df
+
+    out = df.copy().reset_index(drop=True)
+    out.loc[spike_idx, "close"] = pd.NA
+    out["close"] = pd.to_numeric(out["close"], errors="coerce").interpolate(
+        method="linear",
+        limit_direction="both"
+    )
+
+    out = (
+        out.dropna(subset=["date", "close"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
+    return out
+
+
+def second_pass_return_filter(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    close = pd.to_numeric(df["close"], errors="coerce")
+    ret = close.pct_change().abs()
+
+    max_daily = MAX_DAILY_MOVE_BTC if symbol.upper() == "BTC-EUR" else MAX_DAILY_MOVE_DEFAULT
+    bad_idx = ret[ret > max_daily].index.tolist()
+
+    if not bad_idx:
+        return df
+
+    out = df.copy()
+    out.loc[bad_idx, "close"] = pd.NA
+    out["close"] = pd.to_numeric(out["close"], errors="coerce").interpolate(
+        method="linear",
+        limit_direction="both"
+    )
+
+    out = (
+        out.dropna(subset=["date", "close"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
+    return out
+
+
+def clean_downloaded_series(df: pd.DataFrame, symbol: str) -> Optional[pd.DataFrame]:
     close_series = extract_close_series(df)
     if close_series is None:
         return None
@@ -148,40 +277,34 @@ def clean_downloaded_series(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     if out.empty:
         return None
 
-    # Filtro leggero anti-anomalie: elimina solo spike davvero estremi
-    # e isola un singolo punto palesemente errato rispetto ai vicini.
-    if len(out) >= 5:
-        out["ret"] = out["close"].pct_change()
-        spike_idx = []
+    removed_total = 0
 
-        for i in range(1, len(out) - 1):
-            r = out.at[i, "ret"]
-            prev_close = out.at[i - 1, "close"]
-            cur_close = out.at[i, "close"]
-            next_close = out.at[i + 1, "close"]
+    # 1° passaggio: spike isolati
+    spike_idx = detect_isolated_spikes(out, symbol)
+    removed_total += len(spike_idx)
+    out = smooth_spikes_by_interpolation(out, spike_idx)
 
-            if not pd.notna(r):
-                continue
+    # 2° passaggio: eventuali residui con filtro su ritorni
+    before_len = len(out)
+    out = second_pass_return_filter(out, symbol)
+    after_len = len(out)
+    # qui non togliamo righe, ma “ripariamo” valori; il conteggio è indicativo
+    if before_len == after_len:
+        pass
 
-            # Candidato spike: variazione enorme in un giorno
-            if abs(r) > 0.35:
-                # Se il punto successivo torna vicino al precedente,
-                # probabile anomalia tecnica del dato.
-                if prev_close > 0:
-                    rebound = abs((next_close / prev_close) - 1)
-                    if rebound < 0.08:
-                        spike_idx.append(i)
+    # 3° passaggio: pulizia finale
+    out = (
+        out.dropna(subset=["date", "close"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
 
-            # Prezzi non positivi o nulli non devono passare
-            if cur_close <= 0:
-                spike_idx.append(i)
+    if out.empty:
+        return None
 
-        if spike_idx:
-            out = out.drop(index=sorted(set(spike_idx))).reset_index(drop=True)
-
-        out = out.drop(columns=["ret"], errors="ignore")
-
-    return out if not out.empty else None
+    log(f"  Pulizia {symbol}: spike isolati corretti = {removed_total}")
+    return out
 
 
 def fetch_yahoo(symbol: str):
@@ -200,7 +323,7 @@ def fetch_yahoo(symbol: str):
         if df is None or df.empty:
             return None, "Yahoo vuoto"
 
-        out = clean_downloaded_series(df)
+        out = clean_downloaded_series(df, symbol)
         if out is None or out.empty:
             return None, "Serie Yahoo vuota dopo pulizia"
 
@@ -219,22 +342,22 @@ def update_asset(name: str, cfg: dict) -> bool:
 
     existing = read_existing_csv(path)
     if existing is not None and not existing.empty:
-        log(f"CSV locale: {len(existing)} righe | ultima data {existing['date'].iloc[-1].date()}")
+        log(f"  CSV locale: {len(existing)} righe | ultima data {existing['date'].iloc[-1].date()}")
     else:
-        log("CSV locale assente o vuoto")
+        log("  CSV locale assente o vuoto")
 
     if not update_enabled:
-        log("Aggiornamento disattivato: mantengo il CSV esistente")
+        log("  Aggiornamento disattivato: mantengo il CSV esistente")
         return True
 
     fresh, err = fetch_yahoo(symbol)
 
     if fresh is None:
-        log(f"⚠️ Yahoo bloccato o errore: {err}")
+        log(f"  ⚠️ Yahoo bloccato o errore: {err}")
         if existing is not None and not existing.empty:
-            log("Uso dati esistenti (fallback OK)")
+            log("  Uso dati esistenti (fallback OK)")
             return True
-        log("Nessun dato disponibile, ma non blocco il workflow")
+        log("  Nessun dato disponibile, ma non blocco il workflow")
         return True
 
     merged = (
@@ -250,13 +373,11 @@ def update_asset(name: str, cfg: dict) -> bool:
     )
 
     if len(merged) < MIN_VALID_ROWS:
-        log(f"Serie troppo corta ({len(merged)} righe), mantengo eventuali dati esistenti")
-        if existing is not None and not existing.empty:
-            return True
+        log(f"  Serie troppo corta ({len(merged)} righe), mantengo eventuali dati esistenti")
         return True
 
     write_csv(path, merged)
-    log(f"Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
+    log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
     return True
 
 
