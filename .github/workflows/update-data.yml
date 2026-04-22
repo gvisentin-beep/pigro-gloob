@@ -1,182 +1,54 @@
-from __future__ import annotations
+name: Update portfolio data
 
-import os
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional, Tuple
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
 
-import pandas as pd
-import requests
-import yfinance as yf   # ✅ NUOVO
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+    permissions:
+      contents: write
 
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
-TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-MIN_VALID_ROWS = 100
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-ASSETS = {
-    "ls80": {
-        "symbol": "",
-        "path": DATA_DIR / "ls80.csv",
-        "source": "manual",
-        "update_enabled": False,
-    },
-    "gold": {
-        "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
-        "path": DATA_DIR / "gold.csv",
-        "source": "twelve",
-        "update_enabled": True,
-    },
-    "btc": {
-        "symbol": os.getenv("BTC_TICKER", "BTC-EUR").strip(),
-        "path": DATA_DIR / "btc.csv",
-        "source": "yahoo",   # 🔁 meglio Yahoo per BTC
-        "update_enabled": True,
-    },
-    "world": {
-        "symbol": os.getenv("WORLD_TICKER", "URTH").strip(),
-        "path": DATA_DIR / "world.csv",
-        "source": "yahoo",   # 🔁 più stabile
-        "update_enabled": True,
-    },
-    "mib": {
-        "symbol": "MSE.PA",   # ✅ EURO STOXX 50
-        "path": DATA_DIR / "mib.csv",
-        "source": "yahoo",
-        "update_enabled": True,
-    },
-    "sp500": {
-        "symbol": "^GSPC",
-        "path": DATA_DIR / "sp500.csv",
-        "source": "yahoo",
-        "update_enabled": True,
-    },
-}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install yfinance
 
+      - name: Run updater
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          GOLD_TICKER: ${{ secrets.GOLD_TICKER }}
+          BTC_TICKER: ${{ secrets.BTC_TICKER }}
+          WORLD_TICKER: ${{ secrets.WORLD_TICKER }}
+        run: |
+          python update_data.py
 
-def now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+      - name: Sync CSV files to static
+        run: |
+          cp data/btc.csv static/data_btc.csv
+          cp data/gold.csv static/data_gold.csv
+          cp data/ls80.csv static/data_ls80.csv
+          if [ -f data/mib.csv ]; then cp data/mib.csv static/data_mib.csv; else echo "data/mib.csv non presente, salto copia"; fi
+          cp data/sp500.csv static/data_sp500.csv
+          cp data/world.csv static/data_world.csv
 
-
-def log(msg: str) -> None:
-    print(msg, flush=True)
-
-
-def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
-    if not path.exists():
-        return None
-
-    df = pd.read_csv(path, sep=";", dtype=str)
-    df.columns = ["date", "close"]
-
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = pd.to_numeric(df["close"].str.replace(",", "."), errors="coerce")
-
-    df = df.dropna().sort_values("date").drop_duplicates("date")
-
-    return df if not df.empty else None
-
-
-def write_csv(path: Path, df: pd.DataFrame) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    df = df.sort_values("date").drop_duplicates("date")
-    df["date"] = df["date"].dt.strftime("%d/%m/%Y")
-
-    df.to_csv(path, sep=";", index=False)
-
-
-# ✅ NUOVA FUNZIONE YAHOO
-def fetch_series_yahoo(symbol: str):
-    try:
-        df = yf.download(symbol, period="max", interval="1d", progress=False)
-
-        if df.empty:
-            return None, "Yahoo vuoto"
-
-        df = df.reset_index()[["Date", "Close"]]
-        df.columns = ["date", "close"]
-
-        df["date"] = pd.to_datetime(df["date"])
-        df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
-        df = df.dropna().sort_values("date")
-
-        return df, None
-
-    except Exception as e:
-        return None, str(e)
-
-
-def fetch_series_twelve(symbol: str):
-    if not TWELVE_DATA_API_KEY:
-        return None, "API key mancante"
-
-    params = {
-        "symbol": symbol,
-        "interval": "1day",
-        "outputsize": 5000,
-        "apikey": TWELVE_DATA_API_KEY,
-    }
-
-    try:
-        resp = requests.get(TWELVE_DATA_BASE_URL, params=params)
-        data = resp.json()
-
-        values = data.get("values")
-        df = pd.DataFrame(values)
-
-        df["date"] = pd.to_datetime(df["datetime"])
-        df["close"] = pd.to_numeric(df["close"])
-
-        return df[["date", "close"]], None
-
-    except Exception as e:
-        return None, str(e)
-
-
-def update_asset(name, cfg):
-    symbol = cfg["symbol"]
-    path = cfg["path"]
-    source = cfg["source"]
-
-    log(f"\n{name.upper()} - {symbol}")
-
-    existing = read_existing_csv(path)
-
-    if source == "yahoo":
-        fresh, err = fetch_series_yahoo(symbol)
-    else:
-        fresh, err = fetch_series_twelve(symbol)
-
-    if fresh is None:
-        log(f"Errore: {err}")
-        return existing is not None
-
-    merged = (
-        pd.concat([existing, fresh]) if existing is not None else fresh
-    )
-
-    merged = merged.drop_duplicates("date").sort_values("date")
-
-    write_csv(path, merged)
-
-    log(f"Aggiornato: {len(merged)} righe")
-    return True
-
-
-def main():
-    log("=== AGGIORNAMENTO DATI ===")
-
-    for name, cfg in ASSETS.items():
-        if cfg["update_enabled"]:
-            update_asset(name, cfg)
-
-    log("=== FINE ===")
-
-
-if __name__ == "__main__":
-    main()
+      - name: Commit updated CSV files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/*.csv static/data_*.csv
+          git diff --cached --quiet || git commit -m "Auto update portfolio data"
+          git push
