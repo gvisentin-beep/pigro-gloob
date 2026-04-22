@@ -38,7 +38,7 @@ ASSETS = {
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "MSE.PA",  # EURO STOXX 50
+        "symbol": "MSE.PA",  # benchmark Europa
         "path": DATA_DIR / "mib.csv",
         "source": "yahoo",
         "update_enabled": True,
@@ -62,8 +62,8 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
 
     try:
         df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
-
         df.columns = [str(c).strip().lower() for c in df.columns]
+
         if "date" not in df.columns or "close" not in df.columns:
             df = pd.read_csv(
                 path,
@@ -110,6 +110,80 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
     out.to_csv(path, sep=";", index=False)
 
 
+def extract_close_series(df: pd.DataFrame) -> Optional[pd.Series]:
+    if df is None or df.empty:
+        return None
+
+    if isinstance(df.columns, pd.MultiIndex):
+        close_cols = [col for col in df.columns if str(col[0]).lower() == "close"]
+        if not close_cols:
+            return None
+        return df[close_cols[0]]
+
+    if "Close" in df.columns:
+        return df["Close"]
+
+    return None
+
+
+def clean_downloaded_series(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    close_series = extract_close_series(df)
+    if close_series is None:
+        return None
+
+    out = pd.DataFrame(
+        {
+            "date": pd.to_datetime(df.index, errors="coerce"),
+            "close": pd.to_numeric(close_series, errors="coerce"),
+        }
+    )
+
+    out = (
+        out.dropna(subset=["date", "close"])
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="last")
+        .reset_index(drop=True)
+    )
+
+    if out.empty:
+        return None
+
+    # Filtro leggero anti-anomalie: elimina solo spike davvero estremi
+    # e isola un singolo punto palesemente errato rispetto ai vicini.
+    if len(out) >= 5:
+        out["ret"] = out["close"].pct_change()
+        spike_idx = []
+
+        for i in range(1, len(out) - 1):
+            r = out.at[i, "ret"]
+            prev_close = out.at[i - 1, "close"]
+            cur_close = out.at[i, "close"]
+            next_close = out.at[i + 1, "close"]
+
+            if not pd.notna(r):
+                continue
+
+            # Candidato spike: variazione enorme in un giorno
+            if abs(r) > 0.35:
+                # Se il punto successivo torna vicino al precedente,
+                # probabile anomalia tecnica del dato.
+                if prev_close > 0:
+                    rebound = abs((next_close / prev_close) - 1)
+                    if rebound < 0.08:
+                        spike_idx.append(i)
+
+            # Prezzi non positivi o nulli non devono passare
+            if cur_close <= 0:
+                spike_idx.append(i)
+
+        if spike_idx:
+            out = out.drop(index=sorted(set(spike_idx))).reset_index(drop=True)
+
+        out = out.drop(columns=["ret"], errors="ignore")
+
+    return out if not out.empty else None
+
+
 def fetch_yahoo(symbol: str):
     try:
         time.sleep(2)
@@ -120,37 +194,14 @@ def fetch_yahoo(symbol: str):
             interval="1d",
             progress=False,
             threads=False,
-            auto_adjust=False,
+            auto_adjust=True,
         )
 
         if df is None or df.empty:
             return None, "Yahoo vuoto"
 
-        if isinstance(df.columns, pd.MultiIndex):
-            close_cols = [col for col in df.columns if str(col[0]).lower() == "close"]
-            if not close_cols:
-                return None, f"Colonna Close non trovata: {list(df.columns)}"
-            close_series = df[close_cols[0]]
-        else:
-            if "Close" not in df.columns:
-                return None, f"Colonna Close non trovata: {list(df.columns)}"
-            close_series = df["Close"]
-
-        out = pd.DataFrame(
-            {
-                "date": pd.to_datetime(df.index, errors="coerce"),
-                "close": pd.to_numeric(close_series, errors="coerce"),
-            }
-        )
-
-        out = (
-            out.dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
-
-        if out.empty:
+        out = clean_downloaded_series(df)
+        if out is None or out.empty:
             return None, "Serie Yahoo vuota dopo pulizia"
 
         return out, None
