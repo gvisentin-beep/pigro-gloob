@@ -51,12 +51,12 @@ input{
   border:1px solid var(--line);
   border-radius:12px;
   padding:15px;
-  height: 420px;              /* ✅ evita grafico schiacciato */
+  height: 420px;
 }
 
 .chartBox canvas{
   width:100% !important;
-  height:100% !important;     /* ✅ Chart.js riempie il box */
+  height:100% !important;
 }
 
 .disclaimer{
@@ -144,6 +144,37 @@ input{
 .blueBold{
   font-weight:700;
   color:#1e4fbf;
+}
+
+.comparisonTableBox{
+  margin-top:16px;
+  padding:12px;
+  background:#f7f9ff;
+  border:1px solid #dbe4ff;
+  border-radius:10px;
+}
+
+#comparison_table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:10px;
+  font-size:14px;
+}
+
+#comparison_table th{
+  text-align:left;
+  padding:8px;
+  background:#173a8a;
+  color:#fff;
+}
+
+#comparison_table td{
+  padding:8px;
+  border-bottom:1px solid #e5e7eb;
+}
+
+#comparison_table tr:hover{
+  background:#eef3ff;
 }
 
 @media print{
