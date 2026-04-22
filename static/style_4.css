@@ -205,3 +205,70 @@ input{
   .btn, button, .miniBtn, .btnLink { display:none !important; }
   .panel, .chartBox { box-shadow:none; }
 }
+/* ===== PREMIUM VIDEO ===== */
+
+.heroVideoWrap.premium{
+  position:relative;
+  overflow:hidden;
+  border-radius:16px;
+}
+
+/* VIDEO base */
+.heroVideo{
+  width:100%;
+  display:block;
+  opacity:0;
+  transform:scale(1.05);
+  transition: opacity 1.2s ease, transform 6s ease;
+}
+
+/* quando caricato */
+.heroVideo.loaded{
+  opacity:1;
+  transform:scale(1.0);
+}
+
+/* zoom lento continuo */
+.heroVideo.playing{
+  animation: slowZoom 20s ease-in-out infinite alternate;
+}
+
+@keyframes slowZoom{
+  from{ transform:scale(1); }
+  to{ transform:scale(1.06); }
+}
+
+/* ===== OVERLAY ===== */
+
+.videoOverlay{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:flex-end;
+  justify-content:flex-start;
+  padding:20px;
+  background:linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0.0));
+  opacity:0;
+  transition:opacity 1.2s ease;
+}
+
+.videoOverlay.show{
+  opacity:1;
+}
+
+.overlayContent{
+  color:white;
+  max-width:80%;
+}
+
+.overlayContent h2{
+  margin:0;
+  font-size:24px;
+  font-weight:700;
+}
+
+.overlayContent p{
+  margin-top:6px;
+  font-size:14px;
+  opacity:0.9;
+}
