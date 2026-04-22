@@ -463,18 +463,37 @@
         </ul>
       </div>
 
-      <div class="heroVideoSection">
-        <div class="heroVideoBox">
-          <div class="heroVideoWrap">
-                  <video id="heroVideo" class="heroVideo" playsinline controls preload="metadata" poster="/static/sdraio.png">
-              <source src="/static/pigro-video.mp4" type="video/mp4">
-              Il tuo browser non supporta la riproduzione video.
-            </video>
-          </div>
+<div class="heroVideoSection">
+  <div class="heroVideoBox">
+
+    <div class="heroVideoWrap premium">
+
+      <!-- OVERLAY TESTO -->
+      <div class="videoOverlay">
+        <div class="overlayContent">
+          <h2>Investire senza stress</h2>
+          <p>Struttura semplice. Nessuna previsione. Solo disciplina.</p>
         </div>
       </div>
+
+      <!-- VIDEO -->
+      <video id="heroVideo"
+             class="heroVideo"
+             playsinline
+             autoplay
+             muted
+             loop
+             preload="metadata"
+             poster="/static/sdraio.png">
+        <source src="/static/pigro-video.mp4?v=2" type="video/mp4">
+      </video>
+
     </div>
 
+  </div>
+</div>
+     
+    
     <div class="controlsRow">
       <div class="allocBox">
         <b>Composizione fissa</b><br/>
