@@ -246,8 +246,6 @@
 
     let baseDates = ls80Series.map(r => r.date);
 
-    // Teniamo come calendario base le date LS80.
-    // Per i confronti normali eliminiamo anche eventuali weekend anomali.
     if (mode === "normal") {
       baseDates = baseDates.filter(isWeekdayIso);
     }
@@ -952,6 +950,47 @@
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
+  function buildComparisonTable(aligned, labels, capital) {
+    function compute(series) {
+      return {
+        cagr: computeCagr(series, labels),
+        dd: computeMaxDD(series)
+      };
+    }
+
+    const pigro = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+    const world = benchmarkSeries(aligned, "world", capital);
+    const mib = benchmarkSeries(aligned, "mib", capital);
+    const sp500 = benchmarkSeries(aligned, "sp500", capital);
+    const leva20 = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+    const levaPlusObj = computeLevaPlusDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, pigro, capital);
+    const levaPlus = levaPlusObj.series;
+
+    const rows = [
+      ["Portafoglio Pigro", compute(pigro)],
+      ["Euro Stoxx 50", compute(mib)],
+      ["USA", compute(sp500)],
+      ["MSCI World", compute(world)],
+      ["Pigro con leva 20%", compute(leva20)],
+      ["Pigro Leva+", compute(levaPlus)]
+    ];
+
+    const tbody = document.querySelector("#comparison_table tbody");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+
+    rows.forEach(([name, stats]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><b>${name}</b></td>
+        <td>${pct(stats.cagr * 100, 1)}</td>
+        <td>${pct(stats.dd * 100, 1)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
   async function refresh() {
     if (isRefreshing) return;
     isRefreshing = true;
@@ -1002,10 +1041,13 @@
       renderMain(labels, pigroSeries, secondSeries, secondLabel);
       renderDd(labels, computeDrawdownSeriesPct(pigroSeries), computeDrawdownSeriesPct(secondSeries), secondLabel);
       updateTextSummary(pigroSeries, secondSeries, labels, secondLabel);
+      buildComparisonTable(aligned, labels, capital);
 
     } catch (err) {
       console.error(err);
       setHtml("compare_box", `<strong>Errore:</strong> ${err.message}`);
+      const tbody = document.querySelector("#comparison_table tbody");
+      if (tbody) tbody.innerHTML = "";
     } finally {
       isRefreshing = false;
     }
