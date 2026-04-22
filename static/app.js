@@ -246,6 +246,8 @@
 
     let baseDates = ls80Series.map(r => r.date);
 
+    // Teniamo come calendario base le date LS80.
+    // Per i confronti normali eliminiamo anche eventuali weekend anomali.
     if (mode === "normal") {
       baseDates = baseDates.filter(isWeekdayIso);
     }
@@ -950,54 +952,6 @@
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
-  function bindPremiumVideo() {
-    const video = document.getElementById("heroVideo");
-    const overlay = document.querySelector(".videoOverlay");
-
-    if (!video) return;
-
-    const showPremiumState = () => {
-      video.classList.add("loaded");
-      video.classList.add("playing");
-      if (overlay) overlay.classList.add("show");
-    };
-
-    video.addEventListener("loadeddata", () => {
-      video.classList.add("loaded");
-    });
-
-    video.addEventListener("canplay", () => {
-      video.classList.add("loaded");
-    });
-
-    video.addEventListener("play", () => {
-      video.classList.add("playing");
-      if (overlay) overlay.classList.add("show");
-    });
-
-    video.addEventListener("pause", () => {
-      video.classList.remove("playing");
-    });
-
-    if (video.readyState >= 2) {
-      video.classList.add("loaded");
-    }
-
-    const playPromise = video.play?.();
-    if (playPromise && typeof playPromise.then === "function") {
-      playPromise
-        .then(() => {
-          showPremiumState();
-        })
-        .catch(() => {
-          video.classList.add("loaded");
-          if (overlay) overlay.classList.add("show");
-        });
-    } else {
-      if (!video.paused) showPremiumState();
-    }
-  }
-
   async function refresh() {
     if (isRefreshing) return;
     isRefreshing = true;
@@ -1092,77 +1046,4 @@
       return true;
     }
 
-    if (target.classList && target.classList.contains("benchmarkBtn")) {
-      currentBenchmark = target.getAttribute("data-benchmark") || "world";
-      currentMode = target.getAttribute("data-mode") || "normal";
-      refresh();
-      return true;
-    }
-
-    return false;
-  }
-
-  function bindUi() {
-    const capitalInput = document.getElementById("capital");
-    if (capitalInput) {
-      capitalInput.addEventListener("input", function () {
-        this.value = formatIntegerInput(this.value);
-      });
-    }
-
-    [
-      "btn_update",
-      "btn_pdf",
-      "btn_faxsimile",
-      "btn_consulente",
-      "btn_libro",
-      "advisor_modal_close"
-    ].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.addEventListener("click", function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          handleActionClick(el);
-        });
-      }
-    });
-
-    document.querySelectorAll(".benchmarkBtn").forEach(btn => {
-      btn.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleActionClick(btn);
-      });
-    });
-
-    document.addEventListener("click", function (e) {
-      const clickable = e.target.closest(
-        "#btn_update, #btn_pdf, #btn_faxsimile, #btn_consulente, #btn_libro, #advisor_modal_close, .benchmarkBtn"
-      );
-
-      if (clickable) {
-        e.preventDefault();
-        handleActionClick(clickable);
-        return;
-      }
-
-      const modal = document.getElementById("advisor_modal");
-      if (modal && e.target === modal) {
-        closeAdvisorModal();
-      }
-    });
-
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") {
-        closeAdvisorModal();
-      }
-    });
-  }
-
-  document.addEventListener("DOMContentLoaded", function () {
-    bindUi();
-    bindPremiumVideo();
-    refresh();
-  });
-})();
+    if (target
