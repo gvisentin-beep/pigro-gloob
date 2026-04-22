@@ -16,7 +16,7 @@
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
-    mib: "Euro Stoxx 50",
+    mib: "iShares Core EURO STOXX 50 ETF EUR Acc",
     sp500: "iShares Core S&P 500 UCITS ETF (Acc)"
   };
 
@@ -202,47 +202,95 @@
     return Object.fromEntries(entries);
   }
 
-  function alignSeries(seriesMap) {
-    const names = Object.keys(seriesMap);
-    const allDates = new Set();
+  function forwardFillOnBaseDates(baseDates, sourceSeries) {
+    const sourceMap = new Map((sourceSeries || []).map(r => [r.date, r.value]));
+    const sourceDates = (sourceSeries || []).map(r => r.date);
 
-    names.forEach(name => {
-      seriesMap[name].forEach(r => allDates.add(r.date));
-    });
+    let ptr = 0;
+    let last = null;
+    const out = [];
 
-    const dates = Array.from(allDates).sort();
-    const byName = {};
+    for (const d of baseDates) {
+      while (ptr < sourceDates.length && sourceDates[ptr] <= d) {
+        const curDate = sourceDates[ptr];
+        const curValue = sourceMap.get(curDate);
+        if (curValue != null && isFinite(curValue)) last = curValue;
+        ptr++;
+      }
+      out.push(last);
+    }
 
-    names.forEach(name => {
-      const m = new Map(seriesMap[name].map(r => [r.date, r.value]));
-      let last = null;
-      byName[name] = dates.map(d => {
-        const cur = m.has(d) ? m.get(d) : null;
-        if (cur !== null && isFinite(cur)) last = cur;
-        return last;
-      });
-    });
+    return out;
+  }
+
+  function isWeekdayIso(isoDate) {
+    const d = parseDateFlexible(isoDate);
+    if (!d) return false;
+    const day = d.getDay();
+    return day >= 1 && day <= 5;
+  }
+
+  function alignSeries(seriesMap, benchmarkKey, mode) {
+    const ls80Series = Array.isArray(seriesMap.ls80) ? seriesMap.ls80 : [];
+    if (!ls80Series.length) {
+      return {
+        dates: [],
+        ls80: [],
+        gold: [],
+        btc: [],
+        world: [],
+        mib: [],
+        sp500: []
+      };
+    }
+
+    let baseDates = ls80Series.map(r => r.date);
+
+    // Teniamo come calendario base le date LS80.
+    // Per i confronti normali eliminiamo anche eventuali weekend anomali.
+    if (mode === "normal") {
+      baseDates = baseDates.filter(isWeekdayIso);
+    }
+
+    const alignedRaw = {
+      ls80: forwardFillOnBaseDates(baseDates, seriesMap.ls80),
+      gold: forwardFillOnBaseDates(baseDates, seriesMap.gold),
+      btc: forwardFillOnBaseDates(baseDates, seriesMap.btc),
+      world: forwardFillOnBaseDates(baseDates, seriesMap.world),
+      mib: forwardFillOnBaseDates(baseDates, seriesMap.mib),
+      sp500: forwardFillOnBaseDates(baseDates, seriesMap.sp500)
+    };
+
+    const needBenchmark = mode === "normal" ? (benchmarkKey || "world") : null;
 
     const validIdx = [];
-    for (let i = 0; i < dates.length; i++) {
-      if (
-        byName.ls80[i] != null &&
-        byName.gold[i] != null &&
-        byName.btc[i] != null &&
-        byName.world[i] != null
-      ) {
-        validIdx.push(i);
+    for (let i = 0; i < baseDates.length; i++) {
+      const hasCore =
+        alignedRaw.ls80[i] != null &&
+        isFinite(alignedRaw.ls80[i]) &&
+        alignedRaw.gold[i] != null &&
+        isFinite(alignedRaw.gold[i]) &&
+        alignedRaw.btc[i] != null &&
+        isFinite(alignedRaw.btc[i]);
+
+      if (!hasCore) continue;
+
+      if (needBenchmark) {
+        const b = alignedRaw[needBenchmark];
+        if (!b || b[i] == null || !isFinite(b[i])) continue;
       }
+
+      validIdx.push(i);
     }
 
     return {
-      dates: validIdx.map(i => dates[i]),
-      ls80: validIdx.map(i => byName.ls80[i]),
-      gold: validIdx.map(i => byName.gold[i]),
-      btc: validIdx.map(i => byName.btc[i]),
-      world: validIdx.map(i => byName.world[i]),
-      mib: validIdx.map(i => (byName.mib ? byName.mib[i] : null)),
-      sp500: validIdx.map(i => (byName.sp500 ? byName.sp500[i] : null))
+      dates: validIdx.map(i => baseDates[i]),
+      ls80: validIdx.map(i => alignedRaw.ls80[i]),
+      gold: validIdx.map(i => alignedRaw.gold[i]),
+      btc: validIdx.map(i => alignedRaw.btc[i]),
+      world: validIdx.map(i => alignedRaw.world[i]),
+      mib: validIdx.map(i => alignedRaw.mib[i]),
+      sp500: validIdx.map(i => alignedRaw.sp500[i])
     };
   }
 
@@ -252,21 +300,22 @@
     let unitsBtc = (capital * WEIGHT_BTC) / btc[0];
 
     const values = [];
-    const yearsSeen = new Set();
+    let currentYear = dates[0] ? dates[0].slice(0, 4) : null;
 
     for (let i = 0; i < dates.length; i++) {
       const v = unitsLs80 * ls80[i] + unitsGold * gold[i] + unitsBtc * btc[i];
       values.push(v);
 
-      const year = dates[i].slice(0, 4);
-      if (!yearsSeen.has(year)) {
-        yearsSeen.add(year);
-        if (i > 0) {
-          const total = v;
-          unitsLs80 = (total * WEIGHT_LS80) / ls80[i];
-          unitsGold = (total * WEIGHT_GOLD) / gold[i];
-          unitsBtc = (total * WEIGHT_BTC) / btc[i];
-        }
+      const thisYear = dates[i].slice(0, 4);
+      const nextYear = i < dates.length - 1 ? dates[i + 1].slice(0, 4) : null;
+
+      if (thisYear !== currentYear) currentYear = thisYear;
+
+      if (nextYear && nextYear !== thisYear) {
+        const total = v;
+        unitsLs80 = (total * WEIGHT_LS80) / ls80[i];
+        unitsGold = (total * WEIGHT_GOLD) / gold[i];
+        unitsBtc = (total * WEIGHT_BTC) / btc[i];
       }
     }
 
@@ -918,7 +967,7 @@
 
       const capital = getCapital();
       const seriesMap = await loadAllSeries();
-      const aligned = alignSeries(seriesMap);
+      const aligned = alignSeries(seriesMap, currentBenchmark, currentMode);
       const labels = aligned.dates;
 
       if (!labels.length) {
