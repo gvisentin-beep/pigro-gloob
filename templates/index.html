@@ -187,6 +187,20 @@
       border-radius:10px;
     }
 
+    .comparisonTableHead{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    .comparisonTablePeriod{
+      font-size:13px;
+      color:#334;
+      font-weight:700;
+    }
+
     #comparison_table{
       width:100%;
       border-collapse:collapse;
@@ -214,8 +228,10 @@
 
     #comparison_table td:nth-child(2),
     #comparison_table td:nth-child(3),
+    #comparison_table td:nth-child(4),
     #comparison_table th:nth-child(2),
-    #comparison_table th:nth-child(3){
+    #comparison_table th:nth-child(3),
+    #comparison_table th:nth-child(4){
       text-align:right;
       white-space:nowrap;
     }
@@ -534,13 +550,17 @@
     </div>
 
     <div id="comparison_table_box" class="comparisonTableBox">
-      <h3>Confronto completo portafogli</h3>
+      <div class="comparisonTableHead">
+        <h3>Confronto completo portafogli</h3>
+        <div class="comparisonTablePeriod">Periodo di calcolo: <span id="comparison_period_years">—</span> anni</div>
+      </div>
       <table id="comparison_table">
         <thead>
           <tr>
             <th>Portafoglio</th>
             <th>Rendimento annuo</th>
             <th>Max Ribasso</th>
+            <th>Capitale finale</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -665,6 +685,6 @@
     }
   </script>
 
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>
