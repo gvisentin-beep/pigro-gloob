@@ -71,7 +71,10 @@ def detect_sep(path: Path) -> str:
         first_line = path.read_text(encoding="utf-8-sig").splitlines()[0]
     except Exception:
         return ";"
-    if "," in first_line and ";" not in first_line:
+
+    if ";" in first_line:
+        return ";"
+    if "," in first_line:
         return ","
     return ";"
 
@@ -81,6 +84,7 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         return None
 
     sep = detect_sep(path)
+    dayfirst_flag = sep == ";"
 
     try:
         df = pd.read_csv(path, sep=sep, dtype=str, encoding="utf-8-sig")
@@ -96,17 +100,25 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
                 encoding="utf-8-sig",
             )
     except Exception:
-        df = pd.read_csv(
-            path,
-            sep=sep,
-            header=None,
-            names=["date", "close"],
-            dtype=str,
-            encoding="utf-8-sig",
-        )
+        try:
+            df = pd.read_csv(
+                path,
+                sep=sep,
+                header=None,
+                names=["date", "close"],
+                dtype=str,
+                encoding="utf-8-sig",
+            )
+        except Exception:
+            return None
 
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
+    df["date"] = pd.to_datetime(df["date"], dayfirst=dayfirst_flag, errors="coerce")
+    df["close"] = (
+        df["close"]
+        .astype(str)
+        .str.strip()
+        .str.replace(",", ".", regex=False)
+    )
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
     df = (
@@ -129,8 +141,10 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
         .reset_index(drop=True)
     )
 
-    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%Y-%m-%d")
-    out.to_csv(path, sep=",", index=False)
+    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
+    out["close"] = pd.to_numeric(out["close"], errors="coerce")
+
+    out.to_csv(path, sep=";", index=False)
 
 
 def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
@@ -239,7 +253,7 @@ def fetch_series_yahoo(symbol: str, start_date: str = "2022-06-02") -> Tuple[Opt
             last_err = f"{type(e).__name__}: {e}"
             time.sleep(2 + attempt * 2)
 
-    return None, last_err or "Yahoo rate limit (riprovare)"
+    return None, last_err or "Yahoo non disponibile"
 
 
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
@@ -274,12 +288,13 @@ def update_asset(name: str, cfg: dict) -> bool:
 
     if fresh is None or fresh.empty:
         log(f"  API non disponibile: {err}")
+
         if existing is not None and not existing.empty:
             log("  Fallback: mantengo dati esistenti (OK)")
             return True
 
         if source == "yahoo":
-            log("  Yahoo non disponibile, riprovare al prossimo run")
+            log("  Yahoo non disponibile, riproverò al prossimo run")
             return True
 
         log("  Fallback fallito: nessun dato disponibile")
@@ -287,46 +302,55 @@ def update_asset(name: str, cfg: dict) -> bool:
 
     if not is_series_usable(fresh):
         log(f"  Serie scaricata troppo corta o sospetta: {len(fresh)} righe")
+
         if existing is not None and not existing.empty:
             log("  Mantengo il CSV locale esistente")
             return True
 
         if source == "yahoo":
-            log("  Serie Yahoo insufficiente, riprovare al prossimo run")
+            log("  Serie Yahoo insufficiente, riproverò al prossimo run")
             return True
 
         log("  Nessun fallback disponibile")
         return False
 
     if source == "yahoo":
-        merged = fresh.copy()
+        if existing is not None and not existing.empty:
+            merged = (
+                pd.concat([existing, fresh], ignore_index=True)
+                .drop_duplicates(subset=["date"], keep="last")
+                .sort_values("date")
+                .reset_index(drop=True)
+            )
+        else:
+            merged = fresh.copy()
     else:
         merged = (
             pd.concat([existing, fresh], ignore_index=True)
             if existing is not None and not existing.empty
             else fresh
         )
-
-    merged = (
-        merged.drop_duplicates(subset=["date"], keep="last")
-        .sort_values("date")
-        .reset_index(drop=True)
-    )
+        merged = (
+            merged.drop_duplicates(subset=["date"], keep="last")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
 
     if not is_series_usable(merged):
         log(f"  Serie finale troppo corta: {len(merged)} righe")
+
         if existing is not None and not existing.empty:
             log("  Mantengo il CSV locale esistente")
             return True
 
         if source == "yahoo":
-            log("  Serie finale Yahoo insufficiente, riprovare al prossimo run")
+            log("  Serie finale Yahoo insufficiente, riproverò al prossimo run")
             return True
 
         return False
 
     write_csv(path, merged)
-    log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
+    log(f"  Salvato: {len(merged)} righe | ultima data {pd.to_datetime(merged['date']).iloc[-1].date()}")
     return True
 
 
