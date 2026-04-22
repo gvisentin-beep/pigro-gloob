@@ -6,16 +6,13 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 import pandas as pd
-import requests
 import yfinance as yf
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "").strip()
-TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/time_series"
+MIN_VALID_ROWS = 50
 
-MIN_VALID_ROWS = 100
 
 ASSETS = {
     "ls80": {
@@ -25,25 +22,25 @@ ASSETS = {
         "update_enabled": False,
     },
     "gold": {
-        "symbol": os.getenv("GOLD_TICKER", "GLD").strip(),
+        "symbol": "GLD",
         "path": DATA_DIR / "gold.csv",
-        "source": "twelve",
+        "source": "yahoo",
         "update_enabled": True,
     },
     "btc": {
-        "symbol": os.getenv("BTC_TICKER", "BTC-EUR").strip(),
+        "symbol": "BTC-EUR",
         "path": DATA_DIR / "btc.csv",
         "source": "yahoo",
         "update_enabled": True,
     },
     "world": {
-        "symbol": os.getenv("WORLD_TICKER", "URTH").strip(),
+        "symbol": "URTH",
         "path": DATA_DIR / "world.csv",
         "source": "yahoo",
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "MSE.PA",
+        "symbol": "MSE.PA",  # EURO STOXX 50
         "path": DATA_DIR / "mib.csv",
         "source": "yahoo",
         "update_enabled": True,
@@ -57,11 +54,7 @@ ASSETS = {
 }
 
 
-def now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-
-def log(msg: str) -> None:
+def log(msg: str):
     print(msg, flush=True)
 
 
@@ -70,245 +63,109 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
         return None
 
     try:
-        df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
-        df.columns = [str(c).strip().lower() for c in df.columns]
-        if "date" not in df.columns or "close" not in df.columns:
-            df = pd.read_csv(
-                path,
-                sep=";",
-                header=None,
-                names=["date", "close"],
-                dtype=str,
-                encoding="utf-8-sig",
-            )
-    except Exception:
-        df = pd.read_csv(
-            path,
-            sep=";",
-            header=None,
-            names=["date", "close"],
-            dtype=str,
-            encoding="utf-8-sig",
-        )
+        df = pd.read_csv(path, sep=";")
+        df.columns = ["date", "close"]
 
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
-    df["close"] = pd.to_numeric(df["close"], errors="coerce")
-
-    df = (
-        df.dropna(subset=["date", "close"])
-        .sort_values("date")
-        .drop_duplicates(subset=["date"], keep="last")
-        .reset_index(drop=True)
-    )
-
-    return df if not df.empty else None
-
-
-def write_csv(path: Path, df: pd.DataFrame) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    out = (
-        df.copy()
-        .sort_values("date")
-        .drop_duplicates(subset=["date"], keep="last")
-        .reset_index(drop=True)
-    )
-
-    out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
-    out.to_csv(path, sep=";", index=False)
-
-
-def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    if not symbol:
-        return None, "Ticker vuoto"
-
-    if not TWELVE_DATA_API_KEY:
-        return None, "TWELVE_DATA_API_KEY mancante"
-
-    params = {
-        "symbol": symbol,
-        "interval": "1day",
-        "outputsize": 5000,
-        "format": "JSON",
-        "order": "ASC",
-        "apikey": TWELVE_DATA_API_KEY,
-    }
-
-    try:
-        resp = requests.get(TWELVE_DATA_BASE_URL, params=params, timeout=40)
-        resp.raise_for_status()
-        data = resp.json()
-
-        if not isinstance(data, dict):
-            return None, "Risposta Twelve Data non valida"
-
-        if data.get("status") == "error":
-            return None, f"{data.get('code', '')} {data.get('message', 'errore sconosciuto')}".strip()
-
-        values = data.get("values")
-        if not values:
-            return None, "Nessun valore restituito"
-
-        df = pd.DataFrame(values)
-        if "datetime" not in df.columns or "close" not in df.columns:
-            return None, f"Colonne inattese: {list(df.columns)}"
-
-        df["date"] = pd.to_datetime(df["datetime"], errors="coerce")
+        df["date"] = pd.to_datetime(df["date"], dayfirst=True)
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
-        df = (
-            df.dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
+        df = df.dropna().sort_values("date").drop_duplicates("date")
 
-        if df.empty:
-            return None, "Serie vuota dopo pulizia"
-
-        return df[["date", "close"]].copy(), None
-
-    except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
+        return df
+    except:
+        return None
 
 
-def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    if not symbol:
-        return None, "Ticker vuoto"
+def write_csv(path: Path, df: pd.DataFrame):
+    path.parent.mkdir(parents=True, exist_ok=True)
 
+    df = df.sort_values("date").drop_duplicates("date")
+
+    df["date"] = df["date"].dt.strftime("%d/%m/%Y")
+
+    df.to_csv(path, sep=";", index=False)
+
+
+def fetch_yahoo(symbol: str):
     try:
         df = yf.download(
             symbol,
             period="max",
             interval="1d",
-            auto_adjust=False,
             progress=False,
             threads=False,
         )
 
         if df is None or df.empty:
-            return None, "Nessun valore restituito da Yahoo"
+            return None, "Yahoo vuoto"
 
-        # Gestione robusta per eventuali MultiIndex
+        # gestione MultiIndex
         if isinstance(df.columns, pd.MultiIndex):
-            close_col = None
-            for col in df.columns:
-                if str(col[0]).lower() == "close":
-                    close_col = col
-                    break
-            if close_col is None:
-                return None, f"Colonne inattese Yahoo: {list(df.columns)}"
-            close_series = df[close_col]
+            close = df[[col for col in df.columns if col[0] == "Close"]][df.columns[0]]
         else:
             if "Close" not in df.columns:
-                return None, f"Colonne inattese Yahoo: {list(df.columns)}"
-            close_series = df["Close"]
+                return None, "Colonna Close non trovata"
+            close = df["Close"]
 
         out = pd.DataFrame({
-            "date": pd.to_datetime(df.index, errors="coerce"),
-            "close": pd.to_numeric(close_series, errors="coerce"),
+            "date": pd.to_datetime(df.index),
+            "close": pd.to_numeric(close, errors="coerce"),
         })
 
-        out = (
-            out.dropna(subset=["date", "close"])
-            .sort_values("date")
-            .drop_duplicates(subset=["date"], keep="last")
-            .reset_index(drop=True)
-        )
+        out = out.dropna().sort_values("date")
 
-        if out.empty:
-            return None, "Serie Yahoo vuota dopo pulizia"
-
-        return out[["date", "close"]].copy(), None
+        return out, None
 
     except Exception as e:
-        return None, f"{type(e).__name__}: {e}"
+        return None, str(e)
 
 
-def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
-    return df is not None and not df.empty and len(df) >= MIN_VALID_ROWS
-
-
-def update_asset(name: str, cfg: dict) -> bool:
+def update_asset(name, cfg):
     symbol = cfg["symbol"]
     path = cfg["path"]
-    source = cfg.get("source", "twelve")
-    update_enabled = bool(cfg.get("update_enabled", True))
 
-    log(f"\n[{name.upper()}] {symbol or '(manuale)'} -> {path}")
+    log(f"\n[{name.upper()}] {symbol}")
 
     existing = read_existing_csv(path)
-    if existing is not None and not existing.empty:
-        log(f"  CSV locale: {len(existing)} righe | ultima data {existing['date'].iloc[-1].date()}")
-    else:
-        log("  CSV locale assente o vuoto")
 
-    if not update_enabled:
-        log("  Aggiornamento automatico disattivato: mantengo il CSV esistente")
-        return existing is not None and not existing.empty
+    if not cfg["update_enabled"]:
+        log("Manuale → salto")
+        return True
 
-    if source == "twelve":
-        fresh, err = fetch_series_twelve(symbol)
-    elif source == "yahoo":
-        fresh, err = fetch_series_yahoo(symbol)
-    else:
-        log(f"  Fonte non gestita: {source}")
-        return existing is not None and not existing.empty
+    fresh, err = fetch_yahoo(symbol)
 
-    if fresh is None or fresh.empty:
-        log(f"  API non disponibile: {err}")
-        if existing is not None and not existing.empty:
-            log("  Fallback: mantengo dati esistenti (OK)")
-            return True
-        log("  Fallback fallito: nessun dato disponibile")
-        return False
-
-    if not is_series_usable(fresh):
-        log(f"  Serie scaricata troppo corta o sospetta: {len(fresh)} righe")
-        if existing is not None and not existing.empty:
-            log("  Mantengo il CSV locale esistente")
-            return True
-        log("  Nessun fallback disponibile")
-        return False
+    if fresh is None:
+        log(f"Errore Yahoo: {err}")
+        return existing is not None
 
     merged = (
-        pd.concat([existing, fresh], ignore_index=True)
-        if existing is not None and not existing.empty
+        pd.concat([existing, fresh])
+        if existing is not None
         else fresh
     )
 
-    merged = (
-        merged.drop_duplicates(subset=["date"], keep="last")
-        .sort_values("date")
-        .reset_index(drop=True)
-    )
+    merged = merged.drop_duplicates("date").sort_values("date")
 
-    if not is_series_usable(merged):
-        log(f"  Serie finale troppo corta: {len(merged)} righe")
-        if existing is not None and not existing.empty:
-            log("  Mantengo il CSV locale esistente")
-            return True
+    if len(merged) < MIN_VALID_ROWS:
+        log("Serie troppo corta → skip")
         return False
 
     write_csv(path, merged)
-    log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
+
+    log(f"Aggiornato: {len(merged)} righe")
     return True
 
 
-def main() -> None:
-    log("=" * 72)
-    log(f"Aggiornamento dati avviato: {now_utc()}")
-    log("=" * 72)
+def main():
+    log("=== AGGIORNAMENTO DATI ===")
 
     results = []
+
     for name, cfg in ASSETS.items():
         ok = update_asset(name, cfg)
         results.append(ok)
 
-    log("=" * 72)
-    log(f"Aggiornamento completato: {now_utc()}")
-    log("=" * 72)
+    log("=== FINE ===")
 
     if not all(results):
         raise SystemExit(1)
