@@ -352,14 +352,6 @@
     return Math.pow(series[series.length - 1] / series[0], 1 / years) - 1;
   }
 
-  function computeYears(dates) {
-    if (!Array.isArray(dates) || dates.length < 2) return 0;
-    const d0 = parseDateFlexible(dates[0]);
-    const d1 = parseDateFlexible(dates[dates.length - 1]);
-    if (!d0 || !d1) return 0;
-    return (d1 - d0) / (365.25 * 24 * 3600 * 1000);
-  }
-
   function doublingYears(cagr) {
     if (!(cagr > 0)) return null;
     return Math.log(2) / Math.log(1 + cagr);
@@ -492,7 +484,9 @@
 
     setText("final_value", euro(pigroSeries[pigroSeries.length - 1], 0));
 
-    const years = computeYears(labels);
+    const d0 = parseDateFlexible(labels[0]);
+    const d1 = parseDateFlexible(labels[labels.length - 1]);
+    const years = d0 && d1 ? (d1 - d0) / (365.25 * 24 * 3600 * 1000) : 0;
     setText("final_years", years > 0 ? plain(years, 1) : "—");
 
     setText("compare_period", `${euro(initialCapital, 0)} investiti all’inizio del periodo`);
@@ -956,50 +950,52 @@
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
-  function buildComparisonTable(aligned, labels, capital) {
-    function compute(series) {
-      return {
-        cagr: computeCagr(series, labels),
-        dd: computeMaxDD(series),
-        finalValue: series && series.length ? series[series.length - 1] : null
-      };
-    }
+  function bindPremiumVideo() {
+    const video = document.getElementById("heroVideo");
+    const overlay = document.querySelector(".videoOverlay");
 
-    const pigro = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
-    const world = benchmarkSeries(aligned, "world", capital);
-    const mib = benchmarkSeries(aligned, "mib", capital);
-    const sp500 = benchmarkSeries(aligned, "sp500", capital);
-    const leva20 = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
-    const levaPlusObj = computeLevaPlusDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, pigro, capital);
-    const levaPlus = levaPlusObj.series;
+    if (!video) return;
 
-    const rows = [
-      ["Portafoglio Pigro", compute(pigro)],
-      ["Euro Stoxx 50", compute(mib)],
-      ["USA", compute(sp500)],
-      ["MSCI World", compute(world)],
-      ["Pigro con leva 20%", compute(leva20)],
-      ["Pigro Leva+", compute(levaPlus)]
-    ];
+    const showPremiumState = () => {
+      video.classList.add("loaded");
+      video.classList.add("playing");
+      if (overlay) overlay.classList.add("show");
+    };
 
-    const tbody = document.querySelector("#comparison_table tbody");
-    if (!tbody) return;
-
-    tbody.innerHTML = "";
-
-    rows.forEach(([name, stats]) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><b>${name}</b></td>
-        <td>${pct(stats.cagr * 100, 1)}</td>
-        <td>${pct(stats.dd * 100, 1)}</td>
-        <td>${euro(stats.finalValue, 0)}</td>
-      `;
-      tbody.appendChild(tr);
+    video.addEventListener("loadeddata", () => {
+      video.classList.add("loaded");
     });
 
-    const years = computeYears(labels);
-    setText("comparison_period_years", years > 0 ? plain(years, 1) : "—");
+    video.addEventListener("canplay", () => {
+      video.classList.add("loaded");
+    });
+
+    video.addEventListener("play", () => {
+      video.classList.add("playing");
+      if (overlay) overlay.classList.add("show");
+    });
+
+    video.addEventListener("pause", () => {
+      video.classList.remove("playing");
+    });
+
+    if (video.readyState >= 2) {
+      video.classList.add("loaded");
+    }
+
+    const playPromise = video.play?.();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise
+        .then(() => {
+          showPremiumState();
+        })
+        .catch(() => {
+          video.classList.add("loaded");
+          if (overlay) overlay.classList.add("show");
+        });
+    } else {
+      if (!video.paused) showPremiumState();
+    }
   }
 
   async function refresh() {
@@ -1052,14 +1048,10 @@
       renderMain(labels, pigroSeries, secondSeries, secondLabel);
       renderDd(labels, computeDrawdownSeriesPct(pigroSeries), computeDrawdownSeriesPct(secondSeries), secondLabel);
       updateTextSummary(pigroSeries, secondSeries, labels, secondLabel);
-      buildComparisonTable(aligned, labels, capital);
 
     } catch (err) {
       console.error(err);
       setHtml("compare_box", `<strong>Errore:</strong> ${err.message}`);
-      const tbody = document.querySelector("#comparison_table tbody");
-      if (tbody) tbody.innerHTML = "";
-      setText("comparison_period_years", "—");
     } finally {
       isRefreshing = false;
     }
@@ -1170,6 +1162,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     bindUi();
+    bindPremiumVideo();
     refresh();
   });
 })();
