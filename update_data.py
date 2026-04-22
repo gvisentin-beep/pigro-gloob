@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
@@ -32,28 +31,28 @@ ASSETS = {
         "update_enabled": True,
     },
     "btc": {
-        "symbol": os.getenv("BTC_TICKER", "BTC/EUR").strip(),
+        "symbol": os.getenv("BTC_TICKER", "BTC-EUR").strip(),
         "path": DATA_DIR / "btc.csv",
-        "source": "twelve",
+        "source": "yahoo",
         "update_enabled": True,
     },
     "world": {
         "symbol": os.getenv("WORLD_TICKER", "URTH").strip(),
         "path": DATA_DIR / "world.csv",
-        "source": "twelve",
+        "source": "yahoo",
         "update_enabled": True,
     },
     "mib": {
-        "symbol": "EUN2.DE",
+        "symbol": "MSE.PA",
         "path": DATA_DIR / "mib.csv",
         "source": "yahoo",
         "update_enabled": True,
     },
     "sp500": {
-        "symbol": "",
+        "symbol": "^GSPC",
         "path": DATA_DIR / "sp500.csv",
-        "source": "manual",
-        "update_enabled": False,
+        "source": "yahoo",
+        "update_enabled": True,
     },
 }
 
@@ -66,59 +65,34 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
-def detect_sep(path: Path) -> str:
-    try:
-        first_line = path.read_text(encoding="utf-8-sig").splitlines()[0]
-    except Exception:
-        return ";"
-
-    if ";" in first_line:
-        return ";"
-    if "," in first_line:
-        return ","
-    return ";"
-
-
 def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
     if not path.exists():
         return None
 
-    sep = detect_sep(path)
-    dayfirst_flag = sep == ";"
-
     try:
-        df = pd.read_csv(path, sep=sep, dtype=str, encoding="utf-8-sig")
+        df = pd.read_csv(path, sep=";", dtype=str, encoding="utf-8-sig")
         df.columns = [str(c).strip().lower() for c in df.columns]
-
         if "date" not in df.columns or "close" not in df.columns:
             df = pd.read_csv(
                 path,
-                sep=sep,
+                sep=";",
                 header=None,
                 names=["date", "close"],
                 dtype=str,
                 encoding="utf-8-sig",
             )
     except Exception:
-        try:
-            df = pd.read_csv(
-                path,
-                sep=sep,
-                header=None,
-                names=["date", "close"],
-                dtype=str,
-                encoding="utf-8-sig",
-            )
-        except Exception:
-            return None
+        df = pd.read_csv(
+            path,
+            sep=";",
+            header=None,
+            names=["date", "close"],
+            dtype=str,
+            encoding="utf-8-sig",
+        )
 
-    df["date"] = pd.to_datetime(df["date"], dayfirst=dayfirst_flag, errors="coerce")
-    df["close"] = (
-        df["close"]
-        .astype(str)
-        .str.strip()
-        .str.replace(",", ".", regex=False)
-    )
+    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    df["close"] = df["close"].astype(str).str.strip().str.replace(",", ".", regex=False)
     df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
     df = (
@@ -142,8 +116,6 @@ def write_csv(path: Path, df: pd.DataFrame) -> None:
     )
 
     out["date"] = pd.to_datetime(out["date"]).dt.strftime("%d/%m/%Y")
-    out["close"] = pd.to_numeric(out["close"], errors="coerce")
-
     out.to_csv(path, sep=";", index=False)
 
 
@@ -183,7 +155,6 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
             return None, f"Colonne inattese: {list(df.columns)}"
 
         df["date"] = pd.to_datetime(df["datetime"], errors="coerce")
-        df["date"] = df["date"].dt.tz_localize(None)
         df["close"] = pd.to_numeric(df["close"], errors="coerce")
 
         df = (
@@ -202,58 +173,57 @@ def fetch_series_twelve(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[s
         return None, f"{type(e).__name__}: {e}"
 
 
-def fetch_series_yahoo(symbol: str, start_date: str = "2022-06-02") -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def fetch_series_yahoo(symbol: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     if not symbol:
-        return None, "Ticker Yahoo vuoto"
+        return None, "Ticker vuoto"
 
-    last_err = None
+    try:
+        df = yf.download(
+            symbol,
+            period="max",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+        )
 
-    for attempt in range(3):
-        try:
-            df = yf.download(
-                symbol,
-                start=start_date,
-                interval="1d",
-                progress=False,
-                auto_adjust=False,
-                threads=False,
-            )
+        if df is None or df.empty:
+            return None, "Nessun valore restituito da Yahoo"
 
-            if df is None or df.empty:
-                raise ValueError("Nessun dato Yahoo")
+        # Gestione robusta per eventuali MultiIndex
+        if isinstance(df.columns, pd.MultiIndex):
+            close_col = None
+            for col in df.columns:
+                if str(col[0]).lower() == "close":
+                    close_col = col
+                    break
+            if close_col is None:
+                return None, f"Colonne inattese Yahoo: {list(df.columns)}"
+            close_series = df[close_col]
+        else:
+            if "Close" not in df.columns:
+                return None, f"Colonne inattese Yahoo: {list(df.columns)}"
+            close_series = df["Close"]
 
-            df = df.reset_index()
+        out = pd.DataFrame({
+            "date": pd.to_datetime(df.index, errors="coerce"),
+            "close": pd.to_numeric(close_series, errors="coerce"),
+        })
 
-            if "Date" not in df.columns:
-                raise ValueError(f"Colonne inattese: {list(df.columns)}")
+        out = (
+            out.dropna(subset=["date", "close"])
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
 
-            close_col = "Adj Close" if "Adj Close" in df.columns else "Close"
-            if close_col not in df.columns:
-                raise ValueError(f"Colonne inattese: {list(df.columns)}")
+        if out.empty:
+            return None, "Serie Yahoo vuota dopo pulizia"
 
-            df = df.rename(columns={"Date": "date", close_col: "close"})
-            df["date"] = pd.to_datetime(df["date"], errors="coerce")
-            df["date"] = df["date"].dt.tz_localize(None)
-            df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        return out[["date", "close"]].copy(), None
 
-            df = (
-                df[["date", "close"]]
-                .dropna(subset=["date", "close"])
-                .sort_values("date")
-                .drop_duplicates(subset=["date"], keep="last")
-                .reset_index(drop=True)
-            )
-
-            if df.empty:
-                raise ValueError("Serie Yahoo vuota dopo pulizia")
-
-            return df, None
-
-        except Exception as e:
-            last_err = f"{type(e).__name__}: {e}"
-            time.sleep(2 + attempt * 2)
-
-    return None, last_err or "Yahoo non disponibile"
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
 
 
 def is_series_usable(df: Optional[pd.DataFrame]) -> bool:
@@ -281,76 +251,48 @@ def update_asset(name: str, cfg: dict) -> bool:
     if source == "twelve":
         fresh, err = fetch_series_twelve(symbol)
     elif source == "yahoo":
-        fresh, err = fetch_series_yahoo(symbol, start_date="2022-06-02")
+        fresh, err = fetch_series_yahoo(symbol)
     else:
-        log("  Fonte non gestita in questa versione")
+        log(f"  Fonte non gestita: {source}")
         return existing is not None and not existing.empty
 
     if fresh is None or fresh.empty:
         log(f"  API non disponibile: {err}")
-
         if existing is not None and not existing.empty:
             log("  Fallback: mantengo dati esistenti (OK)")
             return True
-
-        if source == "yahoo":
-            log("  Yahoo non disponibile, riproverò al prossimo run")
-            return True
-
         log("  Fallback fallito: nessun dato disponibile")
         return False
 
     if not is_series_usable(fresh):
         log(f"  Serie scaricata troppo corta o sospetta: {len(fresh)} righe")
-
         if existing is not None and not existing.empty:
             log("  Mantengo il CSV locale esistente")
             return True
-
-        if source == "yahoo":
-            log("  Serie Yahoo insufficiente, riproverò al prossimo run")
-            return True
-
         log("  Nessun fallback disponibile")
         return False
 
-    if source == "yahoo":
-        if existing is not None and not existing.empty:
-            merged = (
-                pd.concat([existing, fresh], ignore_index=True)
-                .drop_duplicates(subset=["date"], keep="last")
-                .sort_values("date")
-                .reset_index(drop=True)
-            )
-        else:
-            merged = fresh.copy()
-    else:
-        merged = (
-            pd.concat([existing, fresh], ignore_index=True)
-            if existing is not None and not existing.empty
-            else fresh
-        )
-        merged = (
-            merged.drop_duplicates(subset=["date"], keep="last")
-            .sort_values("date")
-            .reset_index(drop=True)
-        )
+    merged = (
+        pd.concat([existing, fresh], ignore_index=True)
+        if existing is not None and not existing.empty
+        else fresh
+    )
+
+    merged = (
+        merged.drop_duplicates(subset=["date"], keep="last")
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
 
     if not is_series_usable(merged):
         log(f"  Serie finale troppo corta: {len(merged)} righe")
-
         if existing is not None and not existing.empty:
             log("  Mantengo il CSV locale esistente")
             return True
-
-        if source == "yahoo":
-            log("  Serie finale Yahoo insufficiente, riproverò al prossimo run")
-            return True
-
         return False
 
     write_csv(path, merged)
-    log(f"  Salvato: {len(merged)} righe | ultima data {pd.to_datetime(merged['date']).iloc[-1].date()}")
+    log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
     return True
 
 
