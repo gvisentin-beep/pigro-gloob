@@ -12,7 +12,6 @@
     .wrap{max-width:1100px; margin:0 auto; padding:10px 20px 20px;}
     h1{margin:0; font-size:34px; color:#173a8a;}
     h2{margin-top:22px; color:#173a8a;}
-    h3{margin:0; color:#173a8a;}
     .topRow{display:flex; gap:16px; align-items:center;}
     .logo{width:52px; height:52px; border-radius:10px;}
     .sub{color:#333; font-size:13px; margin-top:2px;}
@@ -29,17 +28,26 @@
     .introText{min-width:0;}
 
     .controlsRow{
-      display:flex;
+      display:grid;
+      grid-template-columns: 220px 250px 190px 1fr;
       gap:16px;
       margin:2px 0 10px;
-      align-items:flex-end;
-      flex-wrap:wrap;
+      align-items:end;
     }
 
     .ctrl{display:flex; flex-direction:column; gap:6px;}
     .ctrl label{display:block; font-size:13px; color:#111; margin-bottom:4px;}
-    .ctrl input[type="text"]{width:180px; padding:6px 8px;}
-    .ctrl.capital{min-width:220px;}
+    .ctrl input[type="text"]{width:100%; padding:6px 8px; box-sizing:border-box;}
+    .ctrl.capital{min-width:0;}
+
+    .finalBox{
+      justify-self:end;
+      text-align:right;
+      font-weight:700;
+      white-space:nowrap;
+      align-self:end;
+      padding-bottom:2px;
+    }
 
     .allocBox{
       border:1px solid #d9e2ff;
@@ -48,7 +56,7 @@
       padding:10px 12px;
       font-size:13px;
       line-height:1.5;
-      min-width:210px;
+      min-width:0;
     }
 
     .btn{
@@ -62,8 +70,11 @@
       transition:all .2s ease;
       box-sizing:border-box;
       width:100%;
+      text-align:center;
     }
+
     .btn:disabled{opacity:.6; cursor:not-allowed;}
+
     .btn:hover{
       transform:translateY(-1px);
       box-shadow:0 6px 14px rgba(19,44,116,.20);
@@ -159,9 +170,9 @@
       object-fit:cover;
     }
 
-    #chart_main{width:100% !important; height:387px !important;}
-    #chart_dd{width:100% !important; height:198px !important;}
-    #chart_liq{width:100% !important; height:198px !important;}
+    #chart_main{width:100% !important; height:380px !important;}
+    #chart_dd{width:100% !important; height:190px !important;}
+    #chart_liq{width:100% !important; height:190px !important;}
 
     .summary{margin-top:8px; font-size:13px;}
     .summary b{font-size:15px;}
@@ -174,66 +185,36 @@
       border:1px solid #dbe4ff;
       border-radius:10px;
       font-size:14px;
-      line-height:1.45;
+      line-height:1.55;
     }
 
     .bigCompare strong{color:#173a8a;}
 
-    .comparisonTableBox{
-      margin-top:16px;
-      padding:12px;
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:10px;
-    }
-
-    .comparisonTableHead{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-end;
-      gap:12px;
-      flex-wrap:wrap;
-    }
-
-    .comparisonTablePeriod{
-      font-size:13px;
-      color:#334;
-      font-weight:700;
-    }
-
-    #comparison_table{
-      width:100%;
-      border-collapse:collapse;
+    .compareGrid{
+      display:grid;
+      grid-template-columns:repeat(2, 1fr);
+      gap:14px;
       margin-top:10px;
-      font-size:14px;
     }
 
-    #comparison_table th{
-      text-align:left;
-      padding:9px 10px;
-      background:#173a8a;
-      color:#fff;
+    .compareCard{
+      background:#fff;
+      border:1px solid #dbe4ff;
+      border-radius:12px;
+      padding:12px 14px;
+    }
+
+    .compareCardTitle{
+      color:#173a8a;
+      font-weight:700;
+      margin-bottom:8px;
+      font-size:15px;
+    }
+
+    .compareLine{
+      margin-bottom:4px;
       font-size:13px;
-    }
-
-    #comparison_table td{
-      padding:9px 10px;
-      border-bottom:1px solid #e5e7eb;
-      vertical-align:middle;
-    }
-
-    #comparison_table tbody tr:hover{
-      background:#eef3ff;
-    }
-
-    #comparison_table td:nth-child(2),
-    #comparison_table td:nth-child(3),
-    #comparison_table td:nth-child(4),
-    #comparison_table th:nth-child(2),
-    #comparison_table th:nth-child(3),
-    #comparison_table th:nth-child(4){
-      text-align:right;
-      white-space:nowrap;
+      line-height:1.45;
     }
 
     .modalOverlay{
@@ -409,35 +390,34 @@
     @media(max-width:900px){
       .introTop{grid-template-columns:1fr;}
       .advisorGrid{grid-template-columns:1fr;}
-      .btnRow{
-        grid-template-columns:repeat(2, 1fr);
+      .controlsRow{grid-template-columns:1fr 1fr;}
+      .compareGrid{grid-template-columns:1fr;}
+      .finalBox{
+        justify-self:start;
+        text-align:left;
       }
     }
 
     @media(max-width:700px){
       .wrap{padding:10px 14px 20px;}
       .topRow{align-items:flex-start;}
-      .controlsRow{gap:12px;}
+      .controlsRow{
+        gap:12px;
+        grid-template-columns:1fr;
+      }
       .ctrl.capital{min-width:0; width:100%;}
       .ctrl input[type="text"]{width:100%; box-sizing:border-box;}
       .allocBox{min-width:0; width:100%; box-sizing:border-box;}
+      .finalBox{
+        justify-self:start;
+        text-align:left;
+      }
       .btnRow{
         grid-template-columns:1fr;
         gap:8px;
       }
-      .benchRow{
-        gap:8px;
-      }
-      .benchmarkBtn{
-        padding:8px 12px;
-      }
-      #comparison_table{
-        font-size:13px;
-      }
-      #comparison_table th,
-      #comparison_table td{
-        padding:8px 6px;
-      }
+      .benchRow{gap:8px;}
+      .benchmarkBtn{padding:8px 12px;}
     }
   </style>
 </head>
@@ -463,37 +443,18 @@
         </ul>
       </div>
 
-<div class="heroVideoSection">
-  <div class="heroVideoBox">
-
-    <div class="heroVideoWrap premium">
-
-      <!-- OVERLAY TESTO -->
-      <div class="videoOverlay">
-        <div class="overlayContent">
-          <h2>Investire senza stress</h2>
-          <p>Struttura semplice. Nessuna previsione. Solo disciplina.</p>
+      <div class="heroVideoSection">
+        <div class="heroVideoBox">
+          <div class="heroVideoWrap">
+            <video id="heroVideo" class="heroVideo" playsinline controls preload="metadata" poster="/static/sdraio.png">
+              <source src="/static/pigro-video.mp4" type="video/mp4">
+              Il tuo browser non supporta la riproduzione video.
+            </video>
+          </div>
         </div>
       </div>
-
-      <!-- VIDEO -->
-      <video id="heroVideo"
-             class="heroVideo"
-             playsinline
-             autoplay
-             muted
-             loop
-             preload="metadata"
-             poster="/static/sdraio.png">
-        <source src="/static/pigro-video.mp4?v=2" type="video/mp4">
-      </video>
-
     </div>
 
-  </div>
-</div>
-     
-    
     <div class="controlsRow">
       <div class="allocBox">
         <b>Composizione fissa</b><br/>
@@ -506,11 +467,12 @@
         <label><b>Capitale (€)</b></label>
         <input id="capital" type="text" value="10000">
       </div>
-<div class="btnRow" style="max-width:300px;">
-  <button id="btn_update" class="btn">Aggiorna</button>
-</div>
 
-      <div style="margin-left:auto; font-weight:700;">
+      <div>
+        <button id="btn_update" class="btn">Aggiorna Capitale</button>
+      </div>
+
+      <div class="finalBox">
         Finale: <span id="final_value">—</span> <span class="sub">(in anni <span id="final_years">—</span>)</span>
       </div>
     </div>
@@ -526,7 +488,7 @@
     </div>
 
     <div id="plus_rule_box" class="dynamicRuleBox">
-      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo medio del Lombard è calcolato al 2,5% (potrebbe variare a seconda del contratto di ciascun utente).
     </div>
 
     <div class="summary">
@@ -545,7 +507,6 @@
     </div>
 
     <h2>Andamento Ribassi Portafogli</h2>
-
     <div class="card">
       <canvas id="chart_dd"></canvas>
       <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
@@ -560,28 +521,26 @@
     </div>
 
     <div id="compare_box" class="bigCompare">
-      <strong>Confronto immediato</strong><br/>
-      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
-      Metodo Pigro → <b id="compare_pigro">—</b><br/>
-      <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
-    </div>
+      <strong>Confronto completo</strong><br/>
+      <span id="compare_period">10.000 € investiti all’inizio del periodo</span>
 
-    <div id="comparison_table_box" class="comparisonTableBox">
-      <div class="comparisonTableHead">
-        <h3>Confronto completo portafogli</h3>
-        <div class="comparisonTablePeriod">Periodo di calcolo: <span id="comparison_period_years">—</span> anni</div>
+      <div class="compareGrid">
+        <div class="compareCard">
+          <div class="compareCardTitle">Metodo Pigro</div>
+          <div class="compareLine">Valore finale: <b id="compare_pigro">—</b></div>
+          <div class="compareLine">Rendimento annualizzato: <b id="compare_pigro_cagr">—</b></div>
+          <div class="compareLine">Max Ribasso nel periodo: <b id="compare_pigro_maxdd">—</b></div>
+          <div class="compareLine">Raddoppio del capitale in anni: <b id="compare_pigro_dbl">—</b></div>
+        </div>
+
+        <div class="compareCard">
+          <div class="compareCardTitle" id="compare_title_benchmark">MSCI World</div>
+          <div class="compareLine">Valore finale: <b id="compare_benchmark">—</b></div>
+          <div class="compareLine">Rendimento annualizzato: <b id="compare_benchmark_cagr">—</b></div>
+          <div class="compareLine">Max Ribasso nel periodo: <b id="compare_benchmark_maxdd">—</b></div>
+          <div class="compareLine">Raddoppio del capitale in anni: <b id="compare_benchmark_dbl">—</b></div>
+        </div>
       </div>
-      <table id="comparison_table">
-        <thead>
-          <tr>
-            <th>Portafoglio</th>
-            <th>Rendimento annuo</th>
-            <th>Max Ribasso</th>
-            <th>Capitale finale</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
     </div>
 
     <div class="smallText">
@@ -702,6 +661,6 @@
     }
   </script>
 
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
