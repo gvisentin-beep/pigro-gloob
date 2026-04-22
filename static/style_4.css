@@ -51,7 +51,7 @@ input{
   border:1px solid var(--line);
   border-radius:12px;
   padding:15px;
-  height: 420px;
+  height:420px;
 }
 
 .chartBox canvas{
@@ -154,6 +154,20 @@ input{
   border-radius:10px;
 }
 
+.comparisonTableHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.comparisonTablePeriod{
+  font-size:13px;
+  color:#334;
+  font-weight:700;
+}
+
 #comparison_table{
   width:100%;
   border-collapse:collapse;
@@ -175,6 +189,16 @@ input{
 
 #comparison_table tr:hover{
   background:#eef3ff;
+}
+
+#comparison_table td:nth-child(2),
+#comparison_table td:nth-child(3),
+#comparison_table td:nth-child(4),
+#comparison_table th:nth-child(2),
+#comparison_table th:nth-child(3),
+#comparison_table th:nth-child(4){
+  text-align:right;
+  white-space:nowrap;
 }
 
 @media print{
