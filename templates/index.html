@@ -12,6 +12,7 @@
     .wrap{max-width:1100px; margin:0 auto; padding:10px 20px 20px;}
     h1{margin:0; font-size:34px; color:#173a8a;}
     h2{margin-top:22px; color:#173a8a;}
+    h3{margin:0; color:#173a8a;}
     .topRow{display:flex; gap:16px; align-items:center;}
     .logo{width:52px; height:52px; border-radius:10px;}
     .sub{color:#333; font-size:13px; margin-top:2px;}
@@ -178,33 +179,45 @@
 
     .bigCompare strong{color:#173a8a;}
 
-    .compareGrid{
-      display:grid;
-      grid-template-columns:repeat(2, minmax(260px, 1fr));
-      gap:14px;
-      margin-top:12px;
-    }
-
-    .compareCard{
-      background:#ffffff;
+    .comparisonTableBox{
+      margin-top:16px;
+      padding:12px;
+      background:#f7f9ff;
       border:1px solid #dbe4ff;
-      border-radius:12px;
-      padding:12px 14px;
-      line-height:1.65;
+      border-radius:10px;
     }
 
-    .compareCardTitle{
-      color:#173a8a;
-      font-weight:700;
-      font-size:16px;
-      margin-bottom:8px;
+    #comparison_table{
+      width:100%;
+      border-collapse:collapse;
+      margin-top:10px;
+      font-size:14px;
     }
 
-    .compareMessage{
-      margin-top:14px;
+    #comparison_table th{
+      text-align:left;
+      padding:9px 10px;
+      background:#173a8a;
+      color:#fff;
       font-size:13px;
-      color:#333;
-      line-height:1.5;
+    }
+
+    #comparison_table td{
+      padding:9px 10px;
+      border-bottom:1px solid #e5e7eb;
+      vertical-align:middle;
+    }
+
+    #comparison_table tbody tr:hover{
+      background:#eef3ff;
+    }
+
+    #comparison_table td:nth-child(2),
+    #comparison_table td:nth-child(3),
+    #comparison_table th:nth-child(2),
+    #comparison_table th:nth-child(3){
+      text-align:right;
+      white-space:nowrap;
     }
 
     .modalOverlay{
@@ -402,8 +415,12 @@
       .benchmarkBtn{
         padding:8px 12px;
       }
-      .compareGrid{
-        grid-template-columns:1fr;
+      #comparison_table{
+        font-size:13px;
+      }
+      #comparison_table th,
+      #comparison_table td{
+        padding:8px 6px;
       }
     }
   </style>
@@ -468,21 +485,18 @@
     <div class="smallText">Scegli il confronto da visualizzare.</div>
 
     <div class="benchRow">
-      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Euro Stoxx 50</button>
+      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Italia</button>
       <button class="benchmarkBtn" data-mode="normal" data-benchmark="sp500">Confronta con USA</button>
       <button class="benchmarkBtn active" data-mode="normal" data-benchmark="world">Confronta con MSCI World</button>
       <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
       <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
     </div>
-<div id="plus_rule_box" class="dynamicRuleBox">
-  <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo della leva è considerato mediamente del 2,5%.
-</div>
 
-<div id="leva20_rule_box" class="dynamicRuleBox">
-  <b>Pigro con leva 20%:</b> parte con leva iniziale del 20% che viene ricalibrata, per ogni titolo, a fine di ogni anno. Il costo della leva è considerato mediamente del 2,5%.
-</div>
+    <div id="plus_rule_box" class="dynamicRuleBox">
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
+    </div>
 
-      <div class="summary">
+    <div class="summary">
       <b>Portafoglio “Pigro 80/15/5”:</b>
       Rendimento annualizzato <b><span id="cagr">—</span></b> |
       <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
@@ -513,32 +527,30 @@
     </div>
 
     <div id="compare_box" class="bigCompare">
-      <strong>Confronto completo</strong><br/>
-      <span id="compare_period">10.000 € investiti all’inizio del periodo</span>
+      <strong>Confronto immediato</strong><br/>
+      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
+      Metodo Pigro → <b id="compare_pigro">—</b><br/>
+      <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
+    </div>
 
-      <div class="compareGrid">
-        <div class="compareCard">
-          <div class="compareCardTitle">Metodo Pigro</div>
-          <div>Valore finale: <b id="compare_pigro">—</b></div>
-          <div>Rendimento annualizzato: <b id="compare_pigro_cagr">—</b></div>
-          <div>Max Ribasso nel periodo: <b id="compare_pigro_maxdd">—</b></div>
-          <div>Raddoppio del capitale in anni: <b id="compare_pigro_dbl">—</b></div>
-        </div>
+    <div id="comparison_table_box" class="comparisonTableBox">
+      <h3>Confronto completo portafogli</h3>
+      <table id="comparison_table">
+        <thead>
+          <tr>
+            <th>Portafoglio</th>
+            <th>Rendimento annuo</th>
+            <th>Max Ribasso</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
 
-        <div class="compareCard">
-          <div class="compareCardTitle" id="compare_title_benchmark">MSCI World</div>
-          <div>Valore finale: <b id="compare_benchmark">—</b></div>
-          <div>Rendimento annualizzato: <b id="compare_benchmark_cagr">—</b></div>
-          <div>Max Ribasso nel periodo: <b id="compare_benchmark_maxdd">—</b></div>
-          <div>Raddoppio del capitale in anni: <b id="compare_benchmark_dbl">—</b></div>
-        </div>
-      </div>
-
-      <div class="compareMessage">
-        <b>Messaggio chiave:</b><br/>
-        La differenza non è indovinare il mercato.<br/>
-        È avere una struttura semplice e mantenerla nel tempo.
-      </div>
+    <div class="smallText">
+      <b>Messaggio chiave:</b><br/>
+      La differenza non è indovinare il mercato.<br/>
+      È avere una struttura semplice e mantenerla nel tempo.
     </div>
 
     <h2>Come applicarlo concretamente</h2>
