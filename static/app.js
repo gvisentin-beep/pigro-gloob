@@ -1002,7 +1002,7 @@
     const rows = [
       ["Portafoglio Pigro", compute(pigro)],
       ["Euro Stoxx 50", compute(mib)],
-      ["USA", compute(sp500)],
+      ["USA SP 500", compute(sp500)],
       ["MSCI World", compute(world)],
       ["Pigro con leva 20%", compute(leva20)],
       ["Pigro Leva+", compute(levaPlus)]
