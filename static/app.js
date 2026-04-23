@@ -246,8 +246,6 @@
 
     let baseDates = ls80Series.map(r => r.date);
 
-    // Teniamo come calendario base le date LS80.
-    // Per i confronti normali eliminiamo anche eventuali weekend anomali.
     if (mode === "normal") {
       baseDates = baseDates.filter(isWeekdayIso);
     }
@@ -352,6 +350,14 @@
     if (!(years > 0) || !(series[0] > 0) || !(series[series.length - 1] > 0)) return 0;
 
     return Math.pow(series[series.length - 1] / series[0], 1 / years) - 1;
+  }
+
+  function computePeriodYears(dates) {
+    if (!Array.isArray(dates) || dates.length < 2) return 0;
+    const d0 = parseDateFlexible(dates[0]);
+    const d1 = parseDateFlexible(dates[dates.length - 1]);
+    if (!d0 || !d1) return 0;
+    return (d1 - d0) / (365.25 * 24 * 3600 * 1000);
   }
 
   function doublingYears(cagr) {
@@ -486,23 +492,13 @@
 
     setText("final_value", euro(pigroSeries[pigroSeries.length - 1], 0));
 
-    const d0 = parseDateFlexible(labels[0]);
-    const d1 = parseDateFlexible(labels[labels.length - 1]);
-    const years = d0 && d1 ? (d1 - d0) / (365.25 * 24 * 3600 * 1000) : 0;
+    const years = computePeriodYears(labels);
     setText("final_years", years > 0 ? plain(years, 1) : "—");
 
     setText("compare_period", `${euro(initialCapital, 0)} investiti all’inizio del periodo`);
-
     setText("compare_pigro", euro(pigroSeries[pigroSeries.length - 1], 0));
-    setText("compare_pigro_cagr", pct(cagrBase * 100, 1));
-    setText("compare_pigro_maxdd", pct(ddBase * 100, 1));
-    setText("compare_pigro_dbl", dblBase ? plain(dblBase, 1) : "—");
-
     setText("compare_title_benchmark", secondLabel);
     setText("compare_benchmark", euro(secondSeries[secondSeries.length - 1], 0));
-    setText("compare_benchmark_cagr", pct(cagrSecond * 100, 1));
-    setText("compare_benchmark_maxdd", pct(ddSecond * 100, 1));
-    setText("compare_benchmark_dbl", dblSecond ? plain(dblSecond, 1) : "—");
 
     const ep1 = worstDrawdowns(pigroSeries, labels, 2);
     const ep2 = worstDrawdowns(secondSeries, labels, 2);
@@ -944,12 +940,56 @@
 
   function toggleModeBoxes() {
     const plusBox = document.getElementById("plus_rule_box");
-    const leva20Box = document.getElementById("leva20_rule_box");
     const liqCard = document.getElementById("liquidity_card");
 
     if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
-    if (leva20Box) leva20Box.classList.toggle("show", currentMode === "leva_fissa");
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
+  }
+
+  function buildComparisonTable(aligned, labels, capital) {
+    function compute(series) {
+      return {
+        cagr: computeCagr(series, labels),
+        dd: computeMaxDD(series),
+        finalValue: Array.isArray(series) && series.length ? series[series.length - 1] : null
+      };
+    }
+
+    const pigro = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+    const world = benchmarkSeries(aligned, "world", capital);
+    const mib = benchmarkSeries(aligned, "mib", capital);
+    const sp500 = benchmarkSeries(aligned, "sp500", capital);
+    const leva20 = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+    const levaPlusObj = computeLevaPlusDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, pigro, capital);
+    const levaPlus = levaPlusObj.series;
+
+    const rows = [
+      ["Portafoglio Pigro", compute(pigro)],
+      ["Euro Stoxx 50", compute(mib)],
+      ["USA", compute(sp500)],
+      ["MSCI World", compute(world)],
+      ["Pigro con leva 20%", compute(leva20)],
+      ["Pigro Leva+", compute(levaPlus)]
+    ];
+
+    const tbody = document.querySelector("#comparison_table tbody");
+    if (!tbody) return;
+
+    const years = computePeriodYears(labels);
+    setText("comparison_period_years", years > 0 ? plain(years, 1) : "—");
+
+    tbody.innerHTML = "";
+
+    rows.forEach(([name, stats]) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><b>${name}</b></td>
+        <td>${pct(stats.cagr * 100, 1)}</td>
+        <td>${pct(stats.dd * 100, 1)}</td>
+        <td>${euro(stats.finalValue, 0)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
   }
 
   async function refresh() {
@@ -1002,10 +1042,14 @@
       renderMain(labels, pigroSeries, secondSeries, secondLabel);
       renderDd(labels, computeDrawdownSeriesPct(pigroSeries), computeDrawdownSeriesPct(secondSeries), secondLabel);
       updateTextSummary(pigroSeries, secondSeries, labels, secondLabel);
+      buildComparisonTable(aligned, labels, capital);
 
     } catch (err) {
       console.error(err);
       setHtml("compare_box", `<strong>Errore:</strong> ${err.message}`);
+      const tbody = document.querySelector("#comparison_table tbody");
+      if (tbody) tbody.innerHTML = "";
+      setText("comparison_period_years", "—");
     } finally {
       isRefreshing = false;
     }
@@ -1018,11 +1062,6 @@
 
     if (id === "btn_update") {
       refresh();
-      return true;
-    }
-
-    if (id === "btn_pdf") {
-      window.print();
       return true;
     }
 
@@ -1046,4 +1085,75 @@
       return true;
     }
 
-    if (target
+    if (target.classList && target.classList.contains("benchmarkBtn")) {
+      currentBenchmark = target.getAttribute("data-benchmark") || "world";
+      currentMode = target.getAttribute("data-mode") || "normal";
+      refresh();
+      return true;
+    }
+
+    return false;
+  }
+
+  function bindUi() {
+    const capitalInput = document.getElementById("capital");
+    if (capitalInput) {
+      capitalInput.addEventListener("input", function () {
+        this.value = formatIntegerInput(this.value);
+      });
+    }
+
+    [
+      "btn_update",
+      "btn_faxsimile",
+      "btn_consulente",
+      "btn_libro",
+      "advisor_modal_close"
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleActionClick(el);
+        });
+      }
+    });
+
+    document.querySelectorAll(".benchmarkBtn").forEach(btn => {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleActionClick(btn);
+      });
+    });
+
+    document.addEventListener("click", function (e) {
+      const clickable = e.target.closest(
+        "#btn_update, #btn_faxsimile, #btn_consulente, #btn_libro, #advisor_modal_close, .benchmarkBtn"
+      );
+
+      if (clickable) {
+        e.preventDefault();
+        handleActionClick(clickable);
+        return;
+      }
+
+      const modal = document.getElementById("advisor_modal");
+      if (modal && e.target === modal) {
+        closeAdvisorModal();
+      }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        closeAdvisorModal();
+      }
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    bindUi();
+    refresh();
+  });
+})();
