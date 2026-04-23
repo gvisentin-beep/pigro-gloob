@@ -16,8 +16,8 @@
 
   const BENCHMARK_LABELS = {
     world: "MSCI World",
-    mib: "iShares Core EURO STOXX 50 ETF EUR Acc",
-    sp500: "iShares Core S&P 500 UCITS ETF (Acc)"
+    mib: "Euro Stoxx 50",
+    sp500: "USA"
   };
 
   const CSV_PATHS = {
@@ -326,6 +326,40 @@
     return arr.map(v =>
       v != null && isFinite(v) && firstValid > 0 ? (capital * v) / firstValid : null
     );
+  }
+
+  function removeIsolatedSpikes(series, thresholdPct = 0.10) {
+    if (!Array.isArray(series) || series.length < 3) return series;
+
+    const cleaned = [...series];
+
+    for (let i = 1; i < cleaned.length - 1; i++) {
+      const prev = cleaned[i - 1];
+      const curr = cleaned[i];
+      const next = cleaned[i + 1];
+
+      if (![prev, curr, next].every(v => v != null && isFinite(v) && v > 0)) continue;
+
+      const movePrevCurr = (curr / prev) - 1;
+      const moveCurrNext = (next / curr) - 1;
+      const movePrevNext = Math.abs((next / prev) - 1);
+
+      const isDownSpike =
+        movePrevCurr < -thresholdPct &&
+        moveCurrNext > thresholdPct &&
+        movePrevNext < thresholdPct * 0.5;
+
+      const isUpSpike =
+        movePrevCurr > thresholdPct &&
+        moveCurrNext < -thresholdPct &&
+        movePrevNext < thresholdPct * 0.5;
+
+      if (isDownSpike || isUpSpike) {
+        cleaned[i] = (prev + next) / 2;
+      }
+    }
+
+    return cleaned;
   }
 
   function computeDrawdownSeriesPct(series) {
@@ -956,9 +990,11 @@
     }
 
     const pigro = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
-    const world = benchmarkSeries(aligned, "world", capital);
-    const mib = benchmarkSeries(aligned, "mib", capital);
-    const sp500 = benchmarkSeries(aligned, "sp500", capital);
+
+    const world = removeIsolatedSpikes(benchmarkSeries(aligned, "world", capital), 0.10);
+    const mib = removeIsolatedSpikes(benchmarkSeries(aligned, "mib", capital), 0.10);
+    const sp500 = removeIsolatedSpikes(benchmarkSeries(aligned, "sp500", capital), 0.10);
+
     const leva20 = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
     const levaPlusObj = computeLevaPlusDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, pigro, capital);
     const levaPlus = levaPlusObj.series;
@@ -1021,6 +1057,7 @@
 
       if (currentMode === "normal") {
         secondSeries = benchmarkSeries(aligned, currentBenchmark, capital);
+        secondSeries = removeIsolatedSpikes(secondSeries, 0.10);
       } else if (currentMode === "leva_fissa") {
         secondSeries = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
         secondLabel = "Pigro con leva 20%";
