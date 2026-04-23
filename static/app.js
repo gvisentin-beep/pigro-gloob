@@ -974,9 +974,11 @@
 
   function toggleModeBoxes() {
     const plusBox = document.getElementById("plus_rule_box");
+    const leva20Box = document.getElementById("leva20_rule_box");
     const liqCard = document.getElementById("liquidity_card");
 
     if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
+    if (leva20Box) leva20Box.classList.toggle("show", currentMode === "leva_fissa");
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
