@@ -267,6 +267,20 @@
     }
   </script>
 
+<script>
+  function playHeroVideo(){
+    const box = document.querySelector('.videoClickBox');
+    if (!box) return;
+
+    box.outerHTML = `
+      <video id="heroVideo" class="heroVideo" playsinline controls autoplay preload="metadata">
+        <source src="/static/pigro-video.mp4?v=3" type="video/mp4">
+        Il tuo browser non supporta la riproduzione video.
+      </video>
+    `;
+  }
+</script>
+  
   <script src="/static/app.js?v=20"></script>
 </body>
 </html>
