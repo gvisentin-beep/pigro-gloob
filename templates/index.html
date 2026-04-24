@@ -36,9 +36,12 @@
       <div class="heroVideoSection">
         <div class="heroVideoBox">
           <div class="heroVideoWrap">
-            <video id="heroVideo" class="heroVideo" playsinline controls preload="none" poster="/static/cover.jpg">
-              <source src="/static/pigro-video.mp4?v=3" type="video/mp4">
-              Il tuo browser non supporta la riproduzione video.
+            
+<div class="videoClickBox" onclick="playHeroVideo()">
+  <img class="videoCover" src="/static/cover.jpg" alt="Video Metodo Pigro">
+  <button class="bigPlayButton" type="button" aria-label="Avvia video">▶</button>
+</div>
+          
             </video>
           </div>
         </div>
