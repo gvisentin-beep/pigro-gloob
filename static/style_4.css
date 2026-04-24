@@ -83,13 +83,12 @@ ul{
   background:#fff;
   box-shadow:0 8px 20px rgba(23,58,138,.10);
 }
-
 .heroVideo{
   width:100%;
+  height:auto;
   display:block;
-  background:#fff;
-  aspect-ratio:16/9;
-  object-fit:cover;
+  background:#000;
+  object-fit:contain;
 }
 
 .controlsRow{
