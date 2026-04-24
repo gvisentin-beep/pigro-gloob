@@ -150,77 +150,100 @@ input{
   .btn, button, .miniBtn, .btnLink { display:none !important; }
   .panel, .chartBox { box-shadow:none; }
 }
-/* FIX VIDEO COVER - patch minima */
+/* PATCH RIPRISTINO LAYOUT GLOOB */
 
-.heroVideoBox{
-  max-width:380px !important; /* dimensione giusta */
-  margin-left:auto !important; /* torna a destra */
-}
-.video-cover{
-  width:100% !important;
-  height:auto !important;
-  display:block !important;
-  object-fit:contain !important;
-  background:#000 !important;
-}
-/* FIX LAYOUT BASE */
 .wrap{
   max-width:1100px;
-  margin:auto;
-  padding:20px;
+  margin:0 auto;
+  padding:24px;
 }
 
 .topRow{
   display:flex;
   align-items:flex-start;
-  justify-content:space-between;
-  gap:20px;
-  flex-wrap:wrap;
+  gap:14px;
+  margin-bottom:10px;
 }
-/* FIX DEFINITIVO HERO */
+
+.logo{
+  width:58px;
+  height:auto;
+}
+
 .introTop{
-  display:grid !important;
-  grid-template-columns: 1fr 380px !important;
-  gap:40px !important;
-  align-items:start !important;
-  max-width:1100px !important;
-  margin:0 auto 24px auto !important;
+  display:grid;
+  grid-template-columns:1fr 380px;
+  gap:40px;
+  align-items:start;
+  margin-bottom:24px;
 }
 
 .heroVideoSection{
-  display:flex !important;
-  justify-content:flex-end !important;
+  display:flex;
+  justify-content:flex-end;
 }
 
 .heroVideoBox{
-  width:100% !important;
-  max-width:380px !important;
-  margin:0 !important;
+  width:100%;
+  max-width:360px;
 }
 
 .heroVideoWrap,
 .video-box{
-  width:100% !important;
-  overflow:hidden !important;
-  background:#000 !important;
-  border-radius:14px !important;
+  width:100%;
+  background:#000;
+  border-radius:14px;
+  overflow:hidden;
+  border:1px solid #dbe4ff;
+  box-shadow:0 8px 20px rgba(23,58,138,.10);
 }
 
 .video-cover,
 .heroVideo{
-  width:100% !important;
-  height:auto !important;
-  display:block !important;
-  object-fit:contain !important;
-  background:#000 !important;
+  width:100%;
+  height:auto;
+  display:block;
+  object-fit:contain;
+  background:#000;
 }
 
-@media (max-width: 800px){
+.card{
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+  padding:16px;
+  margin-bottom:18px;
+}
+
+.card canvas{
+  max-height:360px !important;
+}
+
+.controlsRow{
+  display:flex;
+  align-items:flex-end;
+  gap:24px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+
+.benchRow{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:12px 0;
+}
+
+@media (max-width:800px){
   .introTop{
-    grid-template-columns:1fr !important;
+    grid-template-columns:1fr;
   }
 
   .heroVideoSection{
-    justify-content:center !important;
+    justify-content:center;
+  }
+
+  .heroVideoBox{
+    max-width:320px;
   }
 }
