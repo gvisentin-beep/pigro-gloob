@@ -151,16 +151,29 @@ input{
   .panel, .chartBox { box-shadow:none; }
 }
 /* FIX VIDEO COVER - patch minima */
-.heroVideoBox{
-  max-width:320px !important;
-  margin-left:auto !important;
-  margin-right:auto !important;
-}
 
+.heroVideoBox{
+  max-width:380px !important; /* dimensione giusta */
+  margin-left:auto !important; /* torna a destra */
+}
 .video-cover{
   width:100% !important;
   height:auto !important;
   display:block !important;
   object-fit:contain !important;
   background:#000 !important;
+}
+/* FIX LAYOUT BASE */
+.wrap{
+  max-width:1100px;
+  margin:auto;
+  padding:20px;
+}
+
+.topRow{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:20px;
+  flex-wrap:wrap;
 }
