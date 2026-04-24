@@ -5,7 +5,6 @@
   --line:#e2e8f0;
   --text:#1e293b;
   --muted:#64748b;
-  --shadow:0 8px 20px rgba(23,58,138,.10);
 }
 
 body{
@@ -52,12 +51,12 @@ input{
   border:1px solid var(--line);
   border-radius:12px;
   padding:15px;
-  height:420px;
+  height: 420px;              /* ✅ evita grafico schiacciato */
 }
 
 .chartBox canvas{
   width:100% !important;
-  height:100% !important;
+  height:100% !important;     /* ✅ Chart.js riempie il box */
 }
 
 .disclaimer{
@@ -78,7 +77,6 @@ input{
   font-size:12px;
   line-height:1;
 }
-
 .miniBtn:hover{ opacity:0.9; }
 
 .btnLink{
@@ -90,7 +88,6 @@ input{
   text-decoration:none;
   font-weight:700;
 }
-
 .btnLink:hover{ opacity:0.9; }
 
 .grid2{
@@ -129,14 +126,19 @@ input{
 
 .faqQ{
   font-weight:700;
+  color:var(--text);
 }
 
 .faqA{
   display:none;
   margin-top:8px;
   color:var(--muted);
+  line-height:1.5;
 }
 
+@media (hover:hover){
+  .faqItem:hover .faqA{ display:block; }
+}
 .faqItem.open .faqA{ display:block; }
 
 .blueBold{
@@ -144,63 +146,21 @@ input{
   color:#1e4fbf;
 }
 
-/* ========================= */
-/* 🎥 VIDEO FIX DEFINITIVO   */
-/* ========================= */
-
-.heroVideoSection{
-  display:flex;
-  justify-content:center; /* centrato */
-  align-items:flex-start;
-}
-
-.heroVideoBox{
-  width:100%;
-  max-width:220px; /* ridotto */
-  margin:0 auto;
-}
-
-.heroVideoWrap{
-  position:relative;
-  width:100%;
-  border-radius:14px;
-  overflow:hidden;
-  border:1px solid #dbe4ff;
-  background:#000;
-  box-shadow:var(--shadow);
-}
-
-.heroVideo,
-.video-cover{
-  width:100%;
-  height:auto;
-  display:block;
-  background:#000;
-  object-fit:contain;
-}
-
-/* play button */
-
-.play-button{
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform:translate(-50%, -50%);
-  width:60px;
-  height:60px;
-  background:rgba(0,0,0,0.6);
-  color:white;
-  font-size:28px;
-  border-radius:50%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  pointer-events:none;
-}
-
-/* ========================= */
-
 @media print{
   .btn, button, .miniBtn, .btnLink { display:none !important; }
   .panel, .chartBox { box-shadow:none; }
+}
+/* FIX VIDEO COVER - patch minima */
+.heroVideoBox{
+  max-width:320px !important;
+  margin-left:auto !important;
+  margin-right:auto !important;
+}
+
+.video-cover{
+  width:100% !important;
+  height:auto !important;
+  display:block !important;
+  object-fit:contain !important;
+  background:#000 !important;
 }
