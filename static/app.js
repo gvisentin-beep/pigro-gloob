@@ -972,17 +972,32 @@
     modal.setAttribute("aria-hidden", "true");
   }
 
-  function toggleModeBoxes() {
-    const plusBox = document.getElementById("plus_rule_box");
-    const leva20Box = document.getElementById("leva20_rule_box");
-    const liqCard = document.getElementById("liquidity_card");
+  
+function toggleModeBoxes() {
+  const plusBox = document.getElementById("plus_rule_box");
+  const leva20Box = document.getElementById("leva20_rule_box");
+  const liqCard = document.getElementById("liquidity_card");
 
-    if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
-    if (leva20Box) leva20Box.classList.toggle("show", currentMode === "leva_fissa");
-    if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
+  // reset
+  if (plusBox) plusBox.style.display = "none";
+  if (leva20Box) leva20Box.style.display = "none";
+
+  // mostra quello giusto
+  if (currentMode === "leva_plus" && plusBox) {
+    plusBox.style.display = "block";
   }
 
-  function buildComparisonTable(aligned, labels, capital) {
+  if (currentMode === "leva_fissa" && leva20Box) {
+    leva20Box.style.display = "block";
+  }
+
+  // liquidità solo leva+
+  if (liqCard) {
+    liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
+  }
+}
+  
+   function buildComparisonTable(aligned, labels, capital) {
     function compute(series) {
       return {
         cagr: computeCagr(series, labels),
