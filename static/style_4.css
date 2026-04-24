@@ -107,6 +107,7 @@ h3{margin:0;color:var(--primary)}
   display:block;
   background:#000;
   object-fit:contain;
+  aspect-ratio:auto
 }
 
 .play-button{
