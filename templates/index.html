@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script type="text/javascript" src="https://me.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=KvvF6RfafspoCmO49HPxrzIC_8VdGQszrafsqiU9KIUgxMQKXNS6AaP_1En5d69wGZDBqm_RPuNJorg1JaEY0VyMPcPORr0f5aF7XIsdUOzmVJuJ5DJW9r8MYzrSZARpllTaVEn9czTKNCdri8vuneKfyDA-mrBs-vm0kx8sT4Wxr3Xezf6CvUy3nm6nHB0N-jH_6clm4174W0FIav5WQzqeUb6qQNi6okx2t6BOSBqswM8cK_lWGi6nbwVvD-aktzUDdRe54a3bpPmTkVJEOQ" charset="UTF-8"></script><script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
   <link rel="stylesheet" href="/static/style_4.css?v=20" />
 </head>
 
@@ -36,10 +36,15 @@
       <div class="heroVideoSection">
         <div class="heroVideoBox">
           <div class="heroVideoWrap">
-            <video id="heroVideo" class="heroVideo" playsinline controls preload="metadata" poster="/static/sdraio.png">
-              <source src="/static/pigro-video.mp4?v=3" type="video/mp4">
-              Il tuo browser non supporta la riproduzione video.
-            </video>
+            <button class="heroVideoPoster" type="button" onclick="playHeroVideo()" aria-label="Guarda il video di presentazione">
+              <img
+                src="/static/video-cover.jpg"
+                alt="Anteprima del video di presentazione Gloob"
+                class="heroVideoCover"
+                loading="eager"
+              >
+              <span class="heroPlayButton" aria-hidden="true">▶</span>
+            </button>
           </div>
         </div>
       </div>
@@ -80,17 +85,10 @@
       <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
     </div>
 
-    <div class="dynamicRuleBox" id="leva20_rule_box">
-  <b>Pigro con Leva 20%</b><br>
-  Parte con leva iniziale del 20% tramite credito Lombard.<br>
-  Alla fine di ogni anno ricalibra la leva in modo da mantenere una maggiorazione del 20% 
-  sull’investimento complessivo del portafoglio.<br>
-  Il costo medio del finanziamento Lombard è stimato al 2,5% annuo.
-</div>
     <div id="plus_rule_box" class="dynamicRuleBox">
-      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo medio del Lombard è carcolato del 2,5%.
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
     </div>
-    
+
     <div class="summary">
       <b>Portafoglio “Pigro 80/15/5”:</b>
       Rendimento annualizzato <b><span id="cagr">—</span></b> |
@@ -258,12 +256,24 @@
   </div>
 
   <script>
+    function playHeroVideo(){
+      const wrap = document.querySelector('.heroVideoWrap');
+      if (!wrap) return;
+
+      wrap.innerHTML = `
+        <video id="heroVideo" class="heroVideo" playsinline controls autoplay preload="auto">
+          <source src="/static/pigro-video.mp4?v=3" type="video/mp4">
+          Il tuo browser non supporta la riproduzione video.
+        </video>
+      `;
+    }
+
     function toggleMission(){
       const box = document.getElementById('missionSection');
       if (box) box.classList.toggle('show');
     }
   </script>
 
-  <script defer src="/static/app.js?v=20"></script>
+  <script defer src="/static/app.js?v=21"></script>
 </body>
 </html>
