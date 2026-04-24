@@ -83,7 +83,14 @@
     <div id="plus_rule_box" class="dynamicRuleBox">
       <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo del Lombard è calcolato in media del 2,5%.
     </div>
-
+<div id="leva20_rule_box" class="dynamicRuleBox" style="display:none;">
+  <b>Pigro con leva 20%:</b>
+  Parte con leva iniziale del 20% tramite credito Lombard.
+  Alla fine di ogni anno ricalibra la leva in modo da mantenere
+  una maggiorazione dell'investimento del 20% del valore di ciascun titolo in portafoglio.
+  Il costo del finanziamento Lombard è stimato del 2,5% annuo.
+</div>
+    
     <div class="summary">
       <b>Portafoglio “Pigro 80/15/5”:</b>
       Rendimento annualizzato <b><span id="cagr">—</span></b> |
