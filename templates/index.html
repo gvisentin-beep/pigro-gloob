@@ -6,420 +6,7 @@
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
-
-  <style>
-    body{font-family: Arial, sans-serif; margin:0; background:#fff; color:#111;}
-    .wrap{max-width:1100px; margin:0 auto; padding:10px 20px 20px;}
-    h1{margin:0; font-size:34px; color:#173a8a;}
-    h2{margin-top:22px; color:#173a8a;}
-    .topRow{display:flex; gap:16px; align-items:center;}
-    .logo{width:52px; height:52px; border-radius:10px;}
-    .sub{color:#333; font-size:13px; margin-top:2px;}
-    ul{margin-top:4px; margin-bottom:4px;}
-
-    .introTop{
-      display:grid;
-      grid-template-columns: 1fr 390px;
-      gap:14px;
-      align-items:start;
-      margin-top:-6px;
-    }
-
-    .introText{min-width:0;}
-
-    .controlsRow{
-      display:grid;
-      grid-template-columns: 220px 250px 190px 1fr;
-      gap:16px;
-      margin:2px 0 10px;
-      align-items:end;
-    }
-
-    .ctrl{display:flex; flex-direction:column; gap:6px;}
-    .ctrl label{display:block; font-size:13px; color:#111; margin-bottom:4px;}
-    .ctrl input[type="text"]{width:100%; padding:6px 8px; box-sizing:border-box;}
-    .ctrl.capital{min-width:0;}
-
-    .finalBox{
-      justify-self:end;
-      text-align:right;
-      font-weight:700;
-      white-space:nowrap;
-      align-self:end;
-      padding-bottom:2px;
-    }
-
-    .allocBox{
-      border:1px solid #d9e2ff;
-      background:#f7f9ff;
-      border-radius:10px;
-      padding:10px 12px;
-      font-size:13px;
-      line-height:1.5;
-      min-width:0;
-    }
-
-    .btn{
-      background:#132c74;
-      color:#fff;
-      border:none;
-      border-radius:8px;
-      padding:9px 14px;
-      cursor:pointer;
-      font-weight:700;
-      transition:all .2s ease;
-      box-sizing:border-box;
-      width:100%;
-      text-align:center;
-    }
-
-    .btn:disabled{opacity:.6; cursor:not-allowed;}
-
-    .btn:hover{
-      transform:translateY(-1px);
-      box-shadow:0 6px 14px rgba(19,44,116,.20);
-    }
-
-    .btnRow{
-      display:grid;
-      grid-template-columns:repeat(4, 1fr);
-      gap:8px;
-      align-items:stretch;
-      width:100%;
-    }
-
-    .benchRow{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      margin:12px 0 8px;
-    }
-
-    .benchmarkBtn{
-      background:#eef3ff;
-      color:#173a8a;
-      border:1px solid #cbd9ff;
-      border-radius:999px;
-      padding:8px 14px;
-      cursor:pointer;
-      font-weight:700;
-      transition:all .2s ease;
-    }
-
-    .benchmarkBtn:hover{
-      transform:translateY(-1px);
-    }
-
-    .benchmarkBtn.active{
-      background:#173a8a !important;
-      color:#fff !important;
-      border:2px solid #173a8a !important;
-      box-shadow:0 8px 18px rgba(23,58,138,.22);
-      transform:translateY(-1px);
-    }
-
-    .dynamicRuleBox{
-      display:none;
-      margin-top:8px;
-      padding:10px 12px;
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:10px;
-      font-size:13px;
-      color:#243b6b;
-      line-height:1.5;
-    }
-
-    .dynamicRuleBox.show{display:block;}
-
-    .card{border:1px solid #e6e6e6; border-radius:12px; padding:12px; margin-top:10px;}
-
-    .heroVideoSection{
-      margin:-10px 0 0 0;
-      display:flex;
-      justify-content:flex-end;
-      align-items:flex-start;
-    }
-
-    .heroVideoBox{
-      width:100%;
-      max-width:390px;
-      margin-left:auto;
-      padding:0;
-      background:transparent;
-      border:none;
-      border-radius:0;
-      box-shadow:none;
-      text-align:right;
-    }
-
-    .heroVideoWrap{
-      width:100%;
-      border-radius:14px;
-      overflow:hidden;
-      border:1px solid #dbe4ff;
-      background:#fff;
-      box-shadow:0 8px 20px rgba(23,58,138,.10);
-    }
-
-    .heroVideo{
-      width:100%;
-      display:block;
-      background:#fff;
-      aspect-ratio:16/9;
-      object-fit:cover;
-    }
-
-    #chart_main{width:100% !important; height:380px !important;}
-    #chart_dd{width:100% !important; height:190px !important;}
-    #chart_liq{width:100% !important; height:190px !important;}
-
-    .summary{margin-top:8px; font-size:13px;}
-    .summary b{font-size:15px;}
-    .smallText{font-size:12px; color:#333; margin-top:8px;}
-
-    .bigCompare{
-      margin-top:10px;
-      padding:10px 12px;
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:10px;
-      font-size:14px;
-      line-height:1.55;
-    }
-
-    .bigCompare strong{color:#173a8a;}
-
-    .compareGrid{
-      display:grid;
-      grid-template-columns:repeat(2, 1fr);
-      gap:14px;
-      margin-top:10px;
-    }
-
-    .compareCard{
-      background:#fff;
-      border:1px solid #dbe4ff;
-      border-radius:12px;
-      padding:12px 14px;
-    }
-
-    .compareCardTitle{
-      color:#173a8a;
-      font-weight:700;
-      margin-bottom:8px;
-      font-size:15px;
-    }
-
-    .compareLine{
-      margin-bottom:4px;
-      font-size:13px;
-      line-height:1.45;
-    }
-
-    .modalOverlay{
-      position:fixed;
-      inset:0;
-      background:rgba(0,0,0,.38);
-      display:none;
-      align-items:center;
-      justify-content:center;
-      z-index:9999;
-      padding:20px;
-    }
-
-    .modalOverlay.show{display:flex;}
-
-    .modalBox{
-      width:min(920px, 100%);
-      max-height:90vh;
-      overflow:auto;
-      background:#fff;
-      border-radius:18px;
-      box-shadow:0 20px 60px rgba(0,0,0,.22);
-      border:1px solid #dbe4ff;
-    }
-
-    .modalHeader{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-start;
-      gap:16px;
-      padding:20px 22px 14px;
-      border-bottom:1px solid #eef2ff;
-      background:#f7f9ff;
-      border-top-left-radius:18px;
-      border-top-right-radius:18px;
-    }
-
-    .modalTitle{
-      margin:0;
-      color:#173a8a;
-      font-size:24px;
-    }
-
-    .modalSub{
-      margin-top:4px;
-      color:#334;
-      font-size:13px;
-      line-height:1.45;
-    }
-
-    .modalClose{
-      border:none;
-      background:#173a8a;
-      color:#fff;
-      border-radius:999px;
-      width:36px;
-      height:36px;
-      cursor:pointer;
-      font-size:18px;
-      line-height:1;
-      font-weight:700;
-      flex:0 0 auto;
-    }
-
-    .modalBody{padding:18px 22px 22px;}
-
-    .advisorGrid{
-      display:grid;
-      grid-template-columns:repeat(3, 1fr);
-      gap:16px;
-      margin-top:6px;
-    }
-
-    .advisorCard{
-      border:1px solid #dbe4ff;
-      background:#fbfcff;
-      border-radius:14px;
-      padding:16px;
-    }
-
-    .advisorName{
-      font-size:18px;
-      font-weight:700;
-      color:#173a8a;
-      margin-bottom:6px;
-    }
-
-    .advisorRole{
-      font-size:13px;
-      color:#445;
-      margin-bottom:10px;
-      line-height:1.4;
-    }
-
-    .advisorLine{
-      font-size:13px;
-      color:#222;
-      line-height:1.55;
-      margin-bottom:5px;
-      word-break:break-word;
-    }
-
-    .advisorLine a{
-      color:#173a8a;
-      text-decoration:none;
-    }
-
-    .advisorLine a:hover{text-decoration:underline;}
-
-    .modalNote{
-      margin-top:18px;
-      padding:12px 14px;
-      border:1px solid #e8ecff;
-      background:#f7f9ff;
-      border-radius:12px;
-      font-size:13px;
-      color:#243b6b;
-      line-height:1.5;
-    }
-
-    .missionSection{
-      margin-top:28px;
-    }
-
-    .missionBox{
-      background:#f7f9ff;
-      border:1px solid #dbe4ff;
-      border-radius:14px;
-      padding:18px 20px;
-      font-size:15px;
-      line-height:1.65;
-      color:#223;
-      box-shadow:0 8px 20px rgba(23,58,138,.06);
-    }
-
-    .missionBox p{margin:0 0 14px 0;}
-    .missionBox p:last-child{margin-bottom:0;}
-
-    .missionStrong{
-      color:#173a8a;
-      font-weight:700;
-      font-size:16px;
-    }
-
-    .btnMission{
-      background:#5fa8ff;
-      color:#fff;
-      border:none;
-      border-radius:10px;
-      padding:12px 16px;
-      cursor:pointer;
-      font-weight:700;
-      width:100%;
-      margin-top:14px;
-      transition:all .2s ease;
-      box-sizing:border-box;
-    }
-
-    .btnMission:hover{
-      background:#4a95f0;
-      transform:translateY(-1px);
-      box-shadow:0 6px 14px rgba(80,140,255,.25);
-    }
-
-    .missionHidden{
-      display:none;
-    }
-
-    .missionHidden.show{
-      display:block;
-    }
-
-    @media(max-width:900px){
-      .introTop{grid-template-columns:1fr;}
-      .advisorGrid{grid-template-columns:1fr;}
-      .controlsRow{grid-template-columns:1fr 1fr;}
-      .compareGrid{grid-template-columns:1fr;}
-      .finalBox{
-        justify-self:start;
-        text-align:left;
-      }
-    }
-
-    @media(max-width:700px){
-      .wrap{padding:10px 14px 20px;}
-      .topRow{align-items:flex-start;}
-      .controlsRow{
-        gap:12px;
-        grid-template-columns:1fr;
-      }
-      .ctrl.capital{min-width:0; width:100%;}
-      .ctrl input[type="text"]{width:100%; box-sizing:border-box;}
-      .allocBox{min-width:0; width:100%; box-sizing:border-box;}
-      .finalBox{
-        justify-self:start;
-        text-align:left;
-      }
-      .btnRow{
-        grid-template-columns:1fr;
-        gap:8px;
-      }
-      .benchRow{gap:8px;}
-      .benchmarkBtn{padding:8px 12px;}
-    }
-  </style>
+  <link rel="stylesheet" href="/static/style_4.css?v=20" />
 </head>
 
 <body>
@@ -429,7 +16,10 @@
       <img class="logo" src="/static/logo.png" alt="Gloob">
       <div>
         <h1>Gloob</h1>
-        <div class="sub"><b>Metodo Pigro — Variante 80/15/5</b><br/>Tre strumenti globali. Nessuna previsione. Solo disciplina.</div>
+        <div class="sub">
+          <b>Metodo Pigro — Variante 80/15/5</b><br/>
+          Tre strumenti globali. Nessuna previsione. Solo disciplina.
+        </div>
       </div>
     </div>
 
@@ -447,7 +37,7 @@
         <div class="heroVideoBox">
           <div class="heroVideoWrap">
             <video id="heroVideo" class="heroVideo" playsinline controls preload="metadata" poster="/static/sdraio.png">
-              <source src="/static/pigro-video.mp4" type="video/mp4">
+              <source src="/static/pigro-video.mp4?v=3" type="video/mp4">
               Il tuo browser non supporta la riproduzione video.
             </video>
           </div>
@@ -463,24 +53,27 @@
         Bitcoin: <b>5%</b>
       </div>
 
-      <div class="ctrl capital">
-        <label><b>Capitale (€)</b></label>
-        <input id="capital" type="text" value="10000">
-      </div>
+      <div class="controlsInline">
+        <div class="ctrl capital">
+          <label><b>Capitale iniziale (€)</b></label>
+          <input id="capital" type="text" value="10000">
+        </div>
 
-      <div>
-        <button id="btn_update" class="btn">Aggiorna Capitale</button>
-      </div>
+        <div class="ctrlBtn">
+          <button id="btn_update" class="btn">Aggiorna</button>
+        </div>
 
-      <div class="finalBox">
-        Finale: <span id="final_value">—</span> <span class="sub">(in anni <span id="final_years">—</span>)</span>
+        <div class="finalBox">
+          Finale: <span id="final_value">—</span>
+          <span class="sub">(in anni <span id="final_years">—</span>)</span>
+        </div>
       </div>
     </div>
 
     <div class="smallText">Scegli il confronto da visualizzare.</div>
 
     <div class="benchRow">
-      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Italia</button>
+      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Europa</button>
       <button class="benchmarkBtn" data-mode="normal" data-benchmark="sp500">Confronta con USA</button>
       <button class="benchmarkBtn active" data-mode="normal" data-benchmark="world">Confronta con MSCI World</button>
       <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
@@ -488,7 +81,7 @@
     </div>
 
     <div id="plus_rule_box" class="dynamicRuleBox">
-      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo medio del Lombard è calcolato al 2,5% (potrebbe variare a seconda del contratto di ciascun utente).
+      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso.
     </div>
 
     <div class="summary">
@@ -507,40 +100,44 @@
     </div>
 
     <h2>Andamento Ribassi Portafogli</h2>
+
     <div class="card">
       <canvas id="chart_dd"></canvas>
       <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
     </div>
 
     <div id="liquidity_card" class="card" style="display:none;">
-      <div style="font-weight:700; margin-bottom:6px; color:#173a8a;">
-        Disponibilità residua Lombard
-      </div>
+      <div class="liquidityTitle">Disponibilità residua Lombard</div>
       <canvas id="chart_liq"></canvas>
       <div id="liquidity_summary" class="smallText" style="margin-top:10px;"></div>
     </div>
 
     <div id="compare_box" class="bigCompare">
-      <strong>Confronto completo</strong><br/>
-      <span id="compare_period">10.000 € investiti all’inizio del periodo</span>
+      <strong>Confronto immediato</strong><br/>
+      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
+      Metodo Pigro → <b id="compare_pigro">—</b><br/>
+      <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
+    </div>
 
-      <div class="compareGrid">
-        <div class="compareCard">
-          <div class="compareCardTitle">Metodo Pigro</div>
-          <div class="compareLine">Valore finale: <b id="compare_pigro">—</b></div>
-          <div class="compareLine">Rendimento annualizzato: <b id="compare_pigro_cagr">—</b></div>
-          <div class="compareLine">Max Ribasso nel periodo: <b id="compare_pigro_maxdd">—</b></div>
-          <div class="compareLine">Raddoppio del capitale in anni: <b id="compare_pigro_dbl">—</b></div>
-        </div>
-
-        <div class="compareCard">
-          <div class="compareCardTitle" id="compare_title_benchmark">MSCI World</div>
-          <div class="compareLine">Valore finale: <b id="compare_benchmark">—</b></div>
-          <div class="compareLine">Rendimento annualizzato: <b id="compare_benchmark_cagr">—</b></div>
-          <div class="compareLine">Max Ribasso nel periodo: <b id="compare_benchmark_maxdd">—</b></div>
-          <div class="compareLine">Raddoppio del capitale in anni: <b id="compare_benchmark_dbl">—</b></div>
+    <div id="comparison_table_box" class="comparisonTableBox">
+      <div class="comparisonTableHead">
+        <h3>Confronto completo portafogli</h3>
+        <div class="comparisonTablePeriod">
+          Periodo di calcolo: <span id="comparison_period_years">—</span> anni
         </div>
       </div>
+
+      <table id="comparison_table">
+        <thead>
+          <tr>
+            <th>Portafoglio</th>
+            <th>Rendimento annuo</th>
+            <th>Max Ribasso</th>
+            <th>Capitale finale</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
 
     <div class="smallText">
@@ -599,7 +196,6 @@
         </p>
       </div>
     </section>
-
   </div>
 
   <div id="advisor_modal" class="modalOverlay" aria-hidden="true">
@@ -661,6 +257,6 @@
     }
   </script>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=20"></script>
 </body>
 </html>
