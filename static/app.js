@@ -556,16 +556,8 @@
     const ddSecond = computeMaxDD(secondSeries);
     const dblSecond = doublingYears(cagrSecond);
 
-    setHtml(
-      "cagr",
-      `${pct(cagrBase * 100, 1)} ${stelleHtml(ratingRendimento(cagrBase))}`
-    );
-
-    setHtml(
-      "maxdd",
-      `${pct(ddBase * 100, 1)} ${stelleHtml(ratingRibasso(ddBase))}`
-    );
-
+    setText("cagr", pct(cagrBase * 100, 1));
+    setText("maxdd", pct(ddBase * 100, 1));
     setText("dbl", dblBase ? plain(dblBase, 1) : "—");
     setText("benchmark_summary", `Benchmark: ${secondLabel}`);
 
@@ -1065,8 +1057,8 @@
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><b>${name}</b></td>
-        <td>${pct(stats.cagr * 100, 1)}</td>
-        <td>${pct(stats.dd * 100, 1)}</td>
+        <td>${pct(stats.cagr * 100, 1)} ${stelleHtml(ratingRendimento(stats.cagr))}</td>
+        <td>${pct(stats.dd * 100, 1)} ${stelleHtml(ratingRibasso(stats.dd))}</td>
         <td>${euro(stats.finalValue, 0)}</td>
       `;
       tbody.appendChild(tr);
