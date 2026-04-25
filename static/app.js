@@ -554,6 +554,10 @@ function stelleHtml(n) {
     const ddBase = computeMaxDD(pigroSeries);
     const dblBase = doublingYears(cagrBase);
 
+    const cagrSecond = computeCagr(secondSeries, labels);
+const ddSecond = computeMaxDD(secondSeries);
+const dblSecond = doublingYears(cagrSecond);
+
     setText("cagr", pct(cagrBase * 100, 1));
     setText("maxdd", pct(ddBase * 100, 1));
     setText("dbl", dblBase ? plain(dblBase, 1) : "—");
