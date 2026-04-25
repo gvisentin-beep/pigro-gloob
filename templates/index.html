@@ -263,17 +263,26 @@
     </div>
   </div>
 
-  <script>
-    function toggleMission(){
-      const box = document.getElementById('missionSection');
-      if (box) box.classList.toggle('show');
-    }
-  </script>
-
 <script>
   function playHeroVideo(){
     const box = document.querySelector('.videoClickBox');
     if (!box) return;
+function toggleMission(){
+  const box = document.getElementById('missionSection');
+  if (!box) return;
+
+  box.classList.toggle('show');
+
+  if (box.classList.contains('show')) {
+    setTimeout(function () {
+      box.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }, 100);
+  }
+}
+    
 
     box.outerHTML = `
       <video id="heroVideo" class="heroVideo" playsinline controls autoplay preload="metadata">
