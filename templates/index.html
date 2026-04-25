@@ -266,30 +266,29 @@
 <script>
   function playHeroVideo(){
     const box = document.querySelector('.videoClickBox');
-    if (!box) return;
-function toggleMission(){
-  const box = document.getElementById('missionSection');
-  if (!box) return;
+    const video = document.getElementById('heroVideo');
 
-  box.classList.toggle('show');
+    if (box) box.style.display = 'none';
 
-  if (box.classList.contains('show')) {
-    setTimeout(function () {
-      box.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      });
-    }, 100);
+    if (video) {
+      video.play();
+    }
   }
-}
-    
 
-    box.outerHTML = `
-      <video id="heroVideo" class="heroVideo" playsinline controls autoplay preload="metadata">
-        <source src="/static/pigro-video.mp4?v=3" type="video/mp4">
-        Il tuo browser non supporta la riproduzione video.
-      </video>
-    `;
+  function toggleMission(){
+    const box = document.getElementById('missionSection');
+    if (!box) return;
+
+    box.classList.toggle('show');
+
+    if (box.classList.contains('show')) {
+      setTimeout(function () {
+        box.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }, 150);
+    }
   }
 </script>
   
