@@ -36,13 +36,20 @@
       <div class="heroVideoSection">
         <div class="heroVideoBox">
           <div class="heroVideoWrap">
-            
-<div class="videoClickBox" onclick="playHeroVideo()">
-  <img class="videoCover" src="/static/cover.jpg" alt="Video Metodo Pigro">
-  <button class="bigPlayButton" type="button" aria-label="Avvia video">▶</button>
+
+<div class="heroVideoWrap">
+
+  <video id="heroVideo" width="100%" preload="metadata">
+    <source src="/static/pigro-video.mp4" type="video/mp4">
+  </video>
+
+  <div class="videoClickBox" onclick="playHeroVideo()">
+    <img class="videoCover" src="/static/cover.jpg" alt="Video Metodo Pigro">
+    <button class="bigPlayButton" type="button">▶</button>
+  </div>
+
 </div>
-          
-            </video>
+
           </div>
         </div>
       </div>
