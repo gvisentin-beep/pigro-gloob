@@ -61,7 +61,46 @@
       maximumFractionDigits: digits
     });
   }
+function ratingRendimento(cagr) {
+  const r = Number(cagr) * 100;
 
+  if (!isFinite(r)) return 0;
+  if (r < 0) return 0;
+  if (r <= 4) return 1;
+  if (r <= 8) return 2;
+  if (r <= 12) return 3;
+  if (r <= 15) return 4;
+  return 5;
+}
+
+function ratingRibasso(maxdd) {
+  const d = Math.abs(Number(maxdd) * 100);
+
+  if (!isFinite(d)) return 0;
+  if (d <= 15) return 5;
+  if (d <= 20) return 4;
+  if (d <= 25) return 3;
+  if (d <= 30) return 2;
+  if (d <= 35) return 1;
+  return 0;
+}
+
+function stelle(n) {
+  const rating = Math.max(0, Math.min(5, Number(n) || 0));
+  let out = "";
+
+  for (let i = 0; i < 5; i++) {
+    out += i < rating ? "★" : "☆";
+  }
+
+  return out;
+}
+
+function stelleHtml(n) {
+  return `<span style="color:#f5b301; font-size:1.05em; letter-spacing:1px; margin-left:6px; white-space:nowrap;">${stelle(n)}</span>`;
+}
+
+  
   function normalizeTo100(series) {
     if (!Array.isArray(series) || !series.length) return [];
     const base = Number(series[0]);
