@@ -1057,8 +1057,10 @@ function stelleHtml(n) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><b>${name}</b></td>
-        <td>${pct(stats.cagr * 100, 1)}</td>
-        <td>${pct(stats.dd * 100, 1)}</td>
+        
+<td>${pct(stats.cagr * 100, 1)} ${stelleHtml(ratingRendimento(stats.cagr))}</td>
+<td>${pct(stats.dd * 100, 1)} ${stelleHtml(ratingRibasso(stats.dd))}</td>
+
         <td>${euro(stats.finalValue, 0)}</td>
       `;
       tbody.appendChild(tr);
