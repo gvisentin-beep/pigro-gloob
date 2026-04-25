@@ -62,6 +62,43 @@
     });
   }
 
+  function ratingRendimento(cagr) {
+    const r = Number(cagr) * 100;
+
+    if (!isFinite(r)) return 0;
+    if (r < 0) return 0;
+    if (r <= 4) return 1;
+    if (r <= 8) return 2;
+    if (r <= 12) return 3;
+    if (r <= 15) return 4;
+    return 5;
+  }
+
+  function ratingRibasso(maxdd) {
+    const d = Math.abs(Number(maxdd) * 100);
+
+    if (!isFinite(d)) return 0;
+    if (d <= 15) return 5;
+    if (d <= 20) return 4;
+    if (d <= 25) return 3;
+    if (d <= 30) return 2;
+    if (d <= 35) return 1;
+    return 0;
+  }
+
+  function stelle(n) {
+    const rating = Math.max(0, Math.min(5, Number(n) || 0));
+    let out = "";
+    for (let i = 0; i < 5; i++) {
+      out += i < rating ? "★" : "☆";
+    }
+    return out;
+  }
+
+  function stelleHtml(n) {
+    return `<span style="color:#fbbf24; font-size:1.05em; letter-spacing:1px; margin-left:6px; white-space:nowrap;">${stelle(n)}</span>`;
+  }
+
   function normalizeTo100(series) {
     if (!Array.isArray(series) || !series.length) return [];
     const base = Number(series[0]);
@@ -519,8 +556,16 @@
     const ddSecond = computeMaxDD(secondSeries);
     const dblSecond = doublingYears(cagrSecond);
 
-    setText("cagr", pct(cagrBase * 100, 1));
-    setText("maxdd", pct(ddBase * 100, 1));
+    setHtml(
+      "cagr",
+      `${pct(cagrBase * 100, 1)} ${stelleHtml(ratingRendimento(cagrBase))}`
+    );
+
+    setHtml(
+      "maxdd",
+      `${pct(ddBase * 100, 1)} ${stelleHtml(ratingRibasso(ddBase))}`
+    );
+
     setText("dbl", dblBase ? plain(dblBase, 1) : "—");
     setText("benchmark_summary", `Benchmark: ${secondLabel}`);
 
@@ -972,32 +1017,15 @@
     modal.setAttribute("aria-hidden", "true");
   }
 
-  
-function toggleModeBoxes() {
-  const plusBox = document.getElementById("plus_rule_box");
-  const leva20Box = document.getElementById("leva20_rule_box");
-  const liqCard = document.getElementById("liquidity_card");
+  function toggleModeBoxes() {
+    const plusBox = document.getElementById("plus_rule_box");
+    const liqCard = document.getElementById("liquidity_card");
 
-  // reset
-  if (plusBox) plusBox.style.display = "none";
-  if (leva20Box) leva20Box.style.display = "none";
-
-  // mostra quello giusto
-  if (currentMode === "leva_plus" && plusBox) {
-    plusBox.style.display = "block";
+    if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
+    if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
-  if (currentMode === "leva_fissa" && leva20Box) {
-    leva20Box.style.display = "block";
-  }
-
-  // liquidità solo leva+
-  if (liqCard) {
-    liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
-  }
-}
-  
-   function buildComparisonTable(aligned, labels, capital) {
+  function buildComparisonTable(aligned, labels, capital) {
     function compute(series) {
       return {
         cagr: computeCagr(series, labels),
@@ -1019,7 +1047,7 @@ function toggleModeBoxes() {
     const rows = [
       ["Portafoglio Pigro", compute(pigro)],
       ["Euro Stoxx 50", compute(mib)],
-      ["USA SP 500", compute(sp500)],
+      ["USA", compute(sp500)],
       ["MSCI World", compute(world)],
       ["Pigro con leva 20%", compute(leva20)],
       ["Pigro Leva+", compute(levaPlus)]
