@@ -564,11 +564,30 @@ function stelleHtml(n) {
     const years = computePeriodYears(labels);
     setText("final_years", years > 0 ? plain(years, 1) : "—");
 
-    setText("compare_period", `${euro(initialCapital, 0)} investiti all’inizio del periodo`);
-    setText("compare_pigro", euro(pigroSeries[pigroSeries.length - 1], 0));
-    setText("compare_title_benchmark", secondLabel);
-    setText("compare_benchmark", euro(secondSeries[secondSeries.length - 1], 0));
+setText("compare_period", `${euro(initialCapital, 0)} investiti all’inizio del periodo`);
 
+setHtml(
+  "compare_pigro",
+  `${euro(pigroSeries[pigroSeries.length - 1], 0)}
+   <br><span style="font-weight:400;">
+   Rendimento annualizzato: <b>${pct(cagrBase * 100, 1)}</b> |
+   Max Ribasso: <b>${pct(ddBase * 100, 1)}</b> |
+   Raddoppio capitale: <b>${dblBase ? plain(dblBase, 1) : "—"}</b> anni
+   </span>`
+);
+
+setText("compare_title_benchmark", secondLabel);
+
+setHtml(
+  "compare_benchmark",
+  `${euro(secondSeries[secondSeries.length - 1], 0)}
+   <br><span style="font-weight:400;">
+   Rendimento annualizzato: <b>${pct(cagrSecond * 100, 1)}</b> |
+   Max Ribasso: <b>${pct(ddSecond * 100, 1)}</b> |
+   Raddoppio capitale: <b>${dblSecond ? plain(dblSecond, 1) : "—"}</b> anni
+   </span>`
+);
+    
     const ep1 = worstDrawdowns(pigroSeries, labels, 2);
     const ep2 = worstDrawdowns(secondSeries, labels, 2);
     setHtml("dd_summary", buildDdSummary(ep1, ep2, secondLabel));
