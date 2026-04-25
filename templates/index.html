@@ -271,18 +271,20 @@
   </div>
 
 <script>
-  function playHeroVideo(){
-    const box = document.querySelector('.videoClickBox');
-    const video = document.getElementById('heroVideo');
 
-    if (box) box.style.display = 'none';
+function playHeroVideo(){
+  const box = document.querySelector('.videoClickBox');
+  const video = document.getElementById('heroVideo');
 
-    if (video) {
-      video.play();
-    }
+  if (box) box.style.display = 'none';
+
+  if (video) {
+    video.style.display = 'block';
+    video.play();
   }
-
-  function toggleMission(){
+}
+  
+   function toggleMission(){
     const box = document.getElementById('missionSection');
     if (!box) return;
 
