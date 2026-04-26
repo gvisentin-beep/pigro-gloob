@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -14,10 +15,10 @@ MIN_VALID_ROWS = 50
 
 ASSETS = {
     "ls80": {
-        "symbol": "",
+        "symbol": "VNGA80.MI",
         "path": DATA_DIR / "ls80.csv",
-        "source": "manual",
-        "update_enabled": False,
+        "source": "yahoo",
+        "update_enabled": True,
     },
     "gold": {
         "symbol": "GLD",
@@ -51,11 +52,10 @@ ASSETS = {
     },
 }
 
-# soglie più severe
-MAX_DAILY_MOVE_DEFAULT = 0.18   # 18%
-MAX_DAILY_MOVE_BTC = 0.30       # BTC più volatile
-REBOUND_TOLERANCE = 0.06        # 6%
-LOCAL_WINDOW = 3                # controllo locale più robusto
+MAX_DAILY_MOVE_DEFAULT = 0.18
+MAX_DAILY_MOVE_BTC = 0.30
+REBOUND_TOLERANCE = 0.06
+LOCAL_WINDOW = 3
 
 
 def log(msg: str) -> None:
@@ -98,7 +98,8 @@ def read_existing_csv(path: Path) -> Optional[pd.DataFrame]:
 
         return df if not df.empty else None
 
-    except Exception:
+    except Exception as e:
+        log(f"  Errore lettura CSV {path}: {e}")
         return None
 
 
@@ -137,7 +138,6 @@ def robust_zscore_flags(series: pd.Series, window: int = 15, z_thresh: float = 5
     med = s.rolling(window=window, center=True, min_periods=5).median()
     mad = (s - med).abs().rolling(window=window, center=True, min_periods=5).median()
 
-    # 1.4826 * MAD ≈ std robusta
     robust_sigma = 1.4826 * mad
     z = (s - med).abs() / robust_sigma.replace(0, pd.NA)
     flags = z > z_thresh
@@ -171,7 +171,6 @@ def detect_isolated_spikes(df: pd.DataFrame, symbol: str) -> list[int]:
             flags.add(i)
             continue
 
-        # punto isolato: il giorno dopo torna vicino al giorno prima
         if prev_close > 0:
             rebound = abs((next_close / prev_close) - 1)
             one_day_jump = abs((cur_close / prev_close) - 1)
@@ -181,12 +180,10 @@ def detect_isolated_spikes(df: pd.DataFrame, symbol: str) -> list[int]:
                 flags.add(i)
                 continue
 
-            # spike a V molto evidente
             if one_day_jump > max_daily * 0.8 and next_day_jump > max_daily * 0.8 and rebound < REBOUND_TOLERANCE:
                 flags.add(i)
                 continue
 
-        # controllo locale su finestra
         left = max(0, i - LOCAL_WINDOW)
         right = min(n, i + LOCAL_WINDOW + 1)
         local = close.iloc[left:right].drop(index=df.index[i], errors="ignore")
@@ -199,7 +196,6 @@ def detect_isolated_spikes(df: pd.DataFrame, symbol: str) -> list[int]:
                     flags.add(i)
                     continue
 
-        # robust z-score
         if bool(robust_flags.iloc[i]):
             flags.add(i)
 
@@ -214,7 +210,7 @@ def smooth_spikes_by_interpolation(df: pd.DataFrame, spike_idx: list[int]) -> pd
     out.loc[spike_idx, "close"] = pd.NA
     out["close"] = pd.to_numeric(out["close"], errors="coerce").interpolate(
         method="linear",
-        limit_direction="both"
+        limit_direction="both",
     )
 
     out = (
@@ -243,7 +239,7 @@ def second_pass_return_filter(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
     out.loc[bad_idx, "close"] = pd.NA
     out["close"] = pd.to_numeric(out["close"], errors="coerce").interpolate(
         method="linear",
-        limit_direction="both"
+        limit_direction="both",
     )
 
     out = (
@@ -279,20 +275,12 @@ def clean_downloaded_series(df: pd.DataFrame, symbol: str) -> Optional[pd.DataFr
 
     removed_total = 0
 
-    # 1° passaggio: spike isolati
     spike_idx = detect_isolated_spikes(out, symbol)
     removed_total += len(spike_idx)
     out = smooth_spikes_by_interpolation(out, spike_idx)
 
-    # 2° passaggio: eventuali residui con filtro su ritorni
-    before_len = len(out)
     out = second_pass_return_filter(out, symbol)
-    after_len = len(out)
-    # qui non togliamo righe, ma “ripariamo” valori; il conteggio è indicativo
-    if before_len == after_len:
-        pass
 
-    # 3° passaggio: pulizia finale
     out = (
         out.dropna(subset=["date", "close"])
         .sort_values("date")
@@ -309,7 +297,7 @@ def clean_downloaded_series(df: pd.DataFrame, symbol: str) -> Optional[pd.DataFr
 
 def fetch_yahoo(symbol: str):
     try:
-        time.sleep(2)
+        time.sleep(3)
 
         df = yf.download(
             symbol,
@@ -341,9 +329,12 @@ def update_asset(name: str, cfg: dict) -> bool:
     log(f"\n[{name.upper()}] {symbol or '(manuale)'}")
 
     existing = read_existing_csv(path)
+
     if existing is not None and not existing.empty:
-        log(f"  CSV locale: {len(existing)} righe | ultima data {existing['date'].iloc[-1].date()}")
+        last_existing_date = existing["date"].iloc[-1]
+        log(f"  CSV locale: {len(existing)} righe | ultima data {last_existing_date.date()}")
     else:
+        last_existing_date = None
         log("  CSV locale assente o vuoto")
 
     if not update_enabled:
@@ -355,10 +346,16 @@ def update_asset(name: str, cfg: dict) -> bool:
     if fresh is None:
         log(f"  ⚠️ Yahoo bloccato o errore: {err}")
         if existing is not None and not existing.empty:
-            log("  Uso dati esistenti (fallback OK)")
+            log("  Uso dati esistenti - fallback OK")
             return True
         log("  Nessun dato disponibile, ma non blocco il workflow")
         return True
+
+    if last_existing_date is not None:
+        last_fresh_date = fresh["date"].iloc[-1]
+        if last_fresh_date <= last_existing_date:
+            log(f"  Nessuna nuova data da Yahoo | ultima Yahoo {last_fresh_date.date()}")
+            return True
 
     merged = (
         pd.concat([existing, fresh], ignore_index=True)
@@ -381,10 +378,30 @@ def update_asset(name: str, cfg: dict) -> bool:
     return True
 
 
+def parse_only_argument() -> Optional[str]:
+    if len(sys.argv) >= 3 and sys.argv[1] == "--only":
+        return sys.argv[2].strip().lower()
+
+    return None
+
+
 def main() -> None:
     log("=== AGGIORNAMENTO DATI ===")
 
+    only = parse_only_argument()
+
+    if only:
+        if only not in ASSETS:
+            log(f"Asset non riconosciuto: {only}")
+            log(f"Asset disponibili: {', '.join(ASSETS.keys())}")
+            return
+
+        log(f"Modalità singolo asset: {only.upper()}")
+
     for name, cfg in ASSETS.items():
+        if only and name != only:
+            continue
+
         update_asset(name, cfg)
 
     log("=== FINE ===")
