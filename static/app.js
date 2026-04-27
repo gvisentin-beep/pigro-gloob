@@ -3,22 +3,17 @@
   let ddChart = null;
   let liqChart = null;
   let currentBenchmark = "world";
-  let currentMode = "normal"; // normal | leva_fissa | leva_plus
+  let currentMode = "normal";
   let levaPlusIntegrations = 0;
   let levaPlusMarkerIndices = [];
   let isRefreshing = false;
+  let LANG = localStorage.getItem("lang") || "it";
 
   const WEIGHT_LS80 = 0.80;
   const WEIGHT_GOLD = 0.15;
   const WEIGHT_BTC = 0.05;
   const LOMBARD_RATE = 0.025;
   const LOMBARD_LTV = 0.60;
-
-  const BENCHMARK_LABELS = {
-    world: "MSCI World",
-    mib: "Euro Stoxx 50",
-    sp500: "USA"
-  };
 
   const CSV_PATHS = {
     ls80: "/static/data_ls80.csv",
@@ -33,10 +28,195 @@
   const COLOR_BENCH = "#9aa0a6";
   const COLOR_MARKER = "#d97706";
 
+  const TEXT = {
+    it: {
+      locale: "it-IT",
+      title: "Metodo Pigro — Variante 80/15/5",
+      subtitle: "Tre strumenti globali. Nessuna previsione. Solo disciplina.",
+      bullets: [
+        "<b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin",
+        "<b>Controllo del rischio</b>: pesi fissi e struttura semplice",
+        "<b>Regole chiare</b>: pesi senza interventi continui",
+        "<b>Struttura &gt; Previsioni</b>"
+      ],
+      allocTitle: "Composizione fissa",
+      gold: "Oro",
+      capitalLabel: "Capitale iniziale (€)",
+      update: "Aggiorna",
+      final: "Finale",
+      inYears: "in anni",
+      choose: "Scegli il confronto da visualizzare.",
+      btnEurope: "Confronta con Europa",
+      btnUsa: "Confronta con USA S&P 500",
+      btnWorld: "Confronta con MSCI World",
+      btnLeva20: "Pigro con leva 20%",
+      btnLevaPlus: "Pigro Leva+",
+      plusRule: "<b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo del Lombard è calcolato in media al 2,5%.",
+      portfolio: "Portafoglio",
+      pigroName: "Portafoglio Pigro",
+      pigroFull: "Portafoglio “Pigro 80/15/5”",
+      annualReturn: "Rendimento annualizzato",
+      annualReturnShort: "Rendimento annuo",
+      maxDrawdown: "Max Ribasso",
+      maxDrawdownPeriod: "Max Ribasso nel periodo",
+      composition: "Composizione",
+      doubleYears: "Raddoppio del portafoglio in anni",
+      benchmark: "Benchmark",
+      chartTitle: "Andamento Portafogli negli ultimi anni",
+      ddTitle: "Andamento Ribassi Portafogli",
+      ddPigro: "Drawdown Portafoglio Pigro",
+      ddOf: "Drawdown",
+      worstTitle: "Confronto delle 2 peggiori discese complete",
+      worst1: "1ª peggiore discesa",
+      worst2: "2ª peggiore discesa",
+      minimum: "minimo",
+      immediate: "Confronto immediato",
+      investedStart: "investiti all’inizio del periodo",
+      capitalDouble: "Raddoppio capitale",
+      completeComparison: "Confronto completo portafogli",
+      periodCalc: "Periodo di calcolo",
+      finalCapital: "Capitale finale",
+      msgKey: "<b>Messaggio chiave:</b><br/>La differenza non è indovinare il mercato.<br/>È avere una struttura semplice e mantenerla nel tempo.",
+      howTitle: "Come applicarlo concretamente",
+      howList: [
+        "Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.",
+        "Evita interventi continui.",
+        "Confronta il metodo con Europa, USA S&P 500, MSCI World, leva 20% fissa o Pigro Leva+ con riserva Lombard.",
+        "Osserva insieme rendimento e drawdown."
+      ],
+      btnFax: "Facsimile ordine Banca",
+      btnAdvisor: "Richiedi Consulente",
+      btnBook: "Per saperne di più",
+      btnExperts: "Per Consulenti / Esperti",
+      btnMission: "Scopri la Mission",
+      missionTitle: "MISSION",
+      missionHtml: `
+        <h2>MISSION</h2>
+        <div class="missionBox">
+          <p>In Italia una parte enorme del risparmio viene ancora investita in modo inefficiente: costi elevati, prodotti poco trasparenti e scelte spesso guidate più dalla distribuzione che dall’interesse del risparmiatore.</p>
+          <p>Gloob nasce da un’idea semplice: aiutare le persone a capire che un portafoglio costruito bene può essere più chiaro, più efficiente e più coerente con obiettivi di lungo periodo.</p>
+          <p>Un risparmio investito meglio non aiuta solo il singolo investitore. Può contribuire anche a indirizzare capitali verso strumenti solidi, mercati produttivi e imprese capaci di creare valore.</p>
+          <p>Questa pagina, completamente gratuita, mette a disposizione strumenti facili di analisi, confronto e simulazione. L’obiettivo è offrire un punto di riferimento accessibile, dove il risparmiatore possa orientarsi in autonomia oppure, se lo desidera, confrontarsi con consulenti autorizzati, senza conflitti di interesse.</p>
+          <p class="missionStrong">Il risparmio non dovrebbe essere eroso da costi nascosti: dovrebbe restare il più possibile nelle mani di chi lo ha costruito.</p>
+        </div>
+      `,
+      advisorsTitle: "Consulenti indipendenti",
+      advisorsSub: "Professionisti da contattare direttamente per eventuale consulenza fee-only.",
+      advisorNote: `Si consiglia di verificare sempre l’iscrizione all’Albo sul sito ufficiale OCF:
+        <a href="https://www.organismocf.it" target="_blank" rel="noopener">www.organismocf.it</a>.
+        <br><br>
+        Questo sito non ha alcun rapporto di commissione, retrocessione o collaborazione commerciale con i professionisti sopra indicati. L’eventuale contatto avviene in modo diretto e autonomo da parte dell’utente.`,
+      integrations: "Integrazioni effettuate",
+      residualLiquidity: "Disponibilità residua Lombard",
+      residualLiquidityFinal: "Disponibilità Lombard residua finale",
+      noData: "Nessun dato disponibile nei CSV.",
+      error: "Errore"
+    },
+
+    en: {
+      locale: "en-US",
+      title: "Lazy Portfolio — 80/15/5 Variant",
+      subtitle: "Three global assets. No forecasts. Just discipline.",
+      bullets: [
+        "<b>Few instruments</b>: LifeStrategy 80, Gold, Bitcoin",
+        "<b>Risk control</b>: fixed weights and a simple structure",
+        "<b>Clear rules</b>: weights without continuous intervention",
+        "<b>Structure &gt; Forecasts</b>"
+      ],
+      allocTitle: "Fixed allocation",
+      gold: "Gold",
+      capitalLabel: "Initial capital (€)",
+      update: "Update",
+      final: "Final",
+      inYears: "in years",
+      choose: "Choose the comparison to display.",
+      btnEurope: "Compare with Europe",
+      btnUsa: "Compare with USA S&P 500",
+      btnWorld: "Compare with MSCI World",
+      btnLeva20: "Lazy with 20% leverage",
+      btnLevaPlus: "Lazy Leverage+",
+      plusRule: "<b>Lazy Leverage+:</b> starts with 20% initial leverage. If the main pledged portfolio falls below 90% of the initial capital, an additional 20% of capital is invested only in LS80. The signal can be triggered at most twice, only after a recovery above the threshold and a subsequent new downside breach. The Lombard financing cost is assumed at an average 2.5%.",
+      portfolio: "Portfolio",
+      pigroName: "Lazy Portfolio",
+      pigroFull: "“Lazy 80/15/5” Portfolio",
+      annualReturn: "Annualized return",
+      annualReturnShort: "Annual return",
+      maxDrawdown: "Max Drawdown",
+      maxDrawdownPeriod: "Max Drawdown over the period",
+      composition: "Allocation",
+      doubleYears: "Portfolio doubling time in years",
+      benchmark: "Benchmark",
+      chartTitle: "Portfolio Performance in Recent Years",
+      ddTitle: "Portfolio Drawdowns",
+      ddPigro: "Lazy Portfolio Drawdown",
+      ddOf: "Drawdown",
+      worstTitle: "Comparison of the 2 worst complete drawdowns",
+      worst1: "Worst drawdown",
+      worst2: "2nd worst drawdown",
+      minimum: "low",
+      immediate: "Immediate comparison",
+      investedStart: "invested at the beginning of the period",
+      capitalDouble: "Capital doubling",
+      completeComparison: "Complete portfolio comparison",
+      periodCalc: "Calculation period",
+      finalCapital: "Final capital",
+      msgKey: "<b>Key message:</b><br/>The difference is not predicting the market.<br/>It is having a simple structure and sticking to it over time.",
+      howTitle: "How to apply it concretely",
+      howList: [
+        "Invest the capital in 3 instruments: 80% LS80, 15% Gold, 5% Bitcoin.",
+        "Avoid continuous intervention.",
+        "Compare the method with Europe, USA S&P 500, MSCI World, fixed 20% leverage or Lazy Leverage+ with Lombard reserve.",
+        "Observe return and drawdown together."
+      ],
+      btnFax: "Bank order template",
+      btnAdvisor: "Request an Advisor",
+      btnBook: "Learn more",
+      btnExperts: "For Advisors / Experts",
+      btnMission: "Discover the Mission",
+      missionTitle: "MISSION",
+      missionHtml: `
+        <h2>MISSION</h2>
+        <div class="missionBox">
+          <p>In Italy, a very large share of savings is still invested inefficiently: high costs, opaque products and choices often driven more by distribution than by the saver’s interest.</p>
+          <p>Gloob was born from a simple idea: helping people understand that a well-built portfolio can be clearer, more efficient and more consistent with long-term goals.</p>
+          <p>Better-invested savings do not only help the individual investor. They can also help direct capital toward solid instruments, productive markets and companies capable of creating value.</p>
+          <p>This page, completely free of charge, provides simple tools for analysis, comparison and simulation. The goal is to offer an accessible reference point where savers can orient themselves independently or, if they wish, speak with authorized advisors, without conflicts of interest.</p>
+          <p class="missionStrong">Savings should not be eroded by hidden costs: they should remain as much as possible in the hands of those who built them.</p>
+        </div>
+      `,
+      advisorsTitle: "Independent advisors",
+      advisorsSub: "Professionals to contact directly for possible fee-only advice.",
+      advisorNote: `Always verify registration on the official OCF website:
+        <a href="https://www.organismocf.it" target="_blank" rel="noopener">www.organismocf.it</a>.
+        <br><br>
+        This website has no commission, rebate or commercial collaboration relationship with the professionals listed above. Any contact takes place directly and independently by the user.`,
+      integrations: "Integrations made",
+      residualLiquidity: "Residual Lombard availability",
+      residualLiquidityFinal: "Final residual Lombard availability",
+      noData: "No data available in CSV files.",
+      error: "Error"
+    }
+  };
+
+  function tr(key) {
+    return TEXT[LANG][key] || TEXT.it[key] || key;
+  }
+
+  function locale() {
+    return TEXT[LANG].locale || "it-IT";
+  }
+
+  function getBenchmarkLabel(key) {
+    if (key === "world") return "MSCI World";
+    if (key === "mib") return "Euro Stoxx 50";
+    if (key === "sp500") return LANG === "en" ? "USA S&P 500" : "USA S&P 500";
+    return key;
+  }
+
   function euro(value, digits = 0) {
     const n = Number(value);
     if (!isFinite(n)) return "—";
-    return n.toLocaleString("it-IT", {
+    return n.toLocaleString(locale(), {
       style: "currency",
       currency: "EUR",
       minimumFractionDigits: digits,
@@ -47,7 +227,7 @@
   function pct(value, digits = 2) {
     const n = Number(value);
     if (!isFinite(n)) return "—";
-    return n.toLocaleString("it-IT", {
+    return n.toLocaleString(locale(), {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits
     }) + "%";
@@ -56,51 +236,45 @@
   function plain(value, digits = 2) {
     const n = Number(value);
     if (!isFinite(n)) return "—";
-    return n.toLocaleString("it-IT", {
+    return n.toLocaleString(locale(), {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits
     });
   }
-function ratingRendimento(cagr) {
-  const r = Number(cagr) * 100;
 
-  if (!isFinite(r)) return 0;
-  if (r < 0) return 0;
-  if (r <= 4) return 1;
-  if (r <= 8) return 2;
-  if (r <= 12) return 3;
-  if (r <= 15) return 4;
-  return 5;
-}
-
-function ratingRibasso(maxdd) {
-  const d = Math.abs(Number(maxdd) * 100);
-
-  if (!isFinite(d)) return 0;
-  if (d <= 15) return 5;
-  if (d <= 20) return 4;
-  if (d <= 25) return 3;
-  if (d <= 30) return 2;
-  if (d <= 35) return 1;
-  return 0;
-}
-
-function stelle(n) {
-  const rating = Math.max(0, Math.min(5, Number(n) || 0));
-  let out = "";
-
-  for (let i = 0; i < 5; i++) {
-    out += i < rating ? "★" : "☆";
+  function ratingRendimento(cagr) {
+    const r = Number(cagr) * 100;
+    if (!isFinite(r)) return 0;
+    if (r < 0) return 0;
+    if (r <= 4) return 1;
+    if (r <= 8) return 2;
+    if (r <= 12) return 3;
+    if (r <= 15) return 4;
+    return 5;
   }
 
-  return out;
-}
+  function ratingRibasso(maxdd) {
+    const d = Math.abs(Number(maxdd) * 100);
+    if (!isFinite(d)) return 0;
+    if (d <= 15) return 5;
+    if (d <= 20) return 4;
+    if (d <= 25) return 3;
+    if (d <= 30) return 2;
+    if (d <= 35) return 1;
+    return 0;
+  }
 
-function stelleHtml(n) {
-  return `<span style="color:#f5b301; font-size:1.05em; letter-spacing:1px; margin-left:6px; white-space:nowrap;">${stelle(n)}</span>`;
-}
+  function stelle(n) {
+    const rating = Math.max(0, Math.min(5, Number(n) || 0));
+    let out = "";
+    for (let i = 0; i < 5; i++) out += i < rating ? "★" : "☆";
+    return out;
+  }
 
-  
+  function stelleHtml(n) {
+    return `<span style="color:#f5b301; font-size:1.05em; letter-spacing:1px; margin-left:6px; white-space:nowrap;">${stelle(n)}</span>`;
+  }
+
   function normalizeTo100(series) {
     if (!Array.isArray(series) || !series.length) return [];
     const base = Number(series[0]);
@@ -114,9 +288,7 @@ function stelleHtml(n) {
   function formatIntegerInput(value) {
     const digits = String(value || "").replace(/\D/g, "");
     if (!digits) return "";
-    return Number(digits).toLocaleString("it-IT", {
-      maximumFractionDigits: 0
-    });
+    return Number(digits).toLocaleString("it-IT", { maximumFractionDigits: 0 });
   }
 
   function normalizeCapitalInput() {
@@ -199,19 +371,13 @@ function stelleHtml(n) {
       const d = parseDateFlexible(parts[0]);
       let raw = String(parts[1]).trim().replace(/\s/g, "");
 
-      if (raw.includes(",") && !raw.includes(".")) {
-        raw = raw.replace(",", ".");
-      } else if (raw.includes(",") && raw.includes(".")) {
-        raw = raw.replace(/\./g, "").replace(",", ".");
-      }
+      if (raw.includes(",") && !raw.includes(".")) raw = raw.replace(",", ".");
+      else if (raw.includes(",") && raw.includes(".")) raw = raw.replace(/\./g, "").replace(",", ".");
 
       const v = Number(raw);
       if (!d || !isFinite(v)) continue;
 
-      rows.push({
-        date: toIsoDate(d),
-        value: v
-      });
+      rows.push({ date: toIsoDate(d), value: v });
     }
 
     rows.sort((a, b) => a.date.localeCompare(b.date));
@@ -272,22 +438,11 @@ function stelleHtml(n) {
   function alignSeries(seriesMap, benchmarkKey, mode) {
     const ls80Series = Array.isArray(seriesMap.ls80) ? seriesMap.ls80 : [];
     if (!ls80Series.length) {
-      return {
-        dates: [],
-        ls80: [],
-        gold: [],
-        btc: [],
-        world: [],
-        mib: [],
-        sp500: []
-      };
+      return { dates: [], ls80: [], gold: [], btc: [], world: [], mib: [], sp500: [] };
     }
 
     let baseDates = ls80Series.map(r => r.date);
-
-    if (mode === "normal") {
-      baseDates = baseDates.filter(isWeekdayIso);
-    }
+    if (mode === "normal") baseDates = baseDates.filter(isWeekdayIso);
 
     const alignedRaw = {
       ls80: forwardFillOnBaseDates(baseDates, seriesMap.ls80),
@@ -299,16 +454,13 @@ function stelleHtml(n) {
     };
 
     const needBenchmark = mode === "normal" ? (benchmarkKey || "world") : null;
-
     const validIdx = [];
+
     for (let i = 0; i < baseDates.length; i++) {
       const hasCore =
-        alignedRaw.ls80[i] != null &&
-        isFinite(alignedRaw.ls80[i]) &&
-        alignedRaw.gold[i] != null &&
-        isFinite(alignedRaw.gold[i]) &&
-        alignedRaw.btc[i] != null &&
-        isFinite(alignedRaw.btc[i]);
+        alignedRaw.ls80[i] != null && isFinite(alignedRaw.ls80[i]) &&
+        alignedRaw.gold[i] != null && isFinite(alignedRaw.gold[i]) &&
+        alignedRaw.btc[i] != null && isFinite(alignedRaw.btc[i]);
 
       if (!hasCore) continue;
 
@@ -362,9 +514,7 @@ function stelleHtml(n) {
   function benchmarkSeries(aligned, benchKey, capital) {
     const arr = aligned[benchKey] || aligned.world;
     const firstValid = arr.find(v => v != null && isFinite(v));
-    return arr.map(v =>
-      v != null && isFinite(v) && firstValid > 0 ? (capital * v) / firstValid : null
-    );
+    return arr.map(v => v != null && isFinite(v) && firstValid > 0 ? (capital * v) / firstValid : null);
   }
 
   function removeIsolatedSpikes(series, thresholdPct = 0.10) {
@@ -383,19 +533,10 @@ function stelleHtml(n) {
       const moveCurrNext = (next / curr) - 1;
       const movePrevNext = Math.abs((next / prev) - 1);
 
-      const isDownSpike =
-        movePrevCurr < -thresholdPct &&
-        moveCurrNext > thresholdPct &&
-        movePrevNext < thresholdPct * 0.5;
+      const isDownSpike = movePrevCurr < -thresholdPct && moveCurrNext > thresholdPct && movePrevNext < thresholdPct * 0.5;
+      const isUpSpike = movePrevCurr > thresholdPct && moveCurrNext < -thresholdPct && movePrevNext < thresholdPct * 0.5;
 
-      const isUpSpike =
-        movePrevCurr > thresholdPct &&
-        moveCurrNext < -thresholdPct &&
-        movePrevNext < thresholdPct * 0.5;
-
-      if (isDownSpike || isUpSpike) {
-        cleaned[i] = (prev + next) / 2;
-      }
+      if (isDownSpike || isUpSpike) cleaned[i] = (prev + next) / 2;
     }
 
     return cleaned;
@@ -459,9 +600,7 @@ function stelleHtml(n) {
         const sub = dd.slice(startIdx, i);
         if (sub.length > 0) {
           let localMin = 0;
-          for (let k = 1; k < sub.length; k++) {
-            if (sub[k] < sub[localMin]) localMin = k;
-          }
+          for (let k = 1; k < sub.length; k++) if (sub[k] < sub[localMin]) localMin = k;
           const bottom = startIdx + localMin;
           events.push({
             start: dates[startIdx],
@@ -478,9 +617,7 @@ function stelleHtml(n) {
     if (inDd && startIdx != null) {
       const sub = dd.slice(startIdx);
       let localMin = 0;
-      for (let k = 1; k < sub.length; k++) {
-        if (sub[k] < sub[localMin]) localMin = k;
-      }
+      for (let k = 1; k < sub.length; k++) if (sub[k] < sub[localMin]) localMin = k;
       const bottom = startIdx + localMin;
       events.push({
         start: dates[startIdx],
@@ -494,22 +631,22 @@ function stelleHtml(n) {
   }
 
   function buildDdSummary(firstEpisodes, secondEpisodes, secondLabel) {
-    function fmt(rank, first, second) {
+    function fmt(rankLabel, first, second) {
       const left = first
-        ? `Pigro: <b>${pct(first.depth_pct, 2)}</b> (${formatDateIt(first.start)} → minimo ${formatDateIt(first.bottom)})`
-        : `Pigro: —`;
+        ? `${tr("pigroName")}: <b>${pct(first.depth_pct, 2)}</b> (${formatDateIt(first.start)} → ${tr("minimum")} ${formatDateIt(first.bottom)})`
+        : `${tr("pigroName")}: —`;
 
       const right = second
-        ? `${secondLabel}: <b>${pct(second.depth_pct, 2)}</b> (${formatDateIt(second.start)} → minimo ${formatDateIt(second.bottom)})`
+        ? `${secondLabel}: <b>${pct(second.depth_pct, 2)}</b> (${formatDateIt(second.start)} → ${tr("minimum")} ${formatDateIt(second.bottom)})`
         : `${secondLabel}: —`;
 
-      return `<div style="margin-top:4px;"><b>${rank}ª peggiore discesa</b> — ${left} | ${right}</div>`;
+      return `<div style="margin-top:4px;"><b>${rankLabel}</b> — ${left} | ${right}</div>`;
     }
 
     return `
-      <div><b>Confronto delle 2 peggiori discese complete</b></div>
-      ${fmt(1, firstEpisodes[0], secondEpisodes[0])}
-      ${fmt(2, firstEpisodes[1], secondEpisodes[1])}
+      <div><b>${tr("worstTitle")}</b></div>
+      ${fmt(tr("worst1"), firstEpisodes[0], secondEpisodes[0])}
+      ${fmt(tr("worst2"), firstEpisodes[1], secondEpisodes[1])}
     `;
   }
 
@@ -525,11 +662,8 @@ function stelleHtml(n) {
     counter.className = "dynamicRuleBox";
     counter.style.marginTop = "6px";
 
-    if (plusBox) {
-      plusBox.insertAdjacentElement("afterend", counter);
-    } else if (summary && summary.parentNode) {
-      summary.parentNode.insertBefore(counter, summary);
-    }
+    if (plusBox) plusBox.insertAdjacentElement("afterend", counter);
+    else if (summary && summary.parentNode) summary.parentNode.insertBefore(counter, summary);
 
     return counter;
   }
@@ -539,7 +673,7 @@ function stelleHtml(n) {
     if (!counter) return;
 
     if (currentMode === "leva_plus") {
-      counter.innerHTML = `<b>Integrazioni effettuate:</b> ${levaPlusIntegrations}`;
+      counter.innerHTML = `<b>${tr("integrations")}:</b> ${levaPlusIntegrations}`;
       counter.classList.add("show");
     } else {
       counter.innerHTML = "";
@@ -555,43 +689,35 @@ function stelleHtml(n) {
     const dblBase = doublingYears(cagrBase);
 
     const cagrSecond = computeCagr(secondSeries, labels);
-const ddSecond = computeMaxDD(secondSeries);
-const dblSecond = doublingYears(cagrSecond);
+    const ddSecond = computeMaxDD(secondSeries);
+    const dblSecond = doublingYears(cagrSecond);
 
     setText("cagr", pct(cagrBase * 100, 1));
     setText("maxdd", pct(ddBase * 100, 1));
     setText("dbl", dblBase ? plain(dblBase, 1) : "—");
-    setText("benchmark_summary", `Benchmark: ${secondLabel}`);
-
+    setText("benchmark_summary", `${tr("benchmark")}: ${secondLabel}`);
     setText("final_value", euro(pigroSeries[pigroSeries.length - 1], 0));
 
     const years = computePeriodYears(labels);
     setText("final_years", years > 0 ? plain(years, 1) : "—");
 
-setText("compare_period", `${euro(initialCapital, 0)} investiti all’inizio del periodo`);
+    setHtml("compare_box", `
+      <strong>${tr("immediate")}</strong><br/>
+      ${euro(initialCapital, 0)} ${tr("investedStart")}<br/>
+      ${tr("pigroName")} → <b>${euro(pigroSeries[pigroSeries.length - 1], 0)}</b><br/>
+      <span style="font-weight:400;">
+        ${tr("annualReturn")}: <b>${pct(cagrBase * 100, 1)}</b> |
+        ${tr("maxDrawdown")}: <b>${pct(ddBase * 100, 1)}</b> |
+        ${tr("capitalDouble")}: <b>${dblBase ? plain(dblBase, 1) : "—"}</b> ${LANG === "en" ? "years" : "anni"}
+      </span><br/>
+      ${secondLabel} → <b>${euro(secondSeries[secondSeries.length - 1], 0)}</b><br/>
+      <span style="font-weight:400;">
+        ${tr("annualReturn")}: <b>${pct(cagrSecond * 100, 1)}</b> |
+        ${tr("maxDrawdown")}: <b>${pct(ddSecond * 100, 1)}</b> |
+        ${tr("capitalDouble")}: <b>${dblSecond ? plain(dblSecond, 1) : "—"}</b> ${LANG === "en" ? "years" : "anni"}
+      </span>
+    `);
 
-setHtml(
-  "compare_pigro",
-  `${euro(pigroSeries[pigroSeries.length - 1], 0)}
-   <br><span style="font-weight:400;">
-   Rendimento annualizzato: <b>${pct(cagrBase * 100, 1)}</b> |
-   Max Ribasso: <b>${pct(ddBase * 100, 1)}</b> |
-   Raddoppio capitale: <b>${dblBase ? plain(dblBase, 1) : "—"}</b> anni
-   </span>`
-);
-
-setText("compare_title_benchmark", secondLabel);
-
-setHtml(
-  "compare_benchmark",
-  `${euro(secondSeries[secondSeries.length - 1], 0)}
-   <br><span style="font-weight:400;">
-   Rendimento annualizzato: <b>${pct(cagrSecond * 100, 1)}</b> |
-   Max Ribasso: <b>${pct(ddSecond * 100, 1)}</b> |
-   Raddoppio capitale: <b>${dblSecond ? plain(dblSecond, 1) : "—"}</b> anni
-   </span>`
-);
-    
     const ep1 = worstDrawdowns(pigroSeries, labels, 2);
     const ep2 = worstDrawdowns(secondSeries, labels, 2);
     setHtml("dd_summary", buildDdSummary(ep1, ep2, secondLabel));
@@ -612,18 +738,12 @@ setHtml(
       const d = parseDateFlexible(dates[i]);
 
       let days = 0;
-      if (prevDate) {
-        days = Math.max(0, Math.round((d - prevDate) / (24 * 3600 * 1000)));
-      }
+      if (prevDate) days = Math.max(0, Math.round((d - prevDate) / (24 * 3600 * 1000)));
       prevDate = d;
 
       cumCost += borrowed * LOMBARD_RATE * (days / 365.25);
 
-      const gross =
-        unitsLs80 * ls80[i] +
-        unitsGold * gold[i] +
-        unitsBtc * btc[i];
-
+      const gross = unitsLs80 * ls80[i] + unitsGold * gold[i] + unitsBtc * btc[i];
       const net = gross - borrowed - cumCost;
       series.push(net);
 
@@ -665,18 +785,12 @@ setHtml(
       const d = parseDateFlexible(dates[i]);
 
       let days = 0;
-      if (prevDate) {
-        days = Math.max(0, Math.round((d - prevDate) / (24 * 3600 * 1000)));
-      }
+      if (prevDate) days = Math.max(0, Math.round((d - prevDate) / (24 * 3600 * 1000)));
       prevDate = d;
 
       cumCost += borrowed * LOMBARD_RATE * (days / 365.25);
 
-      const coreGross =
-        coreUnitsLs80 * ls80[i] +
-        coreUnitsGold * gold[i] +
-        coreUnitsBtc * btc[i];
-
+      const coreGross = coreUnitsLs80 * ls80[i] + coreUnitsGold * gold[i] + coreUnitsBtc * btc[i];
       const extraGross = extraLs80Units * ls80[i];
       const gross = coreGross + extraGross;
       const net = gross - borrowed - cumCost;
@@ -695,18 +809,13 @@ setHtml(
         triggerArmed = false;
       }
 
-      if (!collateralUnderThreshold) {
-        triggerArmed = true;
-      }
+      if (!collateralUnderThreshold) triggerArmed = true;
 
       const nextYear = i < dates.length - 1 ? dates[i + 1].slice(0, 4) : null;
       const currYear = dates[i].slice(0, 4);
 
       if (nextYear && nextYear !== currYear) {
-        const coreGrossCurrent =
-          coreUnitsLs80 * ls80[i] +
-          coreUnitsGold * gold[i] +
-          coreUnitsBtc * btc[i];
+        const coreGrossCurrent = coreUnitsLs80 * ls80[i] + coreUnitsGold * gold[i] + coreUnitsBtc * btc[i];
 
         coreUnitsLs80 = (coreGrossCurrent * WEIGHT_LS80) / ls80[i];
         coreUnitsGold = (coreGrossCurrent * WEIGHT_GOLD) / gold[i];
@@ -756,21 +865,17 @@ setHtml(
   }
 
   function buildMarkerDataset(labels, secondVals) {
-    if (currentMode !== "leva_plus" || !levaPlusMarkerIndices.length) {
-      return null;
-    }
+    if (currentMode !== "leva_plus" || !levaPlusMarkerIndices.length) return null;
 
     const normalizedSecond = normalizeTo100(secondVals);
     const markerData = labels.map(() => null);
 
     levaPlusMarkerIndices.forEach(idx => {
-      if (idx >= 0 && idx < normalizedSecond.length) {
-        markerData[idx] = normalizedSecond[idx];
-      }
+      if (idx >= 0 && idx < normalizedSecond.length) markerData[idx] = normalizedSecond[idx];
     });
 
     return {
-      label: "Integrazione Leva+",
+      label: LANG === "en" ? "Leverage+ integration" : "Integrazione Leva+",
       data: markerData,
       type: "line",
       showLine: false,
@@ -798,7 +903,7 @@ setHtml(
 
     const datasets = [
       {
-        label: "Metodo Pigro 80/15/5",
+        label: LANG === "en" ? "Lazy Method 80/15/5" : "Metodo Pigro 80/15/5",
         data: firstPlot,
         borderColor: COLOR_PIGRO,
         backgroundColor: COLOR_PIGRO
@@ -825,7 +930,7 @@ setHtml(
             callbacks: {
               title: items => (items && items.length ? formatDateIt(items[0].label) : ""),
               label: ctx => {
-                if (ctx.dataset.label === "Integrazione Leva+") return "Integrazione Leva+";
+                if (ctx.dataset.label.includes("integration") || ctx.dataset.label.includes("Integrazione")) return ctx.dataset.label;
                 if (currentMode === "normal") return `${ctx.dataset.label}: ${euro(ctx.parsed.y, 0)}`;
                 return `${ctx.dataset.label}: ${plain(ctx.parsed.y, 1)} (base 100)`;
               }
@@ -836,7 +941,7 @@ setHtml(
           x: {
             grid: { display: false },
             afterBuildTicks(axis) {
-              axis.ticks = axis.ticks.filter(t => keepTicks.has(t.value));
+              axis.ticks = axis.ticks.filter(tick => keepTicks.has(tick.value));
             },
             ticks: {
               autoSkip: false,
@@ -875,13 +980,13 @@ setHtml(
         labels,
         datasets: [
           {
-            label: "Drawdown Portafoglio Pigro",
+            label: tr("ddPigro"),
             data: ddFirstVals,
             borderColor: COLOR_PIGRO,
             backgroundColor: COLOR_PIGRO
           },
           {
-            label: `Drawdown ${secondLabel}`,
+            label: `${tr("ddOf")} ${secondLabel}`,
             data: ddSecondVals,
             borderColor: COLOR_BENCH,
             backgroundColor: COLOR_BENCH
@@ -903,7 +1008,7 @@ setHtml(
           x: {
             grid: { display: false },
             afterBuildTicks(axis) {
-              axis.ticks = axis.ticks.filter(t => keepTicks.has(t.value));
+              axis.ticks = axis.ticks.filter(tick => keepTicks.has(tick.value));
             },
             ticks: {
               autoSkip: false,
@@ -917,9 +1022,7 @@ setHtml(
           },
           y: {
             grid: { color: "rgba(0,0,0,0.06)" },
-            ticks: {
-              callback: value => pct(value, 0)
-            }
+            ticks: { callback: value => pct(value, 0) }
           }
         }
       }
@@ -942,7 +1045,7 @@ setHtml(
         labels,
         datasets: [
           {
-            label: "Disponibilità Lombard residua",
+            label: tr("residualLiquidity"),
             data: liquidityVals,
             borderColor: COLOR_PIGRO,
             backgroundColor: COLOR_PIGRO
@@ -964,7 +1067,7 @@ setHtml(
           x: {
             grid: { display: false },
             afterBuildTicks(axis) {
-              axis.ticks = axis.ticks.filter(t => keepTicks.has(t.value));
+              axis.ticks = axis.ticks.filter(tick => keepTicks.has(tick.value));
             },
             ticks: {
               autoSkip: false,
@@ -978,9 +1081,7 @@ setHtml(
           },
           y: {
             grid: { color: "rgba(0,0,0,0.06)" },
-            ticks: {
-              callback: value => euro(value, 0)
-            }
+            ticks: { callback: value => euro(value, 0) }
           }
         }
       }
@@ -1032,11 +1133,9 @@ setHtml(
 
   function toggleModeBoxes() {
     const plusBox = document.getElementById("plus_rule_box");
-    const fixedBox = document.getElementById("fixed_leva_rule_box");
     const liqCard = document.getElementById("liquidity_card");
 
     if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
-    if (fixedBox) fixedBox.classList.toggle("show", currentMode === "leva_fissa");
     if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
@@ -1060,12 +1159,12 @@ setHtml(
     const levaPlus = levaPlusObj.series;
 
     const rows = [
-      ["Portafoglio Pigro", compute(pigro)],
+      [tr("pigroName"), compute(pigro)],
       ["Euro Stoxx 50", compute(mib)],
       ["USA S&P 500", compute(sp500)],
       ["MSCI World", compute(world)],
-      ["Pigro con leva 20%", compute(leva20)],
-      ["Pigro Leva+", compute(levaPlus)]
+      [tr("btnLeva20"), compute(leva20)],
+      [tr("btnLevaPlus"), compute(levaPlus)]
     ];
 
     const tbody = document.querySelector("#comparison_table tbody");
@@ -1077,17 +1176,131 @@ setHtml(
     tbody.innerHTML = "";
 
     rows.forEach(([name, stats]) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
+      const trEl = document.createElement("tr");
+      trEl.innerHTML = `
         <td><b>${name}</b></td>
-        
-<td>${pct(stats.cagr * 100, 1)} ${stelleHtml(ratingRendimento(stats.cagr))}</td>
-<td>${pct(stats.dd * 100, 1)} ${stelleHtml(ratingRibasso(stats.dd))}</td>
-
+        <td>${pct(stats.cagr * 100, 1)} ${stelleHtml(ratingRendimento(stats.cagr))}</td>
+        <td>${pct(stats.dd * 100, 1)} ${stelleHtml(ratingRibasso(stats.dd))}</td>
         <td>${euro(stats.finalValue, 0)}</td>
       `;
-      tbody.appendChild(tr);
+      tbody.appendChild(trEl);
     });
+  }
+
+  function applyStaticTranslations() {
+    setHtml("title", tr("title"));
+    setHtml("subtitle", tr("subtitle"));
+
+    document.querySelectorAll(".introText ul li").forEach((el, i) => {
+      if (TEXT[LANG].bullets[i]) el.innerHTML = TEXT[LANG].bullets[i];
+    });
+
+    const allocBox = document.querySelector(".allocBox");
+    if (allocBox) {
+      allocBox.innerHTML = `
+        <b>${tr("allocTitle")}</b><br/>
+        LifeStrategy 80: <b>80%</b><br/>
+        ${tr("gold")}: <b>15%</b><br/>
+        Bitcoin: <b>5%</b>
+      `;
+    }
+
+    const capitalLabel = document.querySelector(".ctrl.capital label");
+    if (capitalLabel) capitalLabel.innerHTML = `<b>${tr("capitalLabel")}</b>`;
+
+    const btnUpdate = document.getElementById("btn_update");
+    if (btnUpdate) btnUpdate.textContent = tr("update");
+
+    const finalBox = document.querySelector(".finalBox");
+    if (finalBox) {
+      finalBox.innerHTML = `${tr("final")}: <span id="final_value">—</span> <span class="sub">(${tr("inYears")} <span id="final_years">—</span>)</span>`;
+    }
+
+    const smallTexts = document.querySelectorAll(".smallText");
+    if (smallTexts[0]) smallTexts[0].textContent = tr("choose");
+
+    document.querySelectorAll(".benchmarkBtn").forEach(btn => {
+      const mode = btn.getAttribute("data-mode");
+      const bench = btn.getAttribute("data-benchmark");
+
+      if (mode === "normal" && bench === "mib") btn.textContent = tr("btnEurope");
+      if (mode === "normal" && bench === "sp500") btn.textContent = tr("btnUsa");
+      if (mode === "normal" && bench === "world") btn.textContent = tr("btnWorld");
+      if (mode === "leva_fissa") btn.textContent = tr("btnLeva20");
+      if (mode === "leva_plus") btn.textContent = tr("btnLevaPlus");
+    });
+
+    const plusRule = document.getElementById("plus_rule_box");
+    if (plusRule) plusRule.innerHTML = tr("plusRule");
+
+    const summary = document.querySelector(".summary");
+    if (summary) {
+      summary.innerHTML = `
+        <b>${tr("pigroFull")}:</b>
+        ${tr("annualReturn")} <b><span id="cagr">—</span></b> |
+        <b>${tr("maxDrawdown")}</b> ${LANG === "en" ? "over the period" : "nel periodo"} <b><span id="maxdd">—</span></b><br/>
+        ${tr("composition")}: LS80 <b>80%</b> | ${tr("gold")} <b>15%</b> | Bitcoin <b>5%</b><br/>
+        ${tr("doubleYears")}: <span id="dbl">—</span><br/>
+        <span id="benchmark_summary">${tr("benchmark")}: —</span>
+      `;
+    }
+
+    const h2s = document.querySelectorAll("h2");
+    if (document.getElementById("chart_title")) document.getElementById("chart_title").textContent = tr("chartTitle");
+    if (h2s[1]) h2s[1].textContent = tr("ddTitle");
+
+    const liquidityTitle = document.querySelector(".liquidityTitle");
+    if (liquidityTitle) liquidityTitle.textContent = tr("residualLiquidity");
+
+    const comparisonH3 = document.querySelector(".comparisonTableHead h3");
+    if (comparisonH3) comparisonH3.textContent = tr("completeComparison");
+
+    const periodBox = document.querySelector(".comparisonTablePeriod");
+    if (periodBox) periodBox.innerHTML = `${tr("periodCalc")}: <span id="comparison_period_years">—</span> ${LANG === "en" ? "years" : "anni"}`;
+
+    const ths = document.querySelectorAll("#comparison_table th");
+    if (ths[0]) ths[0].textContent = tr("portfolio");
+    if (ths[1]) ths[1].textContent = tr("annualReturnShort");
+    if (ths[2]) ths[2].textContent = tr("maxDrawdown");
+    if (ths[3]) ths[3].textContent = tr("finalCapital");
+
+    if (smallTexts[smallTexts.length - 1]) smallTexts[smallTexts.length - 1].innerHTML = tr("msgKey");
+
+    const howTitle = Array.from(document.querySelectorAll("h2")).find(h => h.textContent.includes("Come") || h.textContent.includes("How"));
+    if (howTitle) howTitle.textContent = tr("howTitle");
+
+    const ol = document.querySelector("ol");
+    if (ol) {
+      ol.innerHTML = TEXT[LANG].howList.map(x => `<li>${x}</li>`).join("");
+    }
+
+    const btnFax = document.getElementById("btn_faxsimile");
+    const btnAdvisor = document.getElementById("btn_consulente");
+    const btnBook = document.getElementById("btn_libro");
+    const btnExperts = document.querySelector(".btnRow button:last-child");
+    const btnMission = document.querySelector(".btnMission");
+
+    if (btnFax) btnFax.textContent = tr("btnFax");
+    if (btnAdvisor) btnAdvisor.textContent = tr("btnAdvisor");
+    if (btnBook) btnBook.textContent = tr("btnBook");
+    if (btnExperts) btnExperts.textContent = tr("btnExperts");
+    if (btnMission) btnMission.textContent = tr("btnMission");
+
+    const mission = document.getElementById("missionSection");
+    if (mission) mission.innerHTML = tr("missionHtml");
+
+    const modalTitle = document.getElementById("advisor_modal_title");
+    if (modalTitle) modalTitle.textContent = tr("advisorsTitle");
+
+    const modalSub = document.querySelector(".modalSub");
+    if (modalSub) modalSub.textContent = tr("advisorsSub");
+
+    const modalNote = document.querySelector(".modalNote");
+    if (modalNote) modalNote.innerHTML = tr("advisorNote");
+
+    document.querySelectorAll(".langSwitch span").forEach(el => el.classList.remove("active"));
+    const active = document.querySelector(`.langSwitch span[onclick="setLang('${LANG}')"]`);
+    if (active) active.classList.add("active");
   }
 
   async function refresh() {
@@ -1095,6 +1308,7 @@ setHtml(
     isRefreshing = true;
 
     try {
+      applyStaticTranslations();
       normalizeCapitalInput();
       toggleModeBoxes();
       setActiveButtons();
@@ -1108,33 +1322,28 @@ setHtml(
       const aligned = alignSeries(seriesMap, currentBenchmark, currentMode);
       const labels = aligned.dates;
 
-      if (!labels.length) {
-        throw new Error("Nessun dato disponibile nei CSV.");
-      }
+      if (!labels.length) throw new Error(tr("noData"));
 
       const pigroSeries = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
 
       let secondSeries = [];
-      let secondLabel = BENCHMARK_LABELS[currentBenchmark] || BENCHMARK_LABELS.world;
+      let secondLabel = getBenchmarkLabel(currentBenchmark);
 
       if (currentMode === "normal") {
         secondSeries = benchmarkSeries(aligned, currentBenchmark, capital);
         secondSeries = removeIsolatedSpikes(secondSeries, 0.10);
       } else if (currentMode === "leva_fissa") {
         secondSeries = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
-        secondLabel = "Pigro con leva 20%";
+        secondLabel = tr("btnLeva20");
       } else {
         const lp = computeLevaPlusDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, pigroSeries, capital);
         secondSeries = lp.series;
-        secondLabel = "Pigro Leva+";
+        secondLabel = tr("btnLevaPlus");
         levaPlusIntegrations = lp.integrations || 0;
         levaPlusMarkerIndices = Array.isArray(lp.markerIndices) ? lp.markerIndices : [];
 
         renderLiquidity(labels, lp.liquidity);
-        setHtml(
-          "liquidity_summary",
-          `Disponibilità Lombard residua finale: <b>${euro(lp.liquidity[lp.liquidity.length - 1], 0)}</b>`
-        );
+        setHtml("liquidity_summary", `${tr("residualLiquidityFinal")}: <b>${euro(lp.liquidity[lp.liquidity.length - 1], 0)}</b>`);
       }
 
       updateLevaPlusCounter();
@@ -1145,7 +1354,7 @@ setHtml(
 
     } catch (err) {
       console.error(err);
-      setHtml("compare_box", `<strong>Errore:</strong> ${err.message}`);
+      setHtml("compare_box", `<strong>${tr("error")}:</strong> ${err.message}`);
       const tbody = document.querySelector("#comparison_table tbody");
       if (tbody) tbody.innerHTML = "";
       setText("comparison_period_years", "—");
@@ -1202,13 +1411,7 @@ setHtml(
       });
     }
 
-    [
-      "btn_update",
-      "btn_faxsimile",
-      "btn_consulente",
-      "btn_libro",
-      "advisor_modal_close"
-    ].forEach(id => {
+    ["btn_update", "btn_faxsimile", "btn_consulente", "btn_libro", "advisor_modal_close"].forEach(id => {
       const el = document.getElementById(id);
       if (el) {
         el.addEventListener("click", function (e) {
@@ -1228,9 +1431,7 @@ setHtml(
     });
 
     document.addEventListener("click", function (e) {
-      const clickable = e.target.closest(
-        "#btn_update, #btn_faxsimile, #btn_consulente, #btn_libro, #advisor_modal_close, .benchmarkBtn"
-      );
+      const clickable = e.target.closest("#btn_update, #btn_faxsimile, #btn_consulente, #btn_libro, #advisor_modal_close, .benchmarkBtn");
 
       if (clickable) {
         e.preventDefault();
@@ -1239,130 +1440,23 @@ setHtml(
       }
 
       const modal = document.getElementById("advisor_modal");
-      if (modal && e.target === modal) {
-        closeAdvisorModal();
-      }
+      if (modal && e.target === modal) closeAdvisorModal();
     });
 
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") {
-        closeAdvisorModal();
-      }
+      if (e.key === "Escape") closeAdvisorModal();
     });
   }
 
+  window.setLang = function (lang) {
+    LANG = lang === "en" ? "en" : "it";
+    localStorage.setItem("lang", LANG);
+    refresh();
+  };
+
   document.addEventListener("DOMContentLoaded", function () {
     bindUi();
+    applyStaticTranslations();
     refresh();
   });
 })();
-/* =========================
-   🌍 MULTILINGUA (IT / EN)
-========================= */
-
-const translations = {
-    it: {
-        title: "Metodo Pigro – Variante 80/15/5",
-        subtitle: "Tre strumenti globali. Nessuna previsione. Solo disciplina.",
-
-        bullets: [
-            "<b>Pochi strumenti:</b> LifeStrategy 80, Oro, Bitcoin",
-            "<b>Controllo del rischio:</b> pesi fissi e struttura semplice",
-            "<b>Regole chiare:</b> pesi senza interventi continui",
-            "<b>Struttura &gt; Previsioni</b>"
-        ],
-
-        btn_facsimile: "Facsimile ordine Banca",
-        btn_consulente: "Richiedi Consulente",
-        btn_info: "Per saperne di più",
-        btn_mission: "Scopri la Mission"
-    },
-
-    en: {
-        title: "Lazy Portfolio – 80/15/5 Variant",
-        subtitle: "Three global assets. No forecasts. Just discipline.",
-
-        bullets: [
-            "<b>Few instruments:</b> LifeStrategy 80, Gold, Bitcoin",
-            "<b>Risk control:</b> fixed weights and simple structure",
-            "<b>Clear rules:</b> no continuous adjustments",
-            "<b>Structure &gt; Forecasts</b>"
-        ],
-
-        btn_facsimile: "Bank order template",
-        btn_consulente: "Find Advisor",
-        btn_info: "Learn more",
-        btn_mission: "Discover the Mission"
-    }
-};
-
-
-/* =========================
-   🔁 CAMBIO LINGUA
-========================= */
-
-function setLang(lang) {
-  localStorage.setItem("lang", lang);
-  applyTranslations(lang);
-
-  document.querySelectorAll(".langSwitch span").forEach(el => {
-    el.classList.remove("active");
-  });
-
-  const active = document.querySelector(`.langSwitch span[onclick="setLang('${lang}')"]`);
-  if (active) active.classList.add("active");
-
-  refresh();
-}
-
-/* =========================
-   🎯 APPLICA TRADUZIONI
-========================= */
-
-function applyTranslations(lang) {
-    const t = translations[lang];
-
-    if (!t) return;
-
-    // Titolo e sottotitolo
-    const title = document.getElementById("title");
-    const subtitle = document.getElementById("subtitle");
-
-    if (title) title.innerHTML = t.title;
-    if (subtitle) subtitle.innerHTML = t.subtitle;
-
-    // Bullet points
-    const bullets = document.querySelectorAll(".introText ul li");
-    bullets.forEach((el, i) => {
-        if (t.bullets[i]) el.innerHTML = t.bullets[i];
-    });
-
-    // Bottoni
-    const btnFac = document.getElementById("btn_facsimile");
-    const btnCons = document.getElementById("btn_consulente");
-    const btnInfo = document.getElementById("btn_libro");
-    const btnMission = document.querySelector(".btnMission");
-
-    if (btnFac) btnFac.innerText = t.btn_facsimile;
-    if (btnCons) btnCons.innerText = t.btn_consulente;
-    if (btnInfo) btnInfo.innerText = t.btn_info;
-    if (btnMission) btnMission.innerText = t.btn_mission;
-}
-
-
-/* =========================
-   🔄 AVVIO AUTOMATICO
-========================= */
-
-document.addEventListener("DOMContentLoaded", () => {
-  const savedLang = localStorage.getItem("lang") || "it";
-  applyTranslations(savedLang);
-
-  document.querySelectorAll(".langSwitch span").forEach(el => {
-    el.classList.remove("active");
-  });
-
-  const active = document.querySelector(`.langSwitch span[onclick="setLang('${savedLang}')"]`);
-  if (active) active.classList.add("active");
-});
-
