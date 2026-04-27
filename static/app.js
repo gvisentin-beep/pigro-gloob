@@ -1355,6 +1355,14 @@ function applyTranslations(lang) {
 ========================= */
 
 document.addEventListener("DOMContentLoaded", () => {
-    const savedLang = localStorage.getItem("lang") || "it";
-    applyTranslations(savedLang);
+  const savedLang = localStorage.getItem("lang") || "it";
+  applyTranslations(savedLang);
+
+  document.querySelectorAll(".langSwitch span").forEach(el => {
+    el.classList.remove("active");
+  });
+
+  const active = document.querySelector(`.langSwitch span[onclick="setLang('${savedLang}')"]`);
+  if (active) active.classList.add("active");
 });
+
