@@ -1256,3 +1256,97 @@ setHtml(
     refresh();
   });
 })();
+/* =========================
+   🌍 MULTILINGUA (IT / EN)
+========================= */
+
+const translations = {
+    it: {
+        title: "Metodo Pigro – Variante 80/15/5",
+        subtitle: "Tre strumenti globali. Nessuna previsione. Solo disciplina.",
+
+        bullets: [
+            "<b>Pochi strumenti:</b> LifeStrategy 80, Oro, Bitcoin",
+            "<b>Controllo del rischio:</b> pesi fissi e struttura semplice",
+            "<b>Regole chiare:</b> pesi senza interventi continui",
+            "<b>Struttura &gt; Previsioni</b>"
+        ],
+
+        btn_facsimile: "Facsimile ordine Banca",
+        btn_consulente: "Richiedi Consulente",
+        btn_info: "Per saperne di più",
+        btn_mission: "Scopri la Mission"
+    },
+
+    en: {
+        title: "Lazy Portfolio – 80/15/5 Variant",
+        subtitle: "Three global assets. No forecasts. Just discipline.",
+
+        bullets: [
+            "<b>Few instruments:</b> LifeStrategy 80, Gold, Bitcoin",
+            "<b>Risk control:</b> fixed weights and simple structure",
+            "<b>Clear rules:</b> no continuous adjustments",
+            "<b>Structure &gt; Forecasts</b>"
+        ],
+
+        btn_facsimile: "Bank order template",
+        btn_consulente: "Find Advisor",
+        btn_info: "Learn more",
+        btn_mission: "Discover the Mission"
+    }
+};
+
+
+/* =========================
+   🔁 CAMBIO LINGUA
+========================= */
+
+function setLang(lang) {
+    localStorage.setItem("lang", lang);
+    applyTranslations(lang);
+}
+
+
+/* =========================
+   🎯 APPLICA TRADUZIONI
+========================= */
+
+function applyTranslations(lang) {
+    const t = translations[lang];
+
+    if (!t) return;
+
+    // Titolo e sottotitolo
+    const title = document.getElementById("title");
+    const subtitle = document.getElementById("subtitle");
+
+    if (title) title.innerHTML = t.title;
+    if (subtitle) subtitle.innerHTML = t.subtitle;
+
+    // Bullet points
+    const bullets = document.querySelectorAll(".introText ul li");
+    bullets.forEach((el, i) => {
+        if (t.bullets[i]) el.innerHTML = t.bullets[i];
+    });
+
+    // Bottoni
+    const btnFac = document.getElementById("btn_facsimile");
+    const btnCons = document.getElementById("btn_consulente");
+    const btnInfo = document.getElementById("btn_libro");
+    const btnMission = document.querySelector(".btnMission");
+
+    if (btnFac) btnFac.innerText = t.btn_facsimile;
+    if (btnCons) btnCons.innerText = t.btn_consulente;
+    if (btnInfo) btnInfo.innerText = t.btn_info;
+    if (btnMission) btnMission.innerText = t.btn_mission;
+}
+
+
+/* =========================
+   🔄 AVVIO AUTOMATICO
+========================= */
+
+document.addEventListener("DOMContentLoaded", () => {
+    const savedLang = localStorage.getItem("lang") || "it";
+    applyTranslations(savedLang);
+});
