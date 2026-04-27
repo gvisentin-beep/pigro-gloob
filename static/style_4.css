@@ -664,3 +664,18 @@ ul{
   justify-content:center;
   cursor:pointer;
 }
+/* === BANDIERINE LINGUA === */
+.langSwitch{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+.langSwitch span{
+  transition:transform .15s ease;
+}
+
+.langSwitch span:hover{
+  transform:scale(1.15);
+}
