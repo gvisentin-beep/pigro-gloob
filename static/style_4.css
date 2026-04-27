@@ -31,6 +31,7 @@ h3{
   display:flex;
   gap:16px;
   align-items:center;
+  justify-content:space-between; /* AGGIUNGI QUESTO */
 }
 
 .logo{
