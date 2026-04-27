@@ -1302,10 +1302,18 @@ const translations = {
 ========================= */
 
 function setLang(lang) {
-    localStorage.setItem("lang", lang);
-    applyTranslations(lang);
-}
+  localStorage.setItem("lang", lang);
+  applyTranslations(lang);
 
+  document.querySelectorAll(".langSwitch span").forEach(el => {
+    el.classList.remove("active");
+  });
+
+  const active = document.querySelector(`.langSwitch span[onclick="setLang('${lang}')"]`);
+  if (active) active.classList.add("active");
+
+  refresh();
+}
 
 /* =========================
    🎯 APPLICA TRADUZIONI
