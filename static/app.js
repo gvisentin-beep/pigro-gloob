@@ -1355,8 +1355,7 @@ const comboSeries = removeIsolatedSpikes(
   pigroSeries.map((v, i) => 0.6 * v + 0.4 * aiCoreSeries[i]),
   0.10
 );
-      
-      const comboSeries = pigroSeries.map((v, i) => 0.6 * v + 0.4 * aiCoreSeries[i]);
+
       
             let secondSeries = [];
       let secondLabel = getBenchmarkLabel(currentBenchmark);
