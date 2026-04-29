@@ -441,8 +441,8 @@ const COLOR_COMBO = "#7c3aed";
   function alignSeries(seriesMap, benchmarkKey, mode) {
     const ls80Series = Array.isArray(seriesMap.ls80) ? seriesMap.ls80 : [];
     if (!ls80Series.length) {
-      return { dates: [], ls80: [], gold: [], btc: [], world: [], mib: [], sp500: [] };
-    }
+      return { dates: [], ls80: [], gold: [], btc: [], world: [], mib: [], sp500: [], ai_core: [] };
+         }
 
     let baseDates = ls80Series.map(r => r.date);
     if (mode === "normal") baseDates = baseDates.filter(isWeekdayIso);
