@@ -21,7 +21,7 @@
     btc: "/static/data_btc.csv",
     world: "/static/data_world.csv",
     mib: "/static/data_mib.csv",
-    sp500: "/static/data_sp500.csv"
+    sp500: "/static/data_sp500.csv",
     ai_core: "/static/data_ai_core.csv"
   };
 
