@@ -888,7 +888,8 @@
     };
   }
 
-  function renderMain(labels, firstVals, secondVals, secondLabel) {
+function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, comboSeries) {
+    
     const canvas = document.getElementById("chart_main");
     if (!canvas) return;
     const keepTicks = yearTickIndices(labels);
@@ -899,7 +900,7 @@
     }
 
     const firstPlot = currentMode === "normal" ? firstVals : normalizeTo100(firstVals);
-    const secondPlot = currentMode === "normal" ? secondVals : normalizeTo100(secondVals);
+        const secondPlot = currentMode === "normal" ? secondVals : normalizeTo100(secondVals);
 
     const datasets = [
       {
