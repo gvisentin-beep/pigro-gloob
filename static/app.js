@@ -1346,6 +1346,8 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
 
       if (!labels.length) throw new Error(tr("noData"));
 
+      const pigroSeries = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+      
 const aiCoreSeries = removeIsolatedSpikes(
   benchmarkSeries(aligned, "world", capital),
   0.10
