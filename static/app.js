@@ -916,14 +916,15 @@
       },
 {
   label: "AI Core 70/30",
-  data: window.lastData.ai_core,
+  data: currentMode === "normal" ? aiCoreSeries : normalizeTo100(aiCoreSeries),
+  
   borderWidth: 2,
   borderDash: [4,4],
   tension: 0.15
 },
 {
   label: "Combinato Pigro + AI",
-  data: window.lastData.combo,
+   data: currentMode === "normal" ? comboSeries : normalizeTo100(comboSeries),
   borderWidth: 3,
   borderDash: [6,3],
   tension: 0.15
