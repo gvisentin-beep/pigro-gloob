@@ -1367,7 +1367,7 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
       updateLevaPlusCounter();
 
       renderMain(labels, pigroSeries, secondSeries, secondLabel, aiCoreSeries, comboSeries);
-      
+          
       renderDd(labels, computeDrawdownSeriesPct(pigroSeries), computeDrawdownSeriesPct(secondSeries), secondLabel);
       updateTextSummary(pigroSeries, secondSeries, labels, secondLabel);
       buildComparisonTable(aligned, labels, capital);
