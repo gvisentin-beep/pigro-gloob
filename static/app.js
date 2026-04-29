@@ -887,7 +887,6 @@
       pointRotation: 180
     };
   }
-
 function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, comboSeries) {
     
     const canvas = document.getElementById("chart_main");
