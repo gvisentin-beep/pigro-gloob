@@ -1365,7 +1365,9 @@ const comboSeries = pigroSeries.map((v, i) => 0.6 * v + 0.4 * aiCoreSeries[i]);
       }
 
       updateLevaPlusCounter();
-      renderMain(labels, pigroSeries, secondSeries, secondLabel);
+
+      renderMain(labels, pigroSeries, secondSeries, secondLabel, aiCoreSeries, comboSeries);
+      
       renderDd(labels, computeDrawdownSeriesPct(pigroSeries), computeDrawdownSeriesPct(secondSeries), secondLabel);
       updateTextSummary(pigroSeries, secondSeries, labels, secondLabel);
       buildComparisonTable(aligned, labels, capital);
