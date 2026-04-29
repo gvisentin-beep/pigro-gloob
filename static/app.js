@@ -208,16 +208,15 @@ const COLOR_COMBO = "#7c3aed";
   function locale() {
     return TEXT[LANG].locale || "it-IT";
   }
-
-  function getBenchmarkLabel(key) {
-    if (key === "world") return "MSCI World";
-    if (key === "mib") return "Euro Stoxx 50";
-        if (key === "sp500") return LANG === "en" ? "USA S&P 500" : "USA S&P 500";
-    return key;
-    if (key === "ai_core") return "Pigro + AI";
-  }
-
-  function euro(value, digits = 0) {
+function getBenchmarkLabel(key) {
+  if (key === "world") return "MSCI World";
+  if (key === "mib") return "Euro Stoxx 50";
+  if (key === "sp500") return LANG === "en" ? "USA S&P 500" : "USA S&P 500";
+  if (key === "ai_core") return "Pigro + AI";
+  return key;
+}
+  
+   function euro(value, digits = 0) {
     const n = Number(value);
     if (!isFinite(n)) return "—";
     return n.toLocaleString(locale(), {
