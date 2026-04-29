@@ -913,8 +913,22 @@
         data: secondPlot,
         borderColor: COLOR_BENCH,
         backgroundColor: COLOR_BENCH
-      }
-    ];
+      },
+{
+  label: "AI Core 70/30",
+  data: window.lastData.ai_core,
+  borderWidth: 2,
+  borderDash: [4,4],
+  tension: 0.15
+},
+{
+  label: "Combinato Pigro + AI",
+  data: window.lastData.combo,
+  borderWidth: 3,
+  borderDash: [6,3],
+  tension: 0.15
+}
+        ];
 
     const markerDataset = buildMarkerDataset(labels, secondVals);
     if (markerDataset) datasets.push(markerDataset);
