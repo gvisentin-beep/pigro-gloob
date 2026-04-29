@@ -453,7 +453,8 @@ const COLOR_COMBO = "#7c3aed";
       btc: forwardFillOnBaseDates(baseDates, seriesMap.btc),
       world: forwardFillOnBaseDates(baseDates, seriesMap.world),
       mib: forwardFillOnBaseDates(baseDates, seriesMap.mib),
-      sp500: forwardFillOnBaseDates(baseDates, seriesMap.sp500)
+      sp500: forwardFillOnBaseDates(baseDates, seriesMap.sp500),
+      ai_core: forwardFillOnBaseDates(baseDates, seriesMap.ai_core)
     };
 
     const needBenchmark = mode === "normal" ? (benchmarkKey || "world") : null;
