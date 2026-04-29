@@ -1341,9 +1341,16 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
 
       if (!labels.length) throw new Error(tr("noData"));
 
-      const pigroSeries = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+const aiCoreSeries = removeIsolatedSpikes(
+  benchmarkSeries(aligned, "world", capital),
+  0.10
+);
 
-      const aiCoreSeries = benchmarkSeries(aligned, "world", capital);
+const comboSeries = removeIsolatedSpikes(
+  pigroSeries.map((v, i) => 0.6 * v + 0.4 * aiCoreSeries[i]),
+  0.10
+);
+      
       const comboSeries = pigroSeries.map((v, i) => 0.6 * v + 0.4 * aiCoreSeries[i]);
       
             let secondSeries = [];
