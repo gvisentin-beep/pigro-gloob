@@ -27,7 +27,9 @@
   const COLOR_PIGRO = "#2b6cb0";
   const COLOR_BENCH = "#9aa0a6";
   const COLOR_MARKER = "#d97706";
-
+const COLOR_AI = "#16a34a";
+const COLOR_COMBO = "#7c3aed";
+  
   const TEXT = {
     it: {
       locale: "it-IT",
