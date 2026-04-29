@@ -1339,8 +1339,10 @@
       if (!labels.length) throw new Error(tr("noData"));
 
       const pigroSeries = rebalancePortfolio(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
+const aiCoreSeries = benchmarkSeries(aligned, "world", capital);
+const comboSeries = pigroSeries.map((v, i) => 0.6 * v + 0.4 * aiCoreSeries[i]);
 
-      let secondSeries = [];
+            let secondSeries = [];
       let secondLabel = getBenchmarkLabel(currentBenchmark);
 
       if (currentMode === "normal") {
