@@ -482,7 +482,8 @@ const COLOR_COMBO = "#7c3aed";
       btc: validIdx.map(i => alignedRaw.btc[i]),
       world: validIdx.map(i => alignedRaw.world[i]),
       mib: validIdx.map(i => alignedRaw.mib[i]),
-      sp500: validIdx.map(i => alignedRaw.sp500[i])
+      sp500: validIdx.map(i => alignedRaw.sp500[i]),
+        ai_core: validIdx.map(i => alignedRaw.ai_core[i])
     };
   }
 
