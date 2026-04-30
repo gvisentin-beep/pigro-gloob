@@ -1175,12 +1175,12 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
 
 const rows = [
   [tr("pigroName"), compute(pigro)],
-  ["Evoluto (Pigro + AI)", compute(evoluto)],
-  ["Euro Stoxx 50", compute(mib)],
+   ["Euro Stoxx 50", compute(mib)],
   ["USA S&P 500", compute(sp500)],
   ["MSCI World", compute(world)],
   [tr("btnLeva20"), compute(leva20)],
   [tr("btnLevaPlus"), compute(levaPlus)]
+  ["Evoluto (Pigro + AI)", compute(evoluto)],
 ];
       
     const tbody = document.querySelector("#comparison_table tbody");
