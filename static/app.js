@@ -1412,12 +1412,13 @@ const comboSeries = removeIsolatedSpikes(
       return true;
     }
 
-    if (target.classList && target.classList.contains("benchmarkBtn")) {
-      currentBenchmark = target.getAttribute("data-benchmark") || "world";
-      currentMode = target.getAttribute("data-mode") || "normal";
-      refresh();
-      return true;
-    }
+if (target.classList && target.classList.contains("benchmarkBtn")) {
+  currentMode = target.getAttribute("data-mode") || "normal";
+  currentBenchmark = target.getAttribute("data-benchmark") || "world";
+  refresh();
+  return true;
+}
+
 
     return false;
   }
