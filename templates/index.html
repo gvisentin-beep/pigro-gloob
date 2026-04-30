@@ -6,7 +6,7 @@
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
-  <link rel="stylesheet" href="/static/style_4.css?v=20" />
+  <link rel="stylesheet" href="/static/style_4.css?v=21" />
 </head>
 
 <body>
@@ -98,23 +98,21 @@
       <button class="benchmarkBtn btn-evoluto" data-mode="normal" data-benchmark="ai_core">Evoluto (Pigro + AI)</button>
        </div>
 
-    <div id="fixed_leva_rule_box" class="dynamicRuleBox">
-  <b>Pigro con Leva 20%:</b> parte con leva iniziale del 20%, poi alla fine di ogni anno, ricalibra il portafoglio e la leva per ciascun titolo in portafoglio. Il costo medio del Lombard è calcolato al 2,5% (potrebbe variare a seconda del contratto di ciascun investitore).
-</div>
-    <div id="plus_rule_box" class="dynamicRuleBox">
+    <div id="fixed_leva_rule_box" class="dynamicRuleBox" style="display:none;">
+      <b>Pigro con Leva 20%:</b> parte con leva iniziale del 20%, poi alla fine di ogni anno, ricalibra il portafoglio e la leva per ciascun titolo in portafoglio. Il costo medio del Lombard è calcolato al 2,5% (potrebbe variare a seconda del contratto di ciascun investitore).
+    </div>
+
+    <div id="plus_rule_box" class="dynamicRuleBox" style="display:none;">
       <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo del Lombard è calcolato in media del 2,5%.
     </div>
-<div id="leva20_rule_box" class="dynamicRuleBox" style="display:none;">
-  <b>Pigro con leva 20%:</b>
-  Parte con leva iniziale del 20% tramite credito Lombard.
-  Alla fine di ogni anno ricalibra la leva in modo da mantenere
-  una maggiorazione dell'investimento del 20% del valore di ciascun titolo in portafoglio.
-  Il costo del finanziamento Lombard è stimato del 2,5% annuo.
-<div id="evoluto_rule_box" class="dynamicRuleBox" style="display:none;">
-  <b>Evoluto (Pigro + AI):</b> combina il Metodo Pigro con un contributo AI. 
-  Il portafoglio resta composto per il 60% dal Pigro 80/15/5 e per il 40% da una selezione AI globale, 
-  con l’obiettivo di migliorare il rendimento senza snaturare la struttura prudente e diversificata.
-</div>
+
+    <div id="leva20_rule_box" class="dynamicRuleBox" style="display:none;">
+      <b>Pigro con leva 20%:</b> parte con leva iniziale del 20% tramite credito Lombard. Alla fine di ogni anno ricalibra la leva in modo da mantenere una maggiorazione dell'investimento del 20% del valore di ciascun titolo in portafoglio. Il costo del finanziamento Lombard è stimato del 2,5% annuo.
+    </div>
+
+    <div id="evoluto_rule_box" class="dynamicRuleBox" style="display:none;">
+      <b>Evoluto (Pigro + AI):</b> combina il Metodo Pigro con un contributo AI. Il portafoglio resta composto per il 60% dal Pigro 80/15/5 e per il 40% da una selezione AI globale, con l’obiettivo di migliorare il rendimento senza snaturare la struttura prudente e diversificata.
+    </div>
      
     <div class="summary">
       <b>Portafoglio “Pigro 80/15/5”:</b>
@@ -318,6 +316,6 @@ function playHeroVideo(){
   }
 </script>
   
-  <script src="/static/app.js?v=99"></script>
+  <script src="/static/app.js?v=100"></script>
 </body>
 </html>
