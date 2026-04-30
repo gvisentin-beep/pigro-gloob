@@ -699,3 +699,14 @@ ul{
   color:#fff;
   background:#173a8a;
 }
+/* Bottone Evoluto */
+.btn-evoluto {
+  border: 1px solid #7ec8e3;
+}
+
+/* Quando attivo (schiacciato) */
+.btn-evoluto.active {
+  background-color: #7ec8e3;
+  color: white;
+  border-color: #7ec8e3;
+}
