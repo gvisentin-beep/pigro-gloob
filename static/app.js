@@ -368,8 +368,17 @@ function getBenchmarkLabel(key) {
 
     for (let i = startIndex; i < lines.length; i++) {
       const line = lines[i];
-      const parts = line.includes(";") ? line.split(";") : line.split(",");
-      if (parts.length < 2) continue;
+
+      let parts;
+if (line.includes(";")) {
+  parts = line.split(";");
+} else if (line.includes("\t")) {
+  parts = line.split("\t");
+} else {
+  parts = line.trim().split(/\s+/);
+}
+      
+          if (parts.length < 2) continue;
 
       const d = parseDateFlexible(parts[0]);
       let raw = String(parts[1]).trim().replace(/\s/g, "");
