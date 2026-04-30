@@ -1152,27 +1152,30 @@ function toggleModeBoxes() {
   const leva20Box = document.getElementById("leva20_rule_box");
   const evolutoBox = document.getElementById("evoluto_rule_box");
 
+  const showPlus = currentMode === "leva_plus";
+  const showLeva20 = currentMode === "leva_fissa";
+  const showEvoluto = currentMode === "normal" && currentBenchmark === "ai_core";
+
   if (plusBox) {
-    plusBox.classList.toggle("show", currentMode === "leva_plus");
-    plusBox.style.display = currentMode === "leva_plus" ? "block" : "none";
+    plusBox.classList.toggle("show", showPlus);
+    plusBox.style.display = showPlus ? "block" : "none";
   }
 
   if (leva20Box) {
-    leva20Box.classList.toggle("show", currentMode === "leva_fissa");
-    leva20Box.style.display = currentMode === "leva_fissa" ? "block" : "none";
+    leva20Box.classList.toggle("show", showLeva20);
+    leva20Box.style.display = showLeva20 ? "block" : "none";
   }
 
   if (evolutoBox) {
-    const showEvoluto = currentMode === "normal" && currentBenchmark === "ai_core";
     evolutoBox.classList.toggle("show", showEvoluto);
     evolutoBox.style.display = showEvoluto ? "block" : "none";
   }
 
   if (liqCard) {
-    liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
+    liqCard.style.display = showPlus ? "block" : "none";
   }
 }
-  
+   
    function buildComparisonTable(aligned, labels, capital) {
     function compute(series) {
       return {
