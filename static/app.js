@@ -1354,7 +1354,7 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
 
       updateLevaPlusCounter();
 
-      renderMain(labels, pigroSeries, secondSeries, secondLabel, aiCoreSeries, comboSeries);
+      renderMain(labels, pigroSeries, secondSeries, secondLabel);
           
       renderDd(labels, computeDrawdownSeriesPct(pigroSeries), computeDrawdownSeriesPct(secondSeries), secondLabel);
       updateTextSummary(pigroSeries, secondSeries, labels, secondLabel);
