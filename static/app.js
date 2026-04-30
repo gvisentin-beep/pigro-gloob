@@ -3,7 +3,11 @@
   let ddChart = null;
   let liqChart = null;
   let currentBenchmark = "world";
-  let currentMode = "normal";
+document.addEventListener("DOMContentLoaded", () => {
+  const evolutoBtn = document.querySelector('.btn-evoluto');
+  if (evolutoBtn) evolutoBtn.classList.add("suggested");
+});
+    let currentMode = "normal";
   let levaPlusIntegrations = 0;
   let levaPlusMarkerIndices = [];
   let isRefreshing = false;
