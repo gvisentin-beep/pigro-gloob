@@ -1168,7 +1168,7 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
     const world = removeIsolatedSpikes(benchmarkSeries(aligned, "world", capital), 0.10);
     const mib = removeIsolatedSpikes(benchmarkSeries(aligned, "mib", capital), 0.10);
     const sp500 = removeIsolatedSpikes(benchmarkSeries(aligned, "sp500", capital), 0.10);
-
+    const evoluto = removeIsolatedSpikes(benchmarkSeries(aligned, "ai_core", capital), 0.10);
     const leva20 = computeFixedLeverageDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, capital);
     const levaPlusObj = computeLevaPlusDetailed(labels, aligned.ls80, aligned.gold, aligned.btc, pigro, capital);
     const levaPlus = levaPlusObj.series;
