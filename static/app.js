@@ -1146,15 +1146,34 @@ function renderMain(labels, firstVals, secondVals, secondLabel, aiCoreSeries, co
     modal.setAttribute("aria-hidden", "true");
   }
 
-  function toggleModeBoxes() {
-    const plusBox = document.getElementById("plus_rule_box");
-    const liqCard = document.getElementById("liquidity_card");
+function toggleModeBoxes() {
+  const plusBox = document.getElementById("plus_rule_box");
+  const liqCard = document.getElementById("liquidity_card");
+  const leva20Box = document.getElementById("leva20_rule_box");
+  const evolutoBox = document.getElementById("evoluto_rule_box");
 
-    if (plusBox) plusBox.classList.toggle("show", currentMode === "leva_plus");
-    if (liqCard) liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
+  if (plusBox) {
+    plusBox.classList.toggle("show", currentMode === "leva_plus");
+    plusBox.style.display = currentMode === "leva_plus" ? "block" : "none";
   }
 
-  function buildComparisonTable(aligned, labels, capital) {
+  if (leva20Box) {
+    leva20Box.classList.toggle("show", currentMode === "leva_fissa");
+    leva20Box.style.display = currentMode === "leva_fissa" ? "block" : "none";
+  }
+
+  if (evolutoBox) {
+    const showEvoluto = currentMode === "normal" && currentBenchmark === "ai_core";
+    evolutoBox.classList.toggle("show", showEvoluto);
+    evolutoBox.style.display = showEvoluto ? "block" : "none";
+  }
+
+  if (liqCard) {
+    liqCard.style.display = currentMode === "leva_plus" ? "block" : "none";
+  }
+}
+  
+   function buildComparisonTable(aligned, labels, capital) {
     function compute(series) {
       return {
         cagr: computeCagr(series, labels),
