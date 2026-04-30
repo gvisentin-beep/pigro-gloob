@@ -710,3 +710,17 @@ ul{
   color: white;
   border-color: #7ec8e3;
 }
+/* Bottone Evoluto sempre leggermente evidenziato quando non attivo */
+.btn-evoluto {
+  background-color: #e8f6fb;
+  border-color: #7ec8e3;
+  color: #173a8a;
+}
+
+/* Bottone Evoluto quando selezionato */
+.btn-evoluto.active {
+  background-color: #7ec8e3 !important;
+  border-color: #7ec8e3 !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(126,200,227,.35);
+}
