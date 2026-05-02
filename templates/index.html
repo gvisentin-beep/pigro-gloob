@@ -3,6 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+
   <title>Gloob — Metodo Pigro 80/15/5</title>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
@@ -23,299 +33,113 @@
     </div>
   </div>
 
-  <!-- BANDIERINE -->
   <div class="langSwitch">
     <span onclick="setLang('it')" style="cursor:pointer;font-size:22px;">🇮🇹</span>
     <span onclick="setLang('en')" style="cursor:pointer;font-size:22px;margin-left:8px;">🇬🇧</span>
   </div>
 </div>
 
-    <div class="introTop">
-      <div class="introText">
-        <ul>
-          <li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
-          <li><b>Controllo del rischio</b>: pesi fissi e struttura semplice</li>
-          <li><b>Regole chiare</b>: pesi senza interventi continui</li>
-          <li><b>Struttura &gt; Previsioni</b></li>
-        </ul>
-      </div>
-
-      <div class="heroVideoSection">
-        <div class="heroVideoBox">
-          <div class="heroVideoWrap">
-
-<div class="heroVideoWrap">
-
-  <video id="heroVideo" width="100%" preload="metadata" controls style="display:none;">
-    <source src="/static/pigro-video.mp4" type="video/mp4">
-  </video>
-
-  <div class="videoClickBox" onclick="playHeroVideo()">
-    <img class="videoCover" src="/static/cover.jpg" alt="Video Metodo Pigro">
-    <button class="bigPlayButton" type="button">▶</button>
+<div class="introTop">
+  <div class="introText">
+    <ul>
+      <li><b>Pochi strumenti</b>: LifeStrategy 80, Oro, Bitcoin</li>
+      <li><b>Controllo del rischio</b>: pesi fissi e struttura semplice</li>
+      <li><b>Regole chiare</b>: pesi senza interventi continui</li>
+      <li><b>Struttura &gt; Previsioni</b></li>
+    </ul>
   </div>
 
+  <div class="heroVideoSection">
+    <div class="heroVideoBox">
+      <div class="heroVideoWrap">
+
+        <video id="heroVideo" width="100%" preload="metadata" controls style="display:none;">
+          <source src="/static/pigro-video.mp4" type="video/mp4">
+        </video>
+
+        <div class="videoClickBox" onclick="playHeroVideo()">
+          <img class="videoCover" src="/static/cover.jpg" alt="Video Metodo Pigro">
+          <button class="bigPlayButton" type="button">▶</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
 </div>
 
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="controlsRow">
-      <div class="allocBox">
-        <b>Composizione fissa</b><br/>
-        LifeStrategy 80: <b>80%</b><br/>
-        Oro: <b>15%</b><br/>
-        Bitcoin: <b>5%</b>
-      </div>
-
-      <div class="controlsInline">
-        <div class="ctrl capital">
-          <label><b>Capitale iniziale (€)</b></label>
-          <input id="capital" type="text" value="10000">
-        </div>
-
-        <div class="ctrlBtn">
-          <button id="btn_update" class="btn">Aggiorna</button>
-        </div>
-
-        <div class="finalBox">
-          Finale: <span id="final_value">—</span>
-          <span class="sub">(in anni <span id="final_years">—</span>)</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="smallText">Scegli il confronto da visualizzare.</div>
-
-    <div class="benchRow">
-      <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Europa</button>
-      <button class="benchmarkBtn" data-mode="normal" data-benchmark="sp500">Confronta con USA</button>
-      <button class="benchmarkBtn active" data-mode="normal" data-benchmark="world">Confronta con MSCI World</button>
-      <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
-      <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
-      <button class="benchmarkBtn btn-evoluto" data-mode="normal" data-benchmark="ai_core">TEST: Evoluto (Pigro + AI)</button>
-       </div>
-
-    <div id="fixed_leva_rule_box" class="dynamicRuleBox" style="display:none;">
-      <b>Pigro con Leva 20%:</b> parte con leva iniziale del 20%, poi alla fine di ogni anno, ricalibra il portafoglio e la leva per ciascun titolo in portafoglio. Il costo medio del Lombard è calcolato al 2,5% (potrebbe variare a seconda del contratto di ciascun investitore).
-    </div>
-
-    <div id="plus_rule_box" class="dynamicRuleBox" style="display:none;">
-      <b>Pigro Leva+:</b> parte con leva iniziale del 20%. Se il portafoglio principale dato a garanzia scende sotto il 90% del capitale iniziale, viene effettuata un’integrazione di 20% del capitale solo su LS80. Il segnale può attivarsi al massimo 2 volte, solo dopo un recupero sopra soglia e una successiva nuova violazione al ribasso. Il costo del Lombard è calcolato in media del 2,5%.
-    </div>
-
-    <div id="leva20_rule_box" class="dynamicRuleBox" style="display:none;">
-      <b>Pigro con leva 20%:</b> parte con leva iniziale del 20% tramite credito Lombard. Alla fine di ogni anno ricalibra la leva in modo da mantenere una maggiorazione dell'investimento del 20% del valore di ciascun titolo in portafoglio. Il costo del finanziamento Lombard è stimato del 2,5% annuo.
-    </div>
-
-    <div id="evoluto_rule_box" class="dynamicRuleBox" style="display:none;">
-      <b>Evoluto (Pigro + AI):</b> combina il Metodo Pigro con un contributo AI. Il portafoglio resta composto per il 60% dal Pigro 80/15/5 e per il 40% da una selezione AI globale, con l’obiettivo di migliorare il rendimento senza snaturare la struttura prudente e diversificata. AI, ogni anno, seleziona i migliori 6 titoli mondiali per score: rendimento 12m/36m, meno volatitlità e drawdown, P/E, P/B ed altri parametri.
-    </div>
-     
-    <div class="summary">
-      <b>Portafoglio “Pigro 80/15/5”:</b>
-      Rendimento annualizzato <b><span id="cagr">—</span></b> |
-      <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
-      Composizione: LS80 <b>80%</b> | Oro <b>15%</b> | Bitcoin <b>5%</b><br/>
-      Raddoppio del portafoglio in anni: <span id="dbl">—</span><br/>
-      <span id="benchmark_summary">Benchmark: —</span>
-    </div>
-
-    <h2 id="chart_title">Andamento Portafogli negli ultimi anni</h2>
-
-    <div class="card">
-      <canvas id="chart_main"></canvas>
-    </div>
-
-    <h2>Andamento Ribassi Portafogli</h2>
-
-    <div class="card">
-      <canvas id="chart_dd"></canvas>
-      <div id="dd_summary" class="smallText" style="margin-top:10px;"></div>
-    </div>
-
-    <div id="liquidity_card" class="card" style="display:none;">
-      <div class="liquidityTitle">Disponibilità residua Lombard</div>
-      <canvas id="chart_liq"></canvas>
-      <div id="liquidity_summary" class="smallText" style="margin-top:10px;"></div>
-    </div>
-
-    <div id="compare_box" class="bigCompare">
-      <strong>Confronto immediato</strong><br/>
-      <span id="compare_period">10.000 € investiti all’inizio del periodo</span><br/>
-      Metodo Pigro → <b id="compare_pigro">—</b><br/>
-      <span id="compare_title_benchmark">MSCI World</span> → <b id="compare_benchmark">—</b>
-    </div>
-
-    <div id="comparison_table_box" class="comparisonTableBox">
-      <div class="comparisonTableHead">
-        <h3>Confronto completo portafogli</h3>
-        <div class="comparisonTablePeriod">
-          Periodo di calcolo: <span id="comparison_period_years">—</span> anni
-        </div>
-      </div>
-
-      <table id="comparison_table">
-        <thead>
-          <tr>
-            <th>Portafoglio</th>
-            <th>Rendimento annuo</th>
-            <th>Max Ribasso</th>
-            <th>Capitale finale</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="smallText">
-      <b>Messaggio chiave:</b><br/>
-      La differenza non è indovinare il mercato.<br/>
-      È avere una struttura semplice e mantenerla nel tempo.
-    </div>
-
-    <h2>Come applicarlo concretamente</h2>
-    <ol>
-      <li>Investi il capitale in 3 strumenti: 80% LS80, 15% Oro, 5% Bitcoin.</li>
-      <li>Evita interventi continui.</li>
-      <li>Confronta il metodo con Italia, USA, MSCI World, leva 20% fissa o Pigro Leva+ con riserva Lombard.</li>
-      <li>Osserva insieme rendimento e drawdown.</li>
-    </ol>
-
-    <div class="btnRow">
- 
-<button class="btn" id="btn_facsimile"
-  onclick="window.open('/static/facsimile_execution_only.pdf', '_blank')">
-  Facsimile ordine Banca
-</button>
-      
-      <button class="btn" id="btn_consulente">Richiedi Consulente</button>
-      <button class="btn" id="btn_libro">Per saperne di più</button>
-      <button class="btn" onclick="window.open('https://portafoglioperfetto.it', '_blank')">Per Consulenti / Esperti</button>
-    </div>
-
-    <button class="btnMission" onclick="toggleMission()">Scopri la Mission</button>
-
-    <section id="missionSection" class="missionSection missionHidden">
-      <h2>MISSION</h2>
-
-      <div class="missionBox">
-        <p>
-          In Italia una parte enorme del risparmio viene ancora investita in modo inefficiente:
-          costi elevati, prodotti poco trasparenti e scelte spesso guidate più dalla distribuzione
-          che dall’interesse del risparmiatore.
-        </p>
-
-        <p>
-          Gloob nasce da un’idea semplice: aiutare le persone a capire che un portafoglio costruito
-          bene può essere più chiaro, più efficiente e più coerente con obiettivi di lungo periodo.
-        </p>
-
-        <p>
-          Un risparmio investito meglio non aiuta solo il singolo investitore. Può contribuire anche
-          a indirizzare capitali verso strumenti solidi, mercati produttivi e imprese capaci di creare valore.TEST GLOOB 123
-        </p>
-
-        <p>
-          Questa pagina, completamente gratuita, mette a disposizione strumenti facili di analisi,
-          confronto e simulazione. E' informazione generale, non consulenza finanziaria personalizzata. L’obiettivo è offrire un punto di riferimento accessibile, dove
-          il risparmiatore possa orientarsi in autonomia oppure, se lo desidera, confrontarsi con
-          consulenti autorizzati, senza conflitti di interesse. La pagina, realizzata da Gottardo Visentin con l'ausilio dell'AI per la scrittura del codice, è completamente automatizzata e per la sua gestione non richiede personale con relativi costi. 
-        </p>
-
-        <p class="missionStrong">
-          Il risparmio non dovrebbe essere eroso da costi nascosti:
-          dovrebbe restare il più possibile nelle mani di chi lo ha costruito.
-        </p>
-      </div>
-    </section>
+<div class="controlsRow">
+  <div class="allocBox">
+    <b>Composizione fissa</b><br/>
+    LifeStrategy 80: <b>80%</b><br/>
+    Oro: <b>15%</b><br/>
+    Bitcoin: <b>5%</b>
   </div>
 
-  <div id="advisor_modal" class="modalOverlay" aria-hidden="true">
-    <div class="modalBox" role="dialog" aria-modal="true" aria-labelledby="advisor_modal_title">
-      <div class="modalHeader">
-        <div>
-          <h3 id="advisor_modal_title" class="modalTitle">Consulenti indipendenti</h3>
-          <div class="modalSub">
-            Professionisti da contattare direttamente per eventuale consulenza fee-only.
-          </div>
-        </div>
-        <button id="advisor_modal_close" class="modalClose" aria-label="Chiudi">×</button>
-      </div>
+  <div class="controlsInline">
+    <div class="ctrl capital">
+      <label><b>Capitale iniziale (€)</b></label>
+      <input id="capital" type="text" value="10000">
+    </div>
 
-      <div class="modalBody">
-        <div class="advisorGrid">
-          <div class="advisorCard">
-            <div class="advisorName">Parillo Sebastiano</div>
-            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF n. 627826</div>
-            <div class="advisorLine">Sede: Caserta (CE)</div>
-            <div class="advisorLine">Email: <a href="mailto:s.parillo@unocapital.it">s.parillo@unocapital.it</a></div>
-            <div class="advisorLine">Sito: <a href="https://www.unocapital.it" target="_blank" rel="noopener">www.unocapital.it</a></div>
-            <div class="advisorLine">Telefono: <a href="tel:+393669507306">+39 3669507306</a></div>
-          </div>
+    <div class="ctrlBtn">
+      <button id="btn_update" class="btn">Aggiorna</button>
+    </div>
 
-          <div class="advisorCard">
-            <div class="advisorName">Travagli Maximiliano</div>
-            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF n. 107890</div>
-            <div class="advisorLine">Sede: Roma (RM)</div>
-            <div class="advisorLine">Email: <a href="mailto:info@travaglifinancial.com">info@travaglifinancial.com</a></div>
-            <div class="advisorLine">Sito: <a href="https://www.consulentefinanziarioindipendente.it" target="_blank" rel="noopener">www.consulentefinanziarioindipendente.it</a></div>
-            <div class="advisorLine">Telefono: <a href="tel:+390696701730">+39 06 96701730</a></div>
-          </div>
-
-          <div class="advisorCard">
-            <div class="advisorName">Caramia Luciano</div>
-            <div class="advisorRole">Consulente finanziario autonomo · Iscritto OCF n. 233010</div>
-            <div class="advisorLine">Sede: Zero Branco (TV)</div>
-            <div class="advisorLine">Email: <a href="mailto:info@caramiaconsulting.it">info@caramiaconsulting.it</a></div>
-            <div class="advisorLine">Sito: <a href="https://www.caramiaconsulting.it" target="_blank" rel="noopener">www.caramiaconsulting.it</a></div>
-            <div class="advisorLine">Telefono: <a href="tel:+393289256241">+39 328 9256241</a></div>
-          </div>
-        </div>
-
-        <div class="modalNote">
-          Si consiglia di verificare sempre l’iscrizione all’Albo sul sito ufficiale OCF:
-          <a href="https://www.organismocf.it" target="_blank" rel="noopener">www.organismocf.it</a>.
-          <br><br>
-          Questo sito non ha alcun rapporto di commissione, retrocessione o collaborazione commerciale con i professionisti sopra indicati. L’eventuale contatto avviene in modo diretto e autonomo da parte dell’utente.
-        </div>
-      </div>
+    <div class="finalBox">
+      Finale: <span id="final_value">—</span>
+      <span class="sub">(in anni <span id="final_years">—</span>)</span>
     </div>
   </div>
+</div>
+
+<div class="smallText">Scegli il confronto da visualizzare.</div>
+
+<div class="benchRow">
+  <button class="benchmarkBtn" data-mode="normal" data-benchmark="mib">Confronta con Europa</button>
+  <button class="benchmarkBtn" data-mode="normal" data-benchmark="sp500">Confronta con USA</button>
+  <button class="benchmarkBtn active" data-mode="normal" data-benchmark="world">Confronta con MSCI World</button>
+  <button class="benchmarkBtn" data-mode="leva_fissa">Pigro con leva 20%</button>
+  <button class="benchmarkBtn" data-mode="leva_plus">Pigro Leva+</button>
+  <button class="benchmarkBtn btn-evoluto" data-mode="normal" data-benchmark="ai_core">TEST: Evoluto (Pigro + AI)</button>
+</div>
+
+<div class="summary">
+  <b>Portafoglio “Pigro 80/15/5”:</b>
+  Rendimento annualizzato <b><span id="cagr">—</span></b> |
+  <b>Max Ribasso</b> nel periodo <b><span id="maxdd">—</span></b><br/>
+</div>
+
+<h2>Andamento Portafogli negli ultimi anni</h2>
+<div class="card">
+  <canvas id="chart_main"></canvas>
+</div>
+
+<h2>Andamento Ribassi Portafogli</h2>
+<div class="card">
+  <canvas id="chart_dd"></canvas>
+</div>
+
+<div class="btnRow">
+  <button class="btn" onclick="window.open('/static/facsimile_execution_only.pdf', '_blank')">
+    Facsimile ordine Banca
+  </button>
+  <button class="btn" id="btn_consulente">Richiedi Consulente</button>
+  <button class="btn" id="btn_libro">Per saperne di più</button>
+</div>
 
 <script>
-
 function playHeroVideo(){
   const box = document.querySelector('.videoClickBox');
   const video = document.getElementById('heroVideo');
-
   if (box) box.style.display = 'none';
-
   if (video) {
     video.style.display = 'block';
     video.play();
   }
 }
-  
-   function toggleMission(){
-    const box = document.getElementById('missionSection');
-    if (!box) return;
-
-    box.classList.toggle('show');
-
-    if (box.classList.contains('show')) {
-      setTimeout(function () {
-        box.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start'
-        });
-      }, 150);
-    }
-  }
 </script>
-  
-  <script src="/static/app.js?v=100"></script>
+
+<script src="/static/app.js?v=100"></script>
+
 </body>
 </html>
