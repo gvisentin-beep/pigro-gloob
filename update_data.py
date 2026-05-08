@@ -294,14 +294,21 @@ def clean_downloaded_series(df: pd.DataFrame, symbol: str) -> Optional[pd.DataFr
     log(f"  Pulizia {symbol}: spike isolati corretti = {removed_total}")
     return out
 
-
 def fetch_yahoo(symbol: str):
     try:
         time.sleep(3)
 
+        # LS80: scarica solo ultimi 3 mesi
+        # così preserviamo completamente
+        # lo storico reale locale dal 10/12/2020
+        if symbol == "VNGA80.MI":
+            period = "3mo"
+        else:
+            period = "max"
+
         df = yf.download(
             symbol,
-            period="max",
+            period=period,
             interval="1d",
             progress=False,
             threads=False,
