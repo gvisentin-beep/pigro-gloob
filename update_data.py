@@ -360,10 +360,23 @@ def update_asset(name: str, cfg: dict) -> bool:
 
     if last_existing_date is not None:
         last_fresh_date = fresh["date"].iloc[-1]
-        if last_fresh_date <= last_existing_date:
-            log(f"  Nessuna nuova data da Yahoo | ultima Yahoo {last_fresh_date.date()}")
-            return True
 
+if last_existing_date is not None:
+    last_fresh_date = fresh["date"].iloc[-1]
+
+    if last_fresh_date <= last_existing_date:
+        log(f"  Nessuna nuova data da Yahoo | ultima Yahoo {last_fresh_date.date()}")
+
+        # LS80: anche se non ci sono nuove date,
+        # riscrivo il CSV tagliando tutto prima del 10/12/2020
+        if name == "ls80" and existing is not None and not existing.empty:
+            cutoff = pd.Timestamp("2020-12-10")
+            existing = existing[existing["date"] >= cutoff].reset_index(drop=True)
+            write_csv(path, existing)
+            log(f"  LS80: CSV riscritto dal {cutoff.date()} | righe rimaste {len(existing)}")
+
+        return True
+           
         merged = (
         pd.concat([existing, fresh], ignore_index=True)
         if existing is not None and not existing.empty
