@@ -375,7 +375,13 @@ def update_asset(name: str, cfg: dict) -> bool:
         .sort_values("date")
         .reset_index(drop=True)
     )
-
+# LS80: mantieni solo la serie reale dal 10/12/2020
+# elimina definitivamente eventuali dati teorici precedenti al lancio reale
+if name == "ls80":
+    cutoff = pd.Timestamp("2020-12-10")
+    merged = merged[merged["date"] >= cutoff].reset_index(drop=True)
+    log(f"  LS80: taglio forzato dal {cutoff.date()} | righe rimaste {len(merged)}")
+    
     if len(merged) < MIN_VALID_ROWS:
         log(f"  Serie troppo corta ({len(merged)} righe), mantengo eventuali dati esistenti")
         return True
