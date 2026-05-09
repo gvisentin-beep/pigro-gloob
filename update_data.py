@@ -352,32 +352,23 @@ def update_asset(name: str, cfg: dict) -> bool:
 
     if fresh is None:
         log(f"  ⚠️ Yahoo bloccato o errore: {err}")
+
+        # Anche in caso di errore Yahoo, per LS80 pulisco comunque il file locale.
+        if name == "ls80" and existing is not None and not existing.empty:
+            cutoff = pd.Timestamp("2020-12-10")
+            cleaned = existing[existing["date"] >= cutoff].reset_index(drop=True)
+            if len(cleaned) >= MIN_VALID_ROWS:
+                write_csv(path, cleaned)
+                log(f"  LS80: CSV locale ripulito dal {cutoff.date()} | righe rimaste {len(cleaned)}")
+
         if existing is not None and not existing.empty:
             log("  Uso dati esistenti - fallback OK")
             return True
+
         log("  Nessun dato disponibile, ma non blocco il workflow")
         return True
 
-    if last_existing_date is not None:
-        last_fresh_date = fresh["date"].iloc[-1]
-
-if last_existing_date is not None:
-    last_fresh_date = fresh["date"].iloc[-1]
-
-    if last_fresh_date <= last_existing_date:
-        log(f"  Nessuna nuova data da Yahoo | ultima Yahoo {last_fresh_date.date()}")
-
-        # LS80: anche se non ci sono nuove date,
-        # riscrivo il CSV tagliando tutto prima del 10/12/2020
-        if name == "ls80" and existing is not None and not existing.empty:
-            cutoff = pd.Timestamp("2020-12-10")
-            existing = existing[existing["date"] >= cutoff].reset_index(drop=True)
-            write_csv(path, existing)
-            log(f"  LS80: CSV riscritto dal {cutoff.date()} | righe rimaste {len(existing)}")
-
-        return True
-           
-        merged = (
+    merged = (
         pd.concat([existing, fresh], ignore_index=True)
         if existing is not None and not existing.empty
         else fresh
@@ -389,8 +380,8 @@ if last_existing_date is not None:
         .reset_index(drop=True)
     )
 
-    # LS80: mantieni solo la serie reale dal 10/12/2020
-    # elimina definitivamente eventuali dati teorici precedenti al lancio reale
+    # LS80: mantieni solo la serie reale dal 10/12/2020.
+    # In questo modo eliminiamo definitivamente eventuali dati teorici precedenti.
     if name == "ls80":
         cutoff = pd.Timestamp("2020-12-10")
         merged = merged[merged["date"] >= cutoff].reset_index(drop=True)
@@ -403,6 +394,7 @@ if last_existing_date is not None:
     write_csv(path, merged)
     log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
     return True
+
 
 def parse_only_argument() -> Optional[str]:
     if len(sys.argv) >= 3 and sys.argv[1] == "--only":
