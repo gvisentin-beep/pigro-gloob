@@ -52,3 +52,11 @@ jobs:
           git add data/*.csv static/data_*.csv
           git diff --cached --quiet || git commit -m "Auto update portfolio data"
           git push
+          - name: Upload data folder to Aruba FTP
+  uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+  with:
+    server: ${{ secrets.ARUBA_FTP_SERVER }}
+    username: ${{ secrets.ARUBA_FTP_USERNAME }}
+    password: ${{ secrets.ARUBA_FTP_PASSWORD }}
+    local-dir: ./data/
+    server-dir: /www.gloob.it/data/
