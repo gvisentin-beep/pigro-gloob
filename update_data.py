@@ -364,7 +364,7 @@ def update_asset(name: str, cfg: dict) -> bool:
             log(f"  Nessuna nuova data da Yahoo | ultima Yahoo {last_fresh_date.date()}")
             return True
 
-    merged = (
+        merged = (
         pd.concat([existing, fresh], ignore_index=True)
         if existing is not None and not existing.empty
         else fresh
@@ -375,13 +375,14 @@ def update_asset(name: str, cfg: dict) -> bool:
         .sort_values("date")
         .reset_index(drop=True)
     )
-# LS80: mantieni solo la serie reale dal 10/12/2020
-# elimina definitivamente eventuali dati teorici precedenti al lancio reale
-if name == "ls80":
-    cutoff = pd.Timestamp("2020-12-10")
-    merged = merged[merged["date"] >= cutoff].reset_index(drop=True)
-    log(f"  LS80: taglio forzato dal {cutoff.date()} | righe rimaste {len(merged)}")
-    
+
+    # LS80: mantieni solo la serie reale dal 10/12/2020
+    # elimina definitivamente eventuali dati teorici precedenti al lancio reale
+    if name == "ls80":
+        cutoff = pd.Timestamp("2020-12-10")
+        merged = merged[merged["date"] >= cutoff].reset_index(drop=True)
+        log(f"  LS80: taglio forzato dal {cutoff.date()} | righe rimaste {len(merged)}")
+
     if len(merged) < MIN_VALID_ROWS:
         log(f"  Serie troppo corta ({len(merged)} righe), mantengo eventuali dati esistenti")
         return True
@@ -389,7 +390,6 @@ if name == "ls80":
     write_csv(path, merged)
     log(f"  Salvato: {len(merged)} righe | ultima data {merged['date'].iloc[-1].date()}")
     return True
-
 
 def parse_only_argument() -> Optional[str]:
     if len(sys.argv) >= 3 and sys.argv[1] == "--only":
